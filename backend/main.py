@@ -52,26 +52,35 @@ def predict_match(match: MatchInput):
     }
 
 @app.get("/api/matches/nhl")
-def get_todays_nhl_matches():
-    # Endpoint du calendrier officiel de la NHL
-    url = "https://api-web.nhle.com/v1/schedule/now"
+def get_nhl_matches(date: str = "now"):
+    """
+    Récupère le calendrier de la NHL. 
+    Laissez vide pour la semaine courante ou passez une date au format AAAA-MM-JJ (ex: /api/matches/nhl?date=2026-11-12)
+    """
+    url = f"https://api-web.nhle.com/v1/schedule/{date}"
     try:
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
-            game_week = data.get("gameWeek", [])
-            if game_week:
-                # Récupère les matchs de la première journée disponible dans la semaine
-                games = game_week[0].get("games", [])
-                matches = []
+            game_weeks = data.get("gameWeek", [])
+            matches = []
+            
+            for day in game_weeks:
+                game_date = day.get("date")
+                games = day.get("games", [])
                 for g in games:
+                    home = g.get("homeTeam", {}).get("placeName", {}).get("default") or g.get("homeTeam", {}).get("commonName", {}).get("default", "Domicile")
+                    away = g.get("awayTeam", {}).get("placeName", {}).get("default") or g.get("awayTeam", {}).get("commonName", {}).get("default", "Extérieur")
+                    
                     matches.append({
                         "id": g.get("id"),
-                        "home_team": g.get("homeTeam", {}).get("placeName", {}).get("default", "Home"),
-                        "away_team": g.get("awayTeam", {}).get("placeName", {}).get("default", "Away"),
+                        "date": game_date,
+                        "home_team": home,
+                        "away_team": away,
                         "time": g.get("startTimeUTC")
                     })
-                return {"matches": matches}
+            
+            return {"matches": matches}
         return {"matches": []}
     except Exception as e:
         return {"error": str(e)}
