@@ -46,10 +46,13 @@ def fetch_team_stats():
     return stats_map
 
 def fetch_all_players_projections(team_abbrev, expected_team_goals):
-    """Analyse TOUS les joueurs de l'effectif pour estimer leurs chances de point/but/passe"""
     players = []
+    top_scorer = None
+    top_passer = None
+    
     if not team_abbrev:
-        return players
+        return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
+        
     try:
         url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
         response = requests.get(url)
@@ -63,12 +66,10 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                 assists = p.get("assists", 0)
                 points = goals + assists
                 
-                # Moyennes par match
                 g_pg = goals / gp
                 a_pg = assists / gp
                 pts_pg = points / gp
                 
-                # Probabilité estimée pour ce match selon le xG de l'équipe
                 goal_prob = min(90, round((1 - np.exp(-g_pg * (expected_team_goals / 3.0))) * 100, 1))
                 assist_prob = min(90, round((1 - np.exp(-a_pg * (expected_team_goals / 3.0))) * 100, 1))
                 point_prob = min(95, round((1 - np.exp(-pts_pg * (expected_team_goals / 3.0))) * 100, 1))
@@ -87,11 +88,17 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                     "point_prob": point_prob
                 })
                 
-            # Trier l'ensemble de l'effectif par probabilité d'inscrire un point
             players = sorted(players, key=lambda x: x["point_prob"], reverse=True)
+            
+            # Sélection des favoris Buteur et Passeur
+            if players:
+                top_scorer = max(players, key=lambda x: x["goal_prob"])
+                top_passer = max(players, key=lambda x: x["assist_prob"])
+                
     except Exception:
         pass
-    return players
+        
+    return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
 
 def calculate_poisson_matrix(home_xg, away_xg):
     max_goals = 10
@@ -117,13 +124,11 @@ def predict_match(match: MatchInput):
             away_st = st
             away_abbrev = st.get("abbrev", "")
 
-    # Calcul des xG pour la rencontre
     h_xg = round(home_st["offense"] * 1.08, 2)
     a_xg = round(away_st["offense"] * 0.92, 2)
 
-    # Récupération et analyse de TOUS les joueurs pour chaque équipe
-    home_players = fetch_all_players_projections(home_abbrev, h_xg)
-    away_players = fetch_all_players_projections(away_abbrev, a_xg)
+    home_players_data = fetch_all_players_projections(home_abbrev, h_xg)
+    away_players_data = fetch_all_players_projections(away_abbrev, a_xg)
 
     mat1 = calculate_poisson_matrix(3.1, 2.7)
     p1_home = float(np.sum(np.tril(mat1, -1))) * 100
@@ -161,8 +166,8 @@ def predict_match(match: MatchInput):
             "under_prob": round((1 - over_5_5_prob) * 100, 1)
         },
         "players": {
-            "home": home_players,
-            "away": away_players
+            "home": home_players_data,
+            "away": away_players_data
         }
     }
 
