@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import numpy as np
 from scipy.stats import poisson
-
+import requests
 app = FastAPI(
     title="API Pronostics IA - Foot & Hockey",
     description="Backend de calcul des probabilités inspiré de Flashscore",
