@@ -151,29 +151,24 @@ def predict_match(match: MatchInput):
     home_goalie = fetch_goalie_stats(home_abbrev)
     away_goalie = fetch_goalie_stats(away_abbrev)
 
-    # --- IA 1 : Poisson Standard ---
     mat1 = calculate_poisson_matrix(3.1, 2.7)
     p1_home = float(np.sum(np.tril(mat1, -1))) * 100
 
-    # --- IA 2 : Saison Dynamique ---
     h_xg2 = home_st["offense"] * 1.08
     a_xg2 = away_st["offense"] * 0.92
     mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
     p2_home = float(np.sum(np.tril(mat2, -1))) * 100
 
-    # --- IA 3 : Tactique / Défense ---
     h_xg3 = max(1.5, home_st["offense"] - (away_st["defense"] * 0.1) + 0.2)
     a_xg3 = max(1.5, away_st["offense"] - (home_st["defense"] * 0.1))
     mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
     p3_home = float(np.sum(np.tril(mat3, -1))) * 100
 
-    # --- IA 4 : Modèle Gardiens ---
     h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
     a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
     mat4 = calculate_poisson_matrix(h_xg4, a_xg4)
     p4_home = float(np.sum(np.tril(mat4, -1))) * 100
 
-    # --- IA 5 : Unités Spéciales (PP vs PK) ---
     pp_advantage_home = home_st["pp_pct"] * (1 - away_st["pk_pct"]) * 10.0
     pp_advantage_away = away_st["pp_pct"] * (1 - home_st["pk_pct"]) * 10.0
     h_xg5 = max(1.2, h_xg2 + pp_advantage_home)
@@ -181,7 +176,6 @@ def predict_match(match: MatchInput):
     mat5 = calculate_poisson_matrix(h_xg5, a_xg5)
     p5_home = float(np.sum(np.tril(mat5, -1))) * 100
 
-    # --- IA 6 : Fatigue & Calendrier ---
     home_fatigue = 0.88 if match.home_b2b else 1.0
     away_fatigue = 0.88 if match.away_b2b else 0.95
     h_xg6 = max(1.2, h_xg2 * home_fatigue)
@@ -189,7 +183,6 @@ def predict_match(match: MatchInput):
     mat6 = calculate_poisson_matrix(h_xg6, a_xg6)
     p6_home = float(np.sum(np.tril(mat6, -1))) * 100
 
-    # Consensus combiné des 6 IA
     final_home_win = round((p1_home + p2_home + p3_home + p4_home + p5_home + p6_home) / 6, 1)
     final_away_win = round(max(5.0, 100 - final_home_win - 15.0), 1)
     final_draw = round(15.0, 1)
@@ -249,4 +242,31 @@ def get_nhl_matches(date: str = "now"):
             for day in data.get("gameWeek", []):
                 game_date = day.get("date")
                 for g in day.get("games", []):
-                    home_obj =
+                    home_obj = g.get("homeTeam", {})
+                    away_obj = g.get("awayTeam", {})
+                    
+                    home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
+                    away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
+                    
+                    matches.append({
+                        "id": g.get("id"),
+                        "date": game_date,
+                        "home_team": home_name,
+                        "away_team": away_name,
+                        "home_logo": home_obj.get("logo", ""),
+                        "away_logo": away_obj.get("logo", ""),
+                        "time": g.get("startTimeUTC")
+                    })
+            return {"matches": matches}
+        return {"matches": []}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/", response_class=HTMLResponse)
+def lire_index():
+    base_dir = os.path.dirname(__file__)
+    for path in [os.path.join(base_dir, "..", "index.html"), os.path.join(base_dir, "index.html"), "index.html"]:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return "<h1>index.html introuvable</h1>"
