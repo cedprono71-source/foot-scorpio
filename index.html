@@ -3,129 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NHL IA - Pronostics en direct</title>
+    <title>NHL IA - Pronostics</title>
     <style>
-        :root {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --accent: #38bdf8;
-            --text: #f8fafc;
-            --text-muted: #94a3b8;
-        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text);
+            background-color: #0f172a;
+            color: #f8fafc;
             margin: 0;
             padding: 20px;
         }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-        }
         h1 {
             text-align: center;
-            color: var(--accent);
-            font-size: 1.8rem;
+            color: #38bdf8;
+            font-size: 1.5rem;
+            margin-bottom: 5px;
         }
         .subtitle {
             text-align: center;
-            color: var(--text-muted);
+            color: #94a3b8;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+        }
+        .date-container {
+            display: flex;
+            justify-content: center;
             margin-bottom: 25px;
         }
-        .match-card {
-            background-color: var(--card-bg);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 15px;
+        input[type="date"] {
+            background-color: #1e293b;
+            color: #fff;
             border: 1px solid #334155;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
         }
-        .teams {
+        .match-card {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .match-teams {
             font-weight: bold;
             font-size: 1.1rem;
+            margin-bottom: 8px;
+            color: #e2e8f0;
         }
-        .time {
+        .match-info {
             font-size: 0.85rem;
-            color: var(--accent);
-            margin-top: 5px;
+            color: #94a3b8;
         }
-        button {
-            background-color: var(--accent);
-            color: #0f172a;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        #loading {
+        .no-match {
             text-align: center;
-            color: var(--text-muted);
-            padding: 20px;
+            color: #94a3b8;
+            margin-top: 40px;
         }
     </style>
 </head>
 <body>
 
-<div class="container">
     <h1>🏒 NHL IA Pronostics</h1>
-    <p class="subtitle">Matchs officiels du jour</p>
+    <div class="subtitle">Sélectionnez une date pour voir les matchs</div>
 
-    <div id="loading">Chargement des matchs en direct...</div>
-    <div id="matches-list"></div>
-</div>
+    <!-- Sélecteur de date -->
+    <div class="date-container">
+        <input type="date" id="match-date" onchange="chargerMatchs()">
+    </div>
 
-<script>
-    const API_URL = "https://nhl-ia.onrender.com";
+    <div id="matches-container">
+        <div class="no-match">Chargement des matchs...</div>
+    </div>
 
-    async function chargerMatchs() {
-        const loadingDiv = document.getElementById("loading");
-        const matchesListDiv = document.getElementById("matches-list");
+    <script>
+        // Sélectionner la date du jour par défaut au format AAAA-MM-JJ
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('match-date').value = today;
 
-        try {
-            const response = await fetch(`${API_URL}/api/matches/nhl`);
-            const data = await response.json();
+        async function chargerMatchs() {
+            const selectedDate = document.getElementById('match-date').value;
+            const container = document.getElementById('matches-container');
+            container.innerHTML = '<div class="no-match">Recherche en cours...</div>';
 
-            loadingDiv.style.display = "none";
-
-            if (!data.matches || data.matches.length === 0) {
-                matchesListDiv.innerHTML = "<p style='text-align:center;'>Aucun match prévu aujourd'hui.</p>";
-                return;
-            }
-
-            data.matches.forEach(match => {
-                const card = document.createElement("div");
-                card.className = "match-card";
+            try {
+                // Appel vers notre backend FastAPI avec la date choisie
+                const response = await fetch(`/api/matches/nhl?date=${selectedDate}`);
+                const data = await response.json();
                 
-                // Formater l'heure
-                const dateMatch = new Date(match.time);
-                const heureFormatted = dateMatch.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                container.innerHTML = '';
 
-                card.innerHTML = `
-                    <div>
-                        <div class="teams">${match.home_team} vs ${match.away_team}</div>
-                        <div class="time">⏰ ${heureFormatted}</div>
-                    </div>
-                    <button onclick="analyserMatch('${match.home_team}', '${match.away_team}')">Pronostic</button>
-                `;
-                matchesListDiv.appendChild(card);
-            });
+                if (data.matches && data.matches.length > 0) {
+                    data.matches.forEach(match => {
+                        const card = document.createElement('div');
+                        card.className = 'match-card';
+                        
+                        // Formater l'heure du match proprement
+                        const matchTime = new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        } catch (error) {
-            loadingDiv.innerText = "Erreur de chargement. Le serveur Render est peut-être en train de démarrer...";
+                        card.innerHTML = `
+                            <div class="match-teams">${match.home_team} vs ${match.away_team}</div>
+                            <div class="match-info">📅 ${match.date || selectedDate} | ⏰ ${matchTime} UTC</div>
+                        `;
+                        container.appendChild(card);
+                    });
+                } else {
+                    container.innerHTML = '<div class="no-match">Aucun match prévu pour cette date.</div>';
+                }
+            } catch (error) {
+                container.innerHTML = '<div class="no-match" style="color: #ef4444;">Erreur lors du chargement des matchs.</div>';
+            }
         }
-    }
 
-    function analyserMatch(domicile, exterieur) {
-        alert(`Lancement de l'analyse IA pour : ${domicile} vs ${exterieur}`);
-    }
-
-    // Charger les matchs au lancement
-    chargerMatchs();
-</script>
+        // Charger les matchs dès l'ouverture de la page
+        chargerMatchs();
+    </script>
 
 </body>
 </html>
