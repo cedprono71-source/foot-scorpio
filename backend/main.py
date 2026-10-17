@@ -53,13 +53,15 @@ def predict_match(match: MatchInput):
 
 @app.get("/api/matches/nhl")
 def get_todays_nhl_matches():
-    url = "https://api-web.nhle.com/v1/score/now"
+    # Endpoint du calendrier officiel de la NHL
+    url = "https://api-web.nhle.com/v1/schedule/now"
     try:
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
             game_week = data.get("gameWeek", [])
             if game_week:
+                # Récupère les matchs de la première journée disponible dans la semaine
                 games = game_week[0].get("games", [])
                 matches = []
                 for g in games:
