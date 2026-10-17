@@ -9,9 +9,9 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #06141d; color: #ffffff; padding: 0; }
         header { background-color: #06141d; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #142331; }
         .header-title { font-size: 1.2rem; font-weight: bold; color: #ffffff; display: flex; align-items: center; gap: 8px; }
+        
         .date-strip-container { background-color: #ffffff; display: flex; align-items: center; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 100; }
         .calendar-btn { padding: 10px 14px; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e0e0e0; position: relative; cursor: pointer; background: #ffffff; }
-        .calendar-btn span { font-size: 1.2rem; }
         .calendar-btn input[type="date"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
         .date-strip { display: flex; overflow-x: auto; white-space: nowrap; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; scrollbar-width: none; width: 100%; }
         .date-strip::-webkit-scrollbar { display: none; }
@@ -20,31 +20,64 @@
         .date-item .day-num { font-size: 0.8rem; font-weight: 700; color: #111111; margin-top: 2px; }
         .date-item.active .day-name, .date-item.active .day-num { color: #e11238; }
         .date-item.active::after { content: ''; position: absolute; bottom: 0; left: 20%; width: 60%; height: 3px; background-color: #e11238; border-radius: 2px 2px 0 0; }
+        
         .main-content { padding: 12px; }
         .section-title { font-size: 0.85rem; font-weight: 700; color: #8fa3b3; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.5px; }
-        .match-card { background-color: #0d1e2b; border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #162838; }
+        
+        .match-card { background-color: #0d1e2b; border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #162838; cursor: pointer; transition: background-color 0.2s; }
+        .match-card:active { background-color: #142838; }
         .teams-container { display: flex; flex-direction: column; gap: 6px; }
         .team-row { display: flex; align-items: center; gap: 10px; font-size: 0.95rem; font-weight: 600; color: #f1f5f9; }
+        .match-action { display: flex; align-items: center; gap: 8px; }
         .match-status { background-color: #162838; color: #38bdf8; font-size: 0.8rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; }
+        .btn-prono { background-color: #e11238; color: #ffffff; font-size: 0.75rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; border: none; }
         .no-match { text-align: center; color: #8fa3b3; margin-top: 50px; font-size: 0.95rem; }
+
+        /* FENÊTRE MODALE DE PRONOSTIC */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+        .modal-content { background-color: #0d1e2b; border-radius: 12px; border: 1px solid #1c3245; width: 100%; max-width: 400px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); position: relative; }
+        .modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; color: #8fa3b3; font-size: 1.5rem; cursor: pointer; }
+        .modal-title { font-size: 1rem; font-weight: bold; text-align: center; margin-bottom: 16px; color: #ffffff; }
+        .prono-box { background-color: #06141d; border-radius: 8px; padding: 14px; margin-top: 12px; }
+        .prob-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9rem; }
+        .prob-bar-container { background-color: #162838; height: 8px; border-radius: 4px; width: 100%; overflow: hidden; margin-bottom: 12px; }
+        .prob-bar { height: 100%; background-color: #38bdf8; border-radius: 4px; transition: width 0.4s ease; }
+        .prob-bar.home { background-color: #22c55e; }
+        .prob-bar.draw { background-color: #eab308; }
+        .prob-bar.away { background-color: #ef4444; }
     </style>
 </head>
 <body>
     <header>
         <div class="header-title"><span>🏒</span> NHL IA Pronostics</div>
     </header>
+
     <div class="date-strip-container">
         <div class="calendar-btn" title="Sélectionner une date">📅<input type="date" id="calendar-picker" onchange="onCustomDateSelect(this.value)"></div>
         <div class="date-strip" id="date-strip"></div>
     </div>
+
     <div class="main-content">
         <div class="section-title" id="section-title">TOUS LES MATCHS</div>
         <div id="matches-container"><div class="no-match">Chargement des matchs...</div></div>
     </div>
+
+    <!-- POP-UP PRONOSTIC -->
+    <div class="modal-overlay" id="prono-modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">✕</button>
+            <div class="modal-title" id="modal-match-title">Analyse du Match</div>
+            <div id="modal-body">
+                <div class="no-match" style="margin-top: 20px;">Calcul du pronostic IA...</div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const daysFr = ['DI', 'LU', 'MA', 'ME', 'JE', 'VE', 'SA'];
         let selectedDateStr = new Date().toISOString().split('T')[0];
         const todayStr = selectedDateStr;
+
         function generateDateStrip(centerDateStr) {
             const strip = document.getElementById('date-strip');
             strip.innerHTML = '';
@@ -67,18 +100,21 @@
                 }
             }
         }
+
         function selectDate(dateStr, element) {
             selectedDateStr = dateStr;
             document.querySelectorAll('.date-item').forEach(el => el.classList.remove('active'));
             if (element) { element.classList.add('active'); }
             chargerMatchs(dateStr);
         }
+
         function onCustomDateSelect(dateStr) {
             if (!dateStr) return;
             selectedDateStr = dateStr;
             generateDateStrip(dateStr);
             chargerMatchs(dateStr);
         }
+
         async function chargerMatchs(dateStr) {
             const container = document.getElementById('matches-container');
             container.innerHTML = '<div class="no-match">Chargement en cours...</div>';
@@ -86,16 +122,23 @@
                 const response = await fetch(`/api/matches/nhl?date=${dateStr}`);
                 const data = await response.json();
                 container.innerHTML = '';
-                const matchsDuJour = (data.matches || []).filter(m => {
-                    if (!m.date) return true;
-                    return m.date === dateStr;
-                });
+                const matchsDuJour = (data.matches || []).filter(m => !m.date || m.date === dateStr);
                 if (matchsDuJour.length > 0) {
                     matchsDuJour.forEach(match => {
                         const card = document.createElement('div');
                         card.className = 'match-card';
+                        card.onclick = () => showPrediction(match.home_team, match.away_team);
                         const matchTime = match.time ? new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD';
-                        card.innerHTML = `<div class="teams-container"><div class="team-row">🏠 ${match.home_team}</div><div class="team-row">✈️ ${match.away_team}</div></div><div class="match-status">${matchTime}</div>`;
+                        card.innerHTML = `
+                            <div class="teams-container">
+                                <div class="team-row">🏠 ${match.home_team}</div>
+                                <div class="team-row">✈️ ${match.away_team}</div>
+                            </div>
+                            <div class="match-action">
+                                <span class="match-status">${matchTime}</span>
+                                <button class="btn-prono">Prono 📊</button>
+                            </div>
+                        `;
                         container.appendChild(card);
                     });
                 } else {
@@ -105,6 +148,60 @@
                 container.innerHTML = '<div class="no-match" style="color: #ef4444;">Erreur de chargement.</div>';
             }
         }
+
+        async function showPrediction(homeTeam, awayTeam) {
+            const modal = document.getElementById('prono-modal');
+            const title = document.getElementById('modal-match-title');
+            const body = document.getElementById('modal-body');
+
+            title.innerText = `${homeTeam} vs ${awayTeam}`;
+            body.innerHTML = '<div class="no-match" style="margin-top:20px;">Calcul du pronostic IA...</div>';
+            modal.style.display = 'flex';
+
+            try {
+                const response = await fetch('/predict/match', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        home_team: homeTeam,
+                        away_team: awayTeam,
+                        home_expected_goals: 3.1,
+                        away_expected_goals: 2.7
+                    })
+                });
+                const data = await response.json();
+                const p = data.probabilities;
+
+                body.innerHTML = `
+                    <div class="prono-box">
+                        <div class="prob-row">
+                            <span>🏠 Victoire ${homeTeam}</span>
+                            <strong>${p.home_win}%</strong>
+                        </div>
+                        <div class="prob-bar-container"><div class="prob-bar home" style="width: ${p.home_win}%"></div></div>
+
+                        <div class="prob-row">
+                            <span>🤝 Match Nul</span>
+                            <strong>${p.draw}%</strong>
+                        </div>
+                        <div class="prob-bar-container"><div class="prob-bar draw" style="width: ${p.draw}%"></div></div>
+
+                        <div class="prob-row">
+                            <span>✈️ Victoire ${awayTeam}</span>
+                            <strong>${p.away_win}%</strong>
+                        </div>
+                        <div class="prob-bar-container"><div class="prob-bar away" style="width: ${p.away_win}%"></div></div>
+                    </div>
+                `;
+            } catch (err) {
+                body.innerHTML = '<div class="no-match" style="color:#ef4444;">Impossible de calculer la prédiction.</div>';
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('prono-modal').style.display = 'none';
+        }
+
         generateDateStrip(selectedDateStr);
         chargerMatchs(selectedDateStr);
     </script>
