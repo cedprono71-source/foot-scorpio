@@ -86,3 +86,26 @@ def predict_match(data: MatchRequest):
             data.away_team: away_scorers
         }
     }
+# Route pour récupérer automatiquement les matchs NHL du jour
+@app.get("/api/matches/nhl")
+def get_todays_nhl_matches():
+    url = "https://api-web.nhle.com/v1/schedule/now"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            game_week = data.get("gameWeek", [])
+            if game_week:
+                games = game_week[0].get("games", [])
+                matches = []
+                for g in games:
+                    matches.append({
+                        "id": g.get("id"),
+                        "home_team": g.get("homeTeam", {}).get("placeName", {}).get("default"),
+                        "away_team": g.get("awayTeam", {}).get("placeName", {}).get("default"),
+                        "time": g.get("startTimeUTC")
+                    })
+                return {"matches": matches}
+        return {"matches": []}
+    except Exception as e:
+        return {"error": str(e)}
