@@ -103,6 +103,18 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
         return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
         
     try:
+        # 1. Obtenir l'alignement actif (pour filtrer les blessés/absents)
+        active_player_ids = set()
+        roster_url = f"https://api-web.nhle.com/v1/roster/{team_abbrev}/current"
+        roster_res = requests.get(roster_url)
+        if roster_res.status_code == 200:
+            roster_data = roster_res.json()
+            for group in ["forwards", "defensemen"]:
+                for p in roster_data.get(group, []):
+                    if p.get("status") not in ["IR", "LTIR", "OUT"]:
+                        active_player_ids.add(p.get("id"))
+
+        # 2. Récupérer les stats cumulées
         url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
         response = requests.get(url)
         if response.status_code == 200:
@@ -110,6 +122,11 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
             skaters = data.get("skaters", [])
             
             for p in skaters:
+                p_id = p.get("playerId")
+                # Si le joueur n'est pas dans l'alignement actif, on l'ignore
+                if active_player_ids and p_id not in active_player_ids:
+                    continue
+
                 gp = max(1, p.get("gamesPlayed", 1))
                 goals = p.get("goals", 0)
                 assists = p.get("assists", 0)
