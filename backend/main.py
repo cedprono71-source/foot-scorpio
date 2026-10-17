@@ -5,6 +5,7 @@ import numpy as np
 from scipy.stats import poisson
 import requests
 import os
+from datetime import datetime, timedelta
 
 app = FastAPI(title="NHL IA Pronostics")
 
@@ -37,8 +38,15 @@ def predict_match(match: MatchInput):
 
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
-    url = f"https://api-web.nhle.com/v1/schedule/{date}"
     try:
+        # Si une date spécifique est demandée, on élargit la recherche de -1 à +1 jour pour attraper les décalages horaires
+        target_date = datetime.strptime(date, "%Y-%m-%d") if date != "now" else datetime.now()
+        start_date = (target_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        end_date = (target_date + timedelta(days=2)).strftime("%Y-%m-%d")
+        
+        # On interroge l'endpoint par intervalle (schedule/YYYY-MM-DD/YYYY-MM-DD)
+        url = f"https://api-web.nhle.com/v1/schedule/{start_date}"
+        
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
@@ -52,7 +60,6 @@ def get_nhl_matches(date: str = "now"):
                     home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
                     away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
                     
-                    # Récupération des logos officiels NHL
                     home_logo = home_obj.get("logo", "")
                     away_logo = away_obj.get("logo", "")
                     
