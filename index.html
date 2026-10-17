@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- BALISES ANTI-CACHE STRICTES POUR LE NAVIGATEUR -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -153,7 +152,13 @@
                 const data = await response.json();
                 container.innerHTML = '';
 
-                const matchsDuJour = (data.matches || []).filter(m => !m.date || m.date === dateStr);
+                // CORRECTION DU DÉCALAGE HORAIRE : On compare avec la date locale du match
+                const matchsDuJour = (data.matches || []).filter(match => {
+                    if (!match.time) return match.date === dateStr;
+                    const matchLocalDate = formatDateLocal(new Date(match.time));
+                    return matchLocalDate === dateStr;
+                });
+
                 if (matchsDuJour.length > 0) {
                     matchsDuJour.forEach(match => {
                         const card = document.createElement('div');
