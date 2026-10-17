@@ -27,10 +27,6 @@ class MatchInput(BaseModel):
     home_players: list[Player] = []
     away_players: list[Player] = []
 
-@app.get("/")
-def home():
-    return {"message": "Bienvenue sur l'API de Pronostics IA. Visitez /docs pour voir la documentation de l'API."}
-
 @app.post("/predict/match")
 def predict_match(match: MatchInput):
     max_goals = 10
@@ -78,7 +74,7 @@ def get_todays_nhl_matches():
     except Exception as e:
         return {"error": str(e)}
 
-# Route pour afficher l'interface frontend (index.html)
+# Route unique pour la page d'accueil qui sert le fichier index.html
 @app.get("/", response_class=HTMLResponse)
 def lire_index():
     chemins_possibles = [
