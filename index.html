@@ -83,29 +83,42 @@
 
     <script>
         const daysFr = ['DI', 'LU', 'MA', 'ME', 'JE', 'VE', 'SA'];
+        
+        function formatDateLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        const todayDate = new Date();
+        const todayStr = formatDateLocal(todayDate);
         let selectedDateStr = null;
-        const todayStr = new Date().toISOString().split('T')[0];
 
         function generateDateStrip(centerDateStr) {
             const strip = document.getElementById('date-strip');
             strip.innerHTML = '';
-            const centerDate = new Date(centerDateStr || todayStr);
+            
+            let parts = (centerDateStr || todayStr).split('-');
+            let baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
 
             for (let i = -7; i <= 7; i++) {
-                const d = new Date(centerDate);
-                d.setDate(d.getDate() + i);
+                let d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + i);
+                let dateStr = formatDateLocal(d);
+                let isToday = (dateStr === todayStr);
+                let dayName = isToday ? 'AJD' : daysFr[d.getDay()];
+                let dayNum = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
 
-                const dateStr = d.toISOString().split('T')[0];
-                const isToday = (dateStr === todayStr);
-                const dayName = isToday ? 'AJD' : daysFr[d.getDay()];
-                const dayNum = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
-
-                const item = document.createElement('div');
+                let item = document.createElement('div');
                 item.className = `date-item ${dateStr === selectedDateStr ? 'active' : ''}`;
                 item.dataset.date = dateStr;
                 item.onclick = () => selectDate(dateStr, item);
                 item.innerHTML = `<span class="day-name">${dayName}</span><span class="day-num">${dayNum}</span>`;
                 strip.appendChild(item);
+                
+                if (dateStr === selectedDateStr || (!selectedDateStr && isToday)) {
+                    setTimeout(() => { item.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); }, 100);
+                }
             }
         }
 
