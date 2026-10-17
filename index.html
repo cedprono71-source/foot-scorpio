@@ -3,34 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NHL Predictor IA</title>
+    <title>NHL IA - Pronostics en direct</title>
     <style>
-        body {
-            background-color: #0b0f19;
-            color: #ffffff;
-            font-family: sans-serif;
-            padding: 20px;
-            text-align: center;
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
         }
-        .card {
-            background-color: #161e2e;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: var(--accent);
+            font-size: 1.8rem;
+        }
+        .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 25px;
+        }
+        .match-card {
+            background-color: var(--card-bg);
             border-radius: 12px;
             padding: 16px;
-            margin-top: 20px;
-            border: 1px solid #3b82f6;
+            margin-bottom: 15px;
+            border: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .teams {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        .time {
+            font-size: 0.85rem;
+            color: var(--accent);
+            margin-top: 5px;
+        }
+        button {
+            background-color: var(--accent);
+            color: #0f172a;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        #loading {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 20px;
         }
     </style>
 </head>
 <body>
 
-    <h1>🏒 NHL Predictor IA</h1>
-    <p style="color: #10b981;">✅ Application en ligne !</p>
+<div class="container">
+    <h1>🏒 NHL IA Pronostics</h1>
+    <p class="subtitle">Matchs officiels du jour</p>
 
-    <div class="card">
-        <h3>Boston Bruins vs Toronto Leafs</h3>
-        <p>Probabilité : <strong>58% - 42%</strong></p>
-        <p style="color: #10b981;">🔥 Value Bet disponible</p>
-    </div>
+    <div id="loading">Chargement des matchs en direct...</div>
+    <div id="matches-list"></div>
+</div>
+
+<script>
+    const API_URL = "https://nhl-ia.onrender.com";
+
+    async function chargerMatchs() {
+        const loadingDiv = document.getElementById("loading");
+        const matchesListDiv = document.getElementById("matches-list");
+
+        try {
+            const response = await fetch(`${API_URL}/api/matches/nhl`);
+            const data = await response.json();
+
+            loadingDiv.style.display = "none";
+
+            if (!data.matches || data.matches.length === 0) {
+                matchesListDiv.innerHTML = "<p style='text-align:center;'>Aucun match prévu aujourd'hui.</p>";
+                return;
+            }
+
+            data.matches.forEach(match => {
+                const card = document.createElement("div");
+                card.className = "match-card";
+                
+                // Formater l'heure
+                const dateMatch = new Date(match.time);
+                const heureFormatted = dateMatch.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                card.innerHTML = `
+                    <div>
+                        <div class="teams">${match.home_team} vs ${match.away_team}</div>
+                        <div class="time">⏰ ${heureFormatted}</div>
+                    </div>
+                    <button onclick="analyserMatch('${match.home_team}', '${match.away_team}')">Pronostic</button>
+                `;
+                matchesListDiv.appendChild(card);
+            });
+
+        } catch (error) {
+            loadingDiv.innerText = "Erreur de chargement. Le serveur Render est peut-être en train de démarrer...";
+        }
+    }
+
+    function analyserMatch(domicile, exterieur) {
+        alert(`Lancement de l'analyse IA pour : ${domicile} vs ${exterieur}`);
+    }
+
+    // Charger les matchs au lancement
+    chargerMatchs();
+</script>
 
 </body>
 </html>
