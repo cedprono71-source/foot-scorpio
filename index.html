@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     
-    <title>Pronostics IA - Suivi & Bilan</title>
+    <title>Pronostics IA - NHL & Football</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f7f7f7; color: #111111; padding: 0; }
@@ -15,8 +15,8 @@
         header { background-color: #0d1e2b; padding: 12px 16px; color: #ffffff; }
         .header-title { font-size: 1.1rem; font-weight: bold; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
         
-        .sport-selector { display: flex; gap: 8px; background-color: #162838; padding: 3px; border-radius: 6px; }
-        .sport-tab { flex: 1; text-align: center; padding: 6px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s; }
+        .sport-selector { display: flex; gap: 6px; background-color: #162838; padding: 3px; border-radius: 6px; }
+        .sport-tab { flex: 1; text-align: center; padding: 6px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s; white-space: nowrap; }
         .sport-tab.active { background-color: #e11238; color: #ffffff; }
 
         .date-strip-container { background-color: #ffffff; display: flex; align-items: center; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 100; }
@@ -113,8 +113,9 @@
     <header>
         <div class="header-title"><span id="app-icon">🏒</span> <span id="app-title">NHL IA Pronostics</span></div>
         <div class="sport-selector">
-            <div class="sport-tab active" id="tab-nhl" onclick="switchSport('nhl')">🏒 Matchs NHL</div>
-            <div class="sport-tab" id="tab-history" onclick="switchSport('history')">📈 Bilan & Taux %</div>
+            <div class="sport-tab active" id="tab-nhl" onclick="switchSport('nhl')">🏒 NHL</div>
+            <div class="sport-tab" id="tab-football" onclick="switchSport('football')">⚽ Football</div>
+            <div class="sport-tab" id="tab-history" onclick="switchSport('history')">📈 Bilan</div>
         </div>
     </header>
 
@@ -160,6 +161,7 @@
         function switchSport(sport) {
             currentSport = sport;
             document.querySelectorAll('.sport-tab').forEach(tab => tab.classList.remove('active'));
+            const container = document.getElementById('matches-container');
             
             if (sport === 'nhl') {
                 document.getElementById('tab-nhl').classList.add('active');
@@ -167,6 +169,13 @@
                 document.getElementById('app-icon').innerText = '🏒';
                 document.getElementById('app-title').innerText = 'NHL IA Pronostics';
                 if (selectedDateStr) chargerMatchs(selectedDateStr);
+            } else if (sport === 'football') {
+                document.getElementById('tab-football').classList.add('active');
+                document.getElementById('date-strip-wrapper').style.display = 'none';
+                document.getElementById('app-icon').innerText = '⚽';
+                document.getElementById('app-title').innerText = 'Football IA Pronostics';
+                document.getElementById('section-title').innerText = "SECTION FOOTBALL";
+                container.innerHTML = '<div class="no-match">⚽ Section Football en cours d\'intégration.</div>';
             } else if (sport === 'history') {
                 document.getElementById('tab-history').classList.add('active');
                 document.getElementById('date-strip-wrapper').style.display = 'none';
@@ -417,7 +426,7 @@
                         </div>
                         <div class="prob-bar-container"><div class="prob-bar over" style="width: ${ou.over_prob}%"></div></div>
 
-                        <div class="prono-section-title" style="margin-top:10px;">🥅 Gardiens & ⚡ Power Play</div>
+                        <div class="prono-section-title" style="margin-top:10px;">` + "🥅 Gardiens & ⚡ Power Play" + `</div>
                         <div class="goalies-box">
                             <div class="goalie-card">
                                 <div class="goalie-name">${goalies.home?.name || 'Gardien A'}</div>
