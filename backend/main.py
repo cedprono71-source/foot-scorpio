@@ -121,6 +121,8 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
     if not team_abbrev:
         return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
         
+    MANUAL_INJURED_PLAYERS = ["travis konecny"] 
+    
     try:
         active_player_ids = set()
         roster_url = f"https://api-web.nhle.com/v1/roster/{team_abbrev}/current"
@@ -129,8 +131,9 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
             roster_data = roster_res.json()
             for group in ["forwards", "defensemen"]:
                 for p in roster_data.get(group, []):
-                    if p.get("status") not in ["IR", "LTIR", "OUT"]:
-                        active_player_ids.add(p.get("id"))
+                    if p.get("status") in ["IR", "LTIR", "OUT"]:
+                        continue
+                    active_player_ids.add(p.get("id"))
 
         url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
         response = requests.get(url)
@@ -139,6 +142,11 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
             skaters = data.get("skaters", [])
             
             for p in skaters:
+                name = f"{p.get('firstName', {}).get('default', '')} {p.get('lastName', {}).get('default', '')}"
+                
+                if name.lower() in MANUAL_INJURED_PLAYERS:
+                    continue
+                
                 p_id = p.get("playerId")
                 if active_player_ids and p_id not in active_player_ids:
                     continue
@@ -156,7 +164,6 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                 assist_prob = min(90, round((1 - np.exp(-a_pg * (expected_team_goals / 3.0))) * 100, 1))
                 point_prob = min(95, round((1 - np.exp(-pts_pg * (expected_team_goals / 3.0))) * 100, 1))
                 
-                name = f"{p.get('firstName', {}).get('default', '')} {p.get('lastName', {}).get('default', '')}"
                 position = p.get("positionCode", "F")
                 
                 players.append({
