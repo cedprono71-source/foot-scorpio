@@ -121,7 +121,6 @@ def lire_index():
     return "<h1>Fichier index.html introuvable</h1>"
 from fastapi.responses import HTMLResponse
 import os
-
 @app.get("/", response_class=HTMLResponse)
 def lire_index():
     chemins_possibles = [
