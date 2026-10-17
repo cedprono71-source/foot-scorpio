@@ -297,8 +297,8 @@
                         card.innerHTML = `
                             <div class="match-left">
                                 <div class="teams-list">
-                                    <div class="team-item">${homeLogoHtml}${match.home_team}</div>
-                                    <div class="team-item">${awayLogoHtml}${match.away_team}</div>
+                                    <div class="team-item">${homeLogoHtml} ${match.home_team}</div>
+                                    <div class="team-item">${awayLogoHtml} ${match.away_team}</div>
                                 </div>
                             </div>
                             <div class="match-right">
@@ -361,7 +361,8 @@
                         <div class="history-item">
                             <div>
                                 <div class="history-match-title">${item.match}</div>
-                                <div class="history-sub">📅 ${item.date} \vert{} Prédit: <b>${item.predicted_winner}</b> (${item.predicted_score})</div>${item.actual_score ? `<div class="history-sub" style="color:#10b981;">Score Réel: <b>${item.actual_score}</b></div>` : ''}
+                                <div class="history-sub">📅 ${item.date} | Prédit: <b>${item.predicted_winner}</b> (${item.predicted_score})</div>
+                                ${item.actual_score ? `<div class="history-sub" style="color:#10b981;">Score Réel: <b>${item.actual_score}</b></div>` : ''}
                             </div>
                             <div>${badgeWinner}</div>
                         </div>
@@ -415,4 +416,141 @@
                 let injuriesHtml = '';
                 if (inj.home.length > 0 || inj.away.length > 0) {
                     injuriesHtml = `
-                        <div class="prono-section-title" style="margin-top:10px;">
+                        <div class="prono-section-title" style="margin-top:10px;">🚨 Absences Signatatives</div>
+                        <div class="injuries-box">
+                            ${inj.home.length > 0 ? `<div><b>${homeTeam}:</b>${inj.home.join(', ')}</div>` : ''}
+                            ${inj.away.length > 0 ? `<div><b>${awayTeam}:</b>${inj.away.join(', ')}</div>` : ''}
+                        </div>
+                    `;
+                }
+
+                body.innerHTML = `
+                    <div class="prono-box">
+                        <div style="text-align:center;"><span class="ia-badge-tag">🤖 CONSENSUS 6 IA ACTIF</span></div>
+                        
+                        <div class="prono-section-title">🎯 Score Prédit</div>
+                        <div class="predicted-score-box">
+                            <span class="predicted-score-val">${data.predicted_score}</span>
+                        </div>
+
+                        <div class="prono-section-title">📊 Probabilités Multi-IA</div>
+                        <div class="prob-row">
+                            <span>Victoire ${homeTeam}</span>
+                            <strong>${p.home_win}%</strong>
+                        </div>
+                        <div class="prob-bar-container"><div class="prob-bar home" style="width: ${p.home_win}%"></div></div>
+
+                        <div class="prob-row">
+                            <span>Match Nul</span>
+                            <strong>${p.draw}%</strong>
+                        </div>
+                        <div class="prob-bar-container"><div class="prob-bar draw" style="width: ${p.draw}%"></div></div>
+
+                        <div class="prob-row">
+                            <span>Victoire ${awayTeam}</span>
+                            <strong>${p.away_win}%</strong>
+                        </div>
+                        <div class="prob-bar-container"><div class="prob-bar away" style="width: ${p.away_win}%"></div></div>
+
+                        <div class="prono-section-title" style="margin-top:10px;">🏒 Total Buts (Over / Under 5.5)</div>
+                        <div class="prob-row">
+                            <span>Plus de 5.5 buts</span>
+                            <strong>${ou.over_prob}%</strong>
+                        </div>
+                        <div class="prob-bar-container"><div class="prob-bar over" style="width: ${ou.over_prob}%"></div></div>
+
+                        <div class="prono-section-title" style="margin-top:10px;">🥅 Gardiens & ⚡ Power Play</div>
+                        <div class="goalies-box">
+                            <div class="goalie-card">
+                                <div class="goalie-name">${goalies.home?.name || 'Gardien A'}</div>
+                                <div>SV%: <b>${(goalies.home?.save_pct * 100).toFixed(1)}%</b></div>
+                                <div>⚡ PP: <b>${st.home_pp || '20'}%</b></div>
+                            </div>
+                            <div class="goalie-card">
+                                <div class="goalie-name">${goalies.away?.name || 'Gardien B'}</div>
+                                <div>SV%: <b>${(goalies.away?.save_pct * 100).toFixed(1)}%</b></div>
+                                <div>⚡ PP: <b>${st.away_pp || '18'}%</b></div>
+                            </div>
+                        </div>
+
+                        ${injuriesHtml}
+
+                        <div class="prono-section-title" style="margin-top:12px;">👤 Projections Joueurs (Point %)</div>
+                        <div class="team-tabs-players">
+                            <div class="team-tab-btn active" id="btn-p-home" onclick="renderPlayersList('home', '${homeTeam}')">${homeTeam}</div>
+                            <div class="team-tab-btn" id="btn-p-away" onclick="renderPlayersList('away', '${awayTeam}')">${awayTeam}</div>
+                        </div>
+
+                        <div id="players-list-box"></div>
+                    </div>
+                `;
+
+                renderPlayersList('home', homeTeam);
+            } catch (err) {
+                body.innerHTML = '<div class="no-match" style="color:#ef4444;">Erreur lors du calcul.</div>';
+            }
+        }
+
+        function renderPlayersList(side, teamName) {
+            document.querySelectorAll('.team-tab-btn').forEach(b => b.classList.remove('active'));
+            const activeBtn = document.getElementById(`btn-p-${side}`);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            const teamData = currentMatchPlayers[side] || { all: [], top_scorer: null, top_passer: null };
+            const list = teamData.all || [];
+            const topScorer = teamData.top_scorer;
+            const topPasser = teamData.top_passer;
+            
+            const box = document.getElementById('players-list-box');
+
+            if (list.length === 0) {
+                box.innerHTML = '<div class="no-match" style="padding:15px;">Aucune donnée disponible.</div>';
+                return;
+            }
+
+            let picksHtml = '';
+            if (topScorer || topPasser) {
+                picksHtml = `
+                    <div class="ia-picks-box">
+                        ${topScorer ? `<div class="ia-pick-item"><span class="ia-pick-label">🎯 Buteur Favori IA :</span><span class="ia-pick-val">${topScorer.name} (${topScorer.goal_prob}%)</span></div>` : ''}
+                        ${topPasser ? `<div class="ia-pick-item"><span class="ia-pick-label">🏒 Passeur Favori IA :</span><span class="ia-pick-val">${topPasser.name} (${topPasser.assist_prob}%)</span></div>` : ''}
+                    </div>
+                `;
+            }
+
+            let rows = list.map(p => `
+                <tr>
+                    <td><b>${p.name}</b> <span style="color:#888;">(${p.pos})</span></td>
+                    <td>${p.goals}B / ${p.assists}P</td>
+                    <td class="prob-badge">${p.point_prob}%</td>
+                </tr>
+            `).join('');
+
+            box.innerHTML = `
+                ${picksHtml}
+                <div class="players-table-container">
+                    <table class="players-table">
+                        <thead>
+                            <tr>
+                                <th>Joueur</th>
+                                <th>Stats</th>
+                                <th>Point %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function closeModal() {
+            document.getElementById('prono-modal').style.display = 'none';
+        }
+
+        generateDateStrip(todayStr);
+        selectDate(todayStr, document.querySelector(`.date-item[data-date="${todayStr}"]`));
+    </script>
+</body>
+</html>
