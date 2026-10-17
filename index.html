@@ -26,8 +26,9 @@
         
         .match-card { background-color: #0d1e2b; border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #162838; cursor: pointer; transition: background-color 0.2s; }
         .match-card:active { background-color: #142838; }
-        .teams-container { display: flex; flex-direction: column; gap: 6px; }
+        .teams-container { display: flex; flex-direction: column; gap: 8px; }
         .team-row { display: flex; align-items: center; gap: 10px; font-size: 0.95rem; font-weight: 600; color: #f1f5f9; }
+        .team-logo { width: 24px; height: 24px; object-fit: contain; }
         .match-action { display: flex; align-items: center; gap: 8px; }
         .match-status { background-color: #162838; color: #38bdf8; font-size: 0.8rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; }
         .btn-prono { background-color: #e11238; color: #ffffff; font-size: 0.75rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; border: none; }
@@ -37,7 +38,12 @@
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
         .modal-content { background-color: #0d1e2b; border-radius: 12px; border: 1px solid #1c3245; width: 100%; max-width: 400px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); position: relative; }
         .modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; color: #8fa3b3; font-size: 1.5rem; cursor: pointer; }
-        .modal-title { font-size: 1rem; font-weight: bold; text-align: center; margin-bottom: 16px; color: #ffffff; }
+        .modal-header-teams { display: flex; align-items: center; justify-content: space-around; margin: 15px 0; }
+        .modal-team-box { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; width: 40%; }
+        .modal-team-logo { width: 48px; height: 48px; object-fit: contain; }
+        .modal-team-name { font-size: 0.85rem; font-weight: bold; }
+        .vs-badge { font-size: 0.8rem; font-weight: bold; color: #8fa3b3; background: #162838; padding: 4px 8px; border-radius: 4px; }
+        
         .prono-box { background-color: #06141d; border-radius: 8px; padding: 14px; margin-top: 12px; }
         .prob-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9rem; }
         .prob-bar-container { background-color: #162838; height: 8px; border-radius: 4px; width: 100%; overflow: hidden; margin-bottom: 12px; }
@@ -68,7 +74,7 @@
     <div class="modal-overlay" id="prono-modal">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal()">✕</button>
-            <div class="modal-title" id="modal-match-title">Analyse du Match</div>
+            <div id="modal-teams-header"></div>
             <div id="modal-body">
                 <div class="no-match" style="margin-top: 20px;">Calcul du pronostic IA...</div>
             </div>
@@ -77,7 +83,7 @@
 
     <script>
         const daysFr = ['DI', 'LU', 'MA', 'ME', 'JE', 'VE', 'SA'];
-        let selectedDateStr = null; // Aucune date sélectionnée au départ
+        let selectedDateStr = null;
         const todayStr = new Date().toISOString().split('T')[0];
 
         function generateDateStrip(centerDateStr) {
@@ -134,14 +140,18 @@
                     matchsDuJour.forEach(match => {
                         const card = document.createElement('div');
                         card.className = 'match-card';
-                        card.onclick = () => showPrediction(match.home_team, match.away_team);
+                        card.onclick = () => showPrediction(match.home_team, match.away_team, match.home_logo, match.away_logo);
                         const matchTime = match.time 
                             ? new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
                             : 'TBD';
+                        
+                        const homeLogoHtml = match.home_logo ? `<img src="${match.home_logo}" class="team-logo">` : '🏠';
+                        const awayLogoHtml = match.away_logo ? `<img src="${match.away_logo}" class="team-logo">` : '✈️';
+
                         card.innerHTML = `
                             <div class="teams-container">
-                                <div class="team-row">🏠 ${match.home_team}</div>
-                                <div class="team-row">✈️ ${match.away_team}</div>
+                                <div class="team-row">${homeLogoHtml} ${match.home_team}</div>
+                                <div class="team-row">${awayLogoHtml} ${match.away_team}</div>
                             </div>
                             <div class="match-action">
                                 <span class="match-status">${matchTime}</span>
@@ -158,12 +168,22 @@
             }
         }
 
-        async function showPrediction(homeTeam, awayTeam) {
+        async function showPrediction(homeTeam, awayTeam, homeLogo, awayLogo) {
             const modal = document.getElementById('prono-modal');
-            const title = document.getElementById('modal-match-title');
+            const headerTeams = document.getElementById('modal-teams-header');
             const body = document.getElementById('modal-body');
 
-            title.innerText = `${homeTeam} vs ${awayTeam}`;
+            const hLogo = homeLogo ? `<img src="${homeLogo}" class="modal-team-logo">` : '🏠';
+            const aLogo = awayLogo ? `<img src="${awayLogo}" class="modal-team-logo">` : '✈️';
+
+            headerTeams.innerHTML = `
+                <div class="modal-header-teams">
+                    <div class="modal-team-box">${hLogo}<span class="modal-team-name">${homeTeam}</span></div>
+                    <span class="vs-badge">VS</span>
+                    <div class="modal-team-box">${aLogo}<span class="modal-team-name">${awayTeam}</span></div>
+                </div>
+            `;
+
             body.innerHTML = '<div class="no-match" style="margin-top:20px;">Calcul du pronostic IA...</div>';
             modal.style.display = 'flex';
 
@@ -184,19 +204,19 @@
                 body.innerHTML = `
                     <div class="prono-box">
                         <div class="prob-row">
-                            <span>🏠 Victoire ${homeTeam}</span>
+                            <span>Victoire ${homeTeam}</span>
                             <strong>${p.home_win}%</strong>
                         </div>
                         <div class="prob-bar-container"><div class="prob-bar home" style="width: ${p.home_win}%"></div></div>
 
                         <div class="prob-row">
-                            <span>🤝 Match Nul</span>
+                            <span>Match Nul</span>
                             <strong>${p.draw}%</strong>
                         </div>
                         <div class="prob-bar-container"><div class="prob-bar draw" style="width: ${p.draw}%"></div></div>
 
                         <div class="prob-row">
-                            <span>✈️ Victoire ${awayTeam}</span>
+                            <span>Victoire ${awayTeam}</span>
                             <strong>${p.away_win}%</strong>
                         </div>
                         <div class="prob-bar-container"><div class="prob-bar away" style="width: ${p.away_win}%"></div></div>
@@ -211,7 +231,6 @@
             document.getElementById('prono-modal').style.display = 'none';
         }
 
-        // Génère la barre de dates autour d'aujourd'hui mais ne charge AUCUN match automatiquement
         generateDateStrip(todayStr);
     </script>
 </body>
