@@ -8,38 +8,6 @@ import os
 
 app = FastAPI(title="NHL IA Pronostics")
 
-class Player(BaseModel):
-    name: str
-    position: str
-    goal_share: float
-    is_penalty_taker: bool = False
-    powerplay_line1: bool = False
-
-class MatchInput(BaseModel):
-    home_team: str
-    away_team: str
-    home_expected_goals: float
-    away_expected_goals: float
-    home_players: list[Player] = []
-    away_players: list[Player] = []
-
-@app.post("/predict/match")
-def predict_match(match: MatchInput):
-    max_goals = 10
-    matrix = np.zeros((max_goals, max_goals))
-    for h in range(max_goals):
-        for a in range(max_goals):
-            matrix[h, a] = poisson.pmf(h, match.home_expected_goals) * poisson.pmf(a, match.away_expected_goals)
-            
-    return {
-        "match": f"{match.home_team} vs {match.away_team}",
-        "probabilities": {
-            "home_win": round(float(np.sum(np.tril(matrix, -1))) * 100, 2),
-            "draw": round(float(np.sum(np.diag(matrix))) * 100, 2),
-            "away_win": round(float(np.sum(np.triu(matrix, 1))) * 100, 2)
-        }
-    }
-
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
     url = f"https://api-web.nhle.com/v1/schedule/{date}"
@@ -65,6 +33,5 @@ def lire_index():
     for path in [os.path.join(base_dir, "..", "index.html"), os.path.join(base_dir, "index.html"), "index.html"]:
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
-                # Ajout d'en-têtes No-Cache pour forcer le navigateur à recharger
                 return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return "<h1>index.html introuvable</h1>"
