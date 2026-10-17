@@ -74,6 +74,30 @@ def fetch_goalie_stats(team_abbrev):
         pass
     return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
 
+def fetch_team_roster_and_injuries(team_abbrev):
+    """Récupère l'effectif complet et simule/détecte les absences clés"""
+    injuries = []
+    injury_malus = 1.0
+    if not team_abbrev:
+        return {"injuries": injuries, "malus": injury_malus}
+        
+    try:
+        url = f"https://api-web.nhle.com/v1/roster/{team_abbrev}/current"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            for group in ["forwards", "defensemen"]:
+                for player in data.get(group, []):
+                    # Détection d'état d'inactivité si présent dans l'API
+                    if player.get("status") in ["IR", "LTIR", "OUT"]:
+                        p_name = f"{player.get('firstName', {}).get('default', '')} {player.get('lastName', {}).get('default', '')}"
+                        injuries.append(p_name)
+                        injury_malus -= 0.05
+    except Exception:
+        pass
+        
+    return {"injuries": injuries, "malus": max(0.75, round(injury_malus, 2))}
+
 def fetch_all_players_projections(team_abbrev, expected_team_goals):
     players = []
     top_scorer, top_passer = None, None
@@ -151,24 +175,32 @@ def predict_match(match: MatchInput):
     home_goalie = fetch_goalie_stats(home_abbrev)
     away_goalie = fetch_goalie_stats(away_abbrev)
 
+    home_injuries_data = fetch_team_roster_and_injuries(home_abbrev)
+    away_injuries_data = fetch_team_roster_and_injuries(away_abbrev)
+
+    # --- IA 1 : Poisson Standard ---
     mat1 = calculate_poisson_matrix(3.1, 2.7)
     p1_home = float(np.sum(np.tril(mat1, -1))) * 100
 
-    h_xg2 = home_st["offense"] * 1.08
-    a_xg2 = away_st["offense"] * 0.92
+    # --- IA 2 : Saison & Impact Blessures ---
+    h_xg2 = home_st["offense"] * 1.08 * home_injuries_data["malus"]
+    a_xg2 = away_st["offense"] * 0.92 * away_injuries_data["malus"]
     mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
     p2_home = float(np.sum(np.tril(mat2, -1))) * 100
 
-    h_xg3 = max(1.5, home_st["offense"] - (away_st["defense"] * 0.1) + 0.2)
-    a_xg3 = max(1.5, away_st["offense"] - (home_st["defense"] * 0.1))
+    # --- IA 3 : Tactique / Défense ---
+    h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2) * home_injuries_data["malus"])
+    a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)) * away_injuries_data["malus"])
     mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
     p3_home = float(np.sum(np.tril(mat3, -1))) * 100
 
+    # --- IA 4 : Modèle Gardiens ---
     h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
     a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
     mat4 = calculate_poisson_matrix(h_xg4, a_xg4)
     p4_home = float(np.sum(np.tril(mat4, -1))) * 100
 
+    # --- IA 5 : Unités Spéciales (PP vs PK) ---
     pp_advantage_home = home_st["pp_pct"] * (1 - away_st["pk_pct"]) * 10.0
     pp_advantage_away = away_st["pp_pct"] * (1 - home_st["pk_pct"]) * 10.0
     h_xg5 = max(1.2, h_xg2 + pp_advantage_home)
@@ -176,6 +208,7 @@ def predict_match(match: MatchInput):
     mat5 = calculate_poisson_matrix(h_xg5, a_xg5)
     p5_home = float(np.sum(np.tril(mat5, -1))) * 100
 
+    # --- IA 6 : Fatigue & Calendrier ---
     home_fatigue = 0.88 if match.home_b2b else 1.0
     away_fatigue = 0.88 if match.away_b2b else 0.95
     h_xg6 = max(1.2, h_xg2 * home_fatigue)
@@ -221,6 +254,10 @@ def predict_match(match: MatchInput):
         "special_teams": {
             "home_pp": round(home_st["pp_pct"] * 100, 1),
             "away_pp": round(away_st["pp_pct"] * 100, 1)
+        },
+        "injuries": {
+            "home": home_injuries_data["injuries"],
+            "away": away_injuries_data["injuries"]
         },
         "players": {
             "home": home_players_data,
