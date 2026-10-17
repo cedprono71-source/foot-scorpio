@@ -7,13 +7,19 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     
-    <title>NHL IA - Pronostics</title>
+    <title>Multi-Sports IA - Pronostics</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #06141d; color: #ffffff; padding: 0; }
-        header { background-color: #06141d; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #142331; }
-        .header-title { font-size: 1.2rem; font-weight: bold; color: #ffffff; display: flex; align-items: center; gap: 8px; }
         
+        header { background-color: #06141d; padding: 14px 16px; border-bottom: 1px solid #142331; }
+        .header-title { font-size: 1.2rem; font-weight: bold; color: #ffffff; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        
+        /* BARRE DE SÉLECTION DU SPORT */
+        .sport-selector { display: flex; gap: 8px; background-color: #0d1e2b; padding: 4px; border-radius: 8px; border: 1px solid #162838; }
+        .sport-tab { flex: 1; text-align: center; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s; }
+        .sport-tab.active { background-color: #e11238; color: #ffffff; }
+
         .date-strip-container { background-color: #ffffff; display: flex; align-items: center; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 100; }
         .calendar-btn { padding: 10px 14px; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e0e0e0; position: relative; cursor: pointer; background: #ffffff; }
         .calendar-btn input[type="date"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
@@ -59,7 +65,11 @@
 </head>
 <body>
     <header>
-        <div class="header-title"><span>🏒</span> NHL IA Pronostics</div>
+        <div class="header-title"><span id="app-icon">🏒</span> <span id="app-title">NHL IA Pronostics</span></div>
+        <div class="sport-selector">
+            <div class="sport-tab active" id="tab-nhl" onclick="switchSport('nhl')">🏒 Hockey (NHL)</div>
+            <div class="sport-tab" id="tab-football" onclick="switchSport('football')">⚽ Football</div>
+        </div>
     </header>
 
     <div class="date-strip-container">
@@ -87,6 +97,7 @@
 
     <script>
         const daysFr = ['DI', 'LU', 'MA', 'ME', 'JE', 'VE', 'SA'];
+        let currentSport = 'nhl'; // 'nhl' ou 'football'
         
         function formatDateLocal(date) {
             const year = date.getFullYear();
@@ -99,6 +110,25 @@
         const todayStr = formatDateLocal(todayDate);
         let selectedDateStr = null;
 
+        function switchSport(sport) {
+            currentSport = sport;
+            document.querySelectorAll('.sport-tab').forEach(tab => tab.classList.remove('active'));
+            
+            if (sport === 'nhl') {
+                document.getElementById('tab-nhl').classList.add('active');
+                document.getElementById('app-icon').innerText = '🏒';
+                document.getElementById('app-title').innerText = 'NHL IA Pronostics';
+            } else {
+                document.getElementById('tab-football').classList.add('active');
+                document.getElementById('app-icon').innerText = '⚽';
+                document.getElementById('app-title').innerText = 'Football IA Pronostics';
+            }
+
+            if (selectedDateStr) {
+                chargerMatchs(selectedDateStr);
+            }
+        }
+
         function generateDateStrip(centerDateStr) {
             const strip = document.getElementById('date-strip');
             strip.innerHTML = '';
@@ -109,7 +139,6 @@
             let todayObj = new Date();
             todayObj.setHours(0,0,0,0);
 
-            // On génère uniquement à partir d'aujourd'hui et pour les 14 jours suivants (zéro date passée)
             for (let i = 0; i <= 14; i++) {
                 let d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + i);
                 let dateStr = formatDateLocal(d);
@@ -150,6 +179,11 @@
         async function chargerMatchs(dateStr) {
             const container = document.getElementById('matches-container');
             container.innerHTML = '<div class="no-match">Chargement des matchs en cours...</div>';
+
+            if (currentSport === 'football') {
+                container.innerHTML = '<div class="no-match">⚽ Section Football en cours d\'intégration.<br>L\'API de football sera bientôt connectée !</div>';
+                return;
+            }
 
             try {
                 const response = await fetch(`/api/matches/nhl?date=${dateStr}`);
