@@ -1,449 +1,301 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    
-    <title>Pronostics IA - Suivi Blessures</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f7f7f7; color: #111111; padding: 0; }
-        
-        header { background-color: #0d1e2b; padding: 12px 16px; color: #ffffff; }
-        .header-title { font-size: 1.1rem; font-weight: bold; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-        
-        .sport-selector { display: flex; gap: 8px; background-color: #162838; padding: 3px; border-radius: 6px; }
-        .sport-tab { flex: 1; text-align: center; padding: 6px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s; }
-        .sport-tab.active { background-color: #e11238; color: #ffffff; }
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+import numpy as np
+from scipy.stats import poisson
+import requests
+import os
+from datetime import datetime, timedelta
 
-        .date-strip-container { background-color: #ffffff; display: flex; align-items: center; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 100; }
-        .calendar-btn { padding: 10px 12px; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e0e0e0; position: relative; cursor: pointer; background: #ffffff; }
-        .calendar-btn input[type="date"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-        .date-strip { display: flex; overflow-x: auto; white-space: nowrap; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; scrollbar-width: none; width: 100%; }
-        .date-strip::-webkit-scrollbar { display: none; }
-        .date-item { flex: 0 0 auto; width: 54px; padding: 8px 0 6px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; background: #ffffff; }
-        .date-item .day-name { font-size: 0.65rem; font-weight: 700; color: #666666; text-transform: uppercase; }
-        .date-item .day-num { font-size: 0.8rem; font-weight: 700; color: #111111; margin-top: 2px; }
-        .date-item.active .day-name, .date-item.active .day-num { color: #e11238; }
-        .date-item.active::after { content: ''; position: absolute; bottom: 0; left: 15%; width: 70%; height: 3px; background-color: #e11238; }
+app = FastAPI(title="Multi-IA NHL Pronostics")
 
-        .main-content { background-color: #ffffff; min-height: 100vh; }
-        .section-title { font-size: 0.75rem; font-weight: 700; color: #666666; text-transform: uppercase; padding: 12px 16px 8px 16px; background-color: #f4f4f4; border-bottom: 1px solid #e8e8e8; }
-        
-        .match-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #eeeeee; background-color: #ffffff; cursor: pointer; transition: background 0.1s; }
-        .match-row:active { background-color: #f5f5f5; }
-        
-        .match-left { display: flex; align-items: center; gap: 12px; flex: 1; }
-        .star-icon { font-size: 1.2rem; color: #ffcc00; cursor: pointer; }
-        
-        .teams-list { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-        .team-item { display: flex; align-items: center; gap: 10px; font-size: 0.95rem; font-weight: 500; color: #222222; }
-        .team-logo { width: 22px; height: 22px; object-fit: contain; }
-        
-        .match-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-        .match-time { font-size: 0.85rem; font-weight: 600; color: #777777; }
-        .btn-prono-badge { background-color: #e11238; color: #ffffff; font-size: 0.7rem; font-weight: 700; padding: 3px 7px; border-radius: 4px; border: none; }
+class MatchInput(BaseModel):
+    home_team: str
+    away_team: str
+    home_expected_goals: float = 3.1
+    away_expected_goals: float = 2.7
+    home_b2b: bool = False
+    away_b2b: bool = False
 
-        .no-match { text-align: center; color: #888888; padding: 40px 16px; font-size: 0.9rem; }
-
-        /* MODALE POP-UP PRONOSTIC */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 12px; }
-        .modal-content { background-color: #ffffff; border-radius: 12px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto; padding: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); position: relative; color: #111111; }
-        .modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; color: #888888; font-size: 1.5rem; cursor: pointer; }
-        .modal-header-teams { display: flex; align-items: center; justify-content: space-around; margin: 10px 0; }
-        .modal-team-box { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; width: 40%; }
-        .modal-team-logo { width: 40px; height: 40px; object-fit: contain; }
-        .modal-team-name { font-size: 0.85rem; font-weight: bold; color: #111111; }
-        .vs-badge { font-size: 0.75rem; font-weight: bold; color: #666666; background: #f0f0f0; padding: 4px 8px; border-radius: 4px; }
-        
-        .prono-box { background-color: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; border: 1px solid #e9ecef; }
-        .prono-section-title { font-size: 0.75rem; font-weight: bold; color: #0d1e2b; text-transform: uppercase; margin-bottom: 8px; }
-        .predicted-score-box { background-color: #0d1e2b; text-align: center; padding: 8px; border-radius: 6px; margin-bottom: 10px; }
-        .predicted-score-val { font-size: 1.3rem; font-weight: bold; color: #22c55e; }
-        
-        .prob-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 0.82rem; color: #333333; }
-        .prob-bar-container { background-color: #e2e8f0; height: 7px; border-radius: 4px; width: 100%; overflow: hidden; margin-bottom: 8px; }
-        .prob-bar { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
-        .prob-bar.home { background-color: #22c55e; }
-        .prob-bar.draw { background-color: #eab308; }
-        .prob-bar.away { background-color: #ef4444; }
-        .prob-bar.over { background-color: #a855f7; }
-
-        /* GARDIENS & BLESSURES */
-        .goalies-box { display: flex; gap: 8px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 6px; padding: 8px; margin-top: 8px; margin-bottom: 10px; }
-        .goalie-card { flex: 1; font-size: 0.75rem; color: #0369a1; }
-        .goalie-name { font-weight: bold; margin-bottom: 2px; }
-
-        .injuries-box { background: #fff1f2; border: 1px solid #fecdd3; border-radius: 6px; padding: 8px; margin-top: 8px; margin-bottom: 10px; font-size: 0.75rem; color: #be123c; }
-
-        .ia-badge-tag { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 4px; padding: 2px 6px; font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; }
-
-        /* FAVORIS BUTEUR / PASSEUR */
-        .ia-picks-box { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; margin-top: 8px; margin-bottom: 10px; }
-        .ia-pick-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; padding: 3px 0; }
-        .ia-pick-label { font-weight: bold; color: #0f172a; display: flex; align-items: center; gap: 4px; }
-        .ia-pick-val { font-weight: 700; color: #e11238; }
-
-        /* TABLEAU JOUEURS */
-        .team-tabs-players { display: flex; gap: 6px; margin-top: 10px; border-bottom: 2px solid #e2e8f0; }
-        .team-tab-btn { flex: 1; padding: 6px; text-align: center; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #666; background: #edf2f7; border-radius: 4px 4px 0 0; }
-        .team-tab-btn.active { background: #0d1e2b; color: #fff; }
-
-        .players-table-container { max-height: 200px; overflow-y: auto; margin-top: 8px; }
-        .players-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
-        .players-table th { background: #f1f5f9; position: sticky; top: 0; padding: 6px; text-align: left; color: #475569; }
-        .players-table td { padding: 6px; border-bottom: 1px solid #f1f5f9; }
-        .prob-badge { font-weight: bold; color: #0284c7; }
-    </style>
-</head>
-<body>
-    <header>
-        <div class="header-title"><span id="app-icon">🏒</span> <span id="app-title">NHL IA Pronostics</span></div>
-        <div class="sport-selector">
-            <div class="sport-tab active" id="tab-nhl" onclick="switchSport('nhl')">🏒 Hockey (NHL)</div>
-            <div class="sport-tab" id="tab-football" onclick="switchSport('football')">⚽ Football</div>
-        </div>
-    </header>
-
-    <div class="date-strip-container">
-        <div class="calendar-btn" title="Sélectionner une date">📅<input type="date" id="calendar-picker" onchange="onCustomDateSelect(this.value)"></div>
-        <div class="date-strip" id="date-strip"></div>
-    </div>
-
-    <div class="main-content">
-        <div class="section-title" id="section-title">SELECTIONNEZ UNE DATE</div>
-        <div id="matches-container">
-            <div class="no-match">👈 Choisissez une date ci-dessus pour afficher les matchs.</div>
-        </div>
-    </div>
-
-    <!-- POP-UP PRONOSTIC -->
-    <div class="modal-overlay" id="prono-modal">
-        <div class="modal-content">
-            <button class="modal-close" onclick="closeModal()">✕</button>
-            <div id="modal-teams-header"></div>
-            <div id="modal-body">
-                <div class="no-match" style="margin-top: 20px;">Calcul du pronostic IA...</div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const daysFr = ['DI', 'LU', 'MA', 'ME', 'JE', 'VE', 'SA'];
-        let currentSport = 'nhl';
-        let currentMatchPlayers = {};
-        
-        function formatDateLocal(date) {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        }
-
-        const todayDate = new Date();
-        const todayStr = formatDateLocal(todayDate);
-        let selectedDateStr = null;
-
-        function switchSport(sport) {
-            currentSport = sport;
-            document.querySelectorAll('.sport-tab').forEach(tab => tab.classList.remove('active'));
-            
-            if (sport === 'nhl') {
-                document.getElementById('tab-nhl').classList.add('active');
-                document.getElementById('app-icon').innerText = '🏒';
-                document.getElementById('app-title').innerText = 'NHL IA Pronostics';
-            } else {
-                document.getElementById('tab-football').classList.add('active');
-                document.getElementById('app-icon').innerText = '⚽';
-                document.getElementById('app-title').innerText = 'Football IA Pronostics';
-            }
-
-            if (selectedDateStr) {
-                chargerMatchs(selectedDateStr);
-            }
-        }
-
-        function generateDateStrip(centerDateStr) {
-            const strip = document.getElementById('date-strip');
-            strip.innerHTML = '';
-            
-            let parts = (centerDateStr || todayStr).split('-');
-            let baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
-
-            let todayObj = new Date();
-            todayObj.setHours(0,0,0,0);
-
-            for (let i = 0; i <= 14; i++) {
-                let d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + i);
-                let dateStr = formatDateLocal(d);
+def fetch_team_stats():
+    stats_map = {}
+    try:
+        url = "https://api-web.nhle.com/v1/standings/now"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            for record in data.get("standings", []):
+                team_name = record.get("teamName", {}).get("default", "")
+                place_name = record.get("placeName", {}).get("default", "")
+                full_name = f"{place_name} {team_name}".strip()
+                abbrev = record.get("teamAbbrev", {}).get("default", "")
                 
-                let dCompare = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-                if (dCompare < todayObj) continue;
+                goals_for = record.get("goalFor", 0)
+                goals_against = record.get("goalAgainst", 0)
+                games_played = max(1, record.get("gamesPlayed", 1))
+                
+                offense = round(goals_for / games_played, 2)
+                defense = round(goals_against / games_played, 2)
+                
+                pp_pct = round(min(0.30, max(0.12, (offense / 3.0) * 0.20)), 3)
+                pk_pct = round(min(0.88, max(0.70, 0.80 + (2.8 - defense) * 0.05)), 3)
 
-                let isToday = (dateStr === todayStr);
-                let dayName = isToday ? 'AJD' : daysFr[d.getDay()];
-                let dayNum = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
-
-                let item = document.createElement('div');
-                item.className = `date-item ${dateStr === selectedDateStr ? 'active' : ''}`;
-                item.dataset.date = dateStr;
-                item.onclick = () => selectDate(dateStr, item);
-                item.innerHTML = `<span class="day-name">${dayName}</span><span class="day-num">${dayNum}</span>`;
-                strip.appendChild(item);
-            }
-        }
-
-        function selectDate(dateStr, element) {
-            selectedDateStr = dateStr;
-            document.querySelectorAll('.date-item').forEach(el => el.classList.remove('active'));
-            if (element) { element.classList.add('active'); }
-            
-            document.getElementById('section-title').innerText = `MATCHS DU ${dateStr.split('-').reverse().join('/')}`;
-            chargerMatchs(dateStr);
-        }
-
-        function onCustomDateSelect(dateStr) {
-            if (!dateStr) return;
-            selectedDateStr = dateStr;
-            generateDateStrip(dateStr);
-            document.getElementById('section-title').innerText = `MATCHS DU ${dateStr.split('-').reverse().join('/')}`;
-            chargerMatchs(dateStr);
-        }
-
-        async function chargerMatchs(dateStr) {
-            const container = document.getElementById('matches-container');
-            container.innerHTML = '<div class="no-match">Chargement des matchs...</div>';
-
-            if (currentSport === 'football') {
-                container.innerHTML = '<div class="no-match">⚽ Section Football en cours d\'intégration.</div>';
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/matches/nhl?date=${dateStr}`);
-                const data = await response.json();
-                container.innerHTML = '';
-
-                const matchsDuJour = (data.matches || []).filter(match => {
-                    if (!match.time) return match.date === dateStr;
-                    const matchLocalDate = formatDateLocal(new Date(match.time));
-                    return matchLocalDate === dateStr;
-                });
-
-                if (matchsDuJour.length > 0) {
-                    matchsDuJour.forEach(match => {
-                        const row = document.createElement('div');
-                        row.className = 'match-row';
-                        row.onclick = () => showPrediction(match.home_team, match.away_team, match.home_logo, match.away_logo);
-                        
-                        const matchTime = match.time 
-                            ? new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-                            : '00:00';
-                        
-                        const homeLogoHtml = match.home_logo ? `<img src="${match.home_logo}" class="team-logo">` : '🏒';
-                        const awayLogoHtml = match.away_logo ? `<img src="${match.away_logo}" class="team-logo">` : '🏒';
-
-                        row.innerHTML = `
-                            <div class="match-left">
-                                <span class="star-icon">★</span>
-                                <div class="teams-list">
-                                    <div class="team-item">${homeLogoHtml} ${match.home_team}</div>
-                                    <div class="team-item">${awayLogoHtml} ${match.away_team}</div>
-                                </div>
-                            </div>
-                            <div class="match-right">
-                                <span class="match-time">${matchTime}</span>
-                                <button class="btn-prono-badge">Prono 📊</button>
-                            </div>
-                        `;
-                        container.appendChild(row);
-                    });
-                } else {
-                    container.innerHTML = '<div class="no-match">Aucun match prévu à cette date.</div>';
+                stats_map[full_name.lower()] = {
+                    "abbrev": abbrev,
+                    "offense": max(2.0, offense), 
+                    "defense": max(2.0, defense),
+                    "pp_pct": pp_pct,
+                    "pk_pct": pk_pct
                 }
-            } catch (error) {
-                container.innerHTML = '<div class="no-match" style="color: #ef4444;">Erreur lors du chargement.</div>';
-            }
+    except Exception:
+        pass
+    return stats_map
+
+def fetch_goalie_stats(team_abbrev):
+    if not team_abbrev:
+        return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
+    try:
+        url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            goalies = data.get("goalies", [])
+            if goalies:
+                top_goalie = max(goalies, key=lambda x: x.get("gamesPlayed", 0))
+                name = f"{top_goalie.get('firstName', {}).get('default', '')} {top_goalie.get('lastName', {}).get('default', '')}"
+                sv_pct = top_goalie.get("savePercentage", 0.905)
+                gaa = top_goalie.get("goalsAgainstAverage", 2.80)
+                return {
+                    "name": name,
+                    "save_pct": round(sv_pct, 3) if sv_pct else 0.905,
+                    "gaa": round(gaa, 2) if gaa else 2.80
+                }
+    except Exception:
+        pass
+    return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
+
+def fetch_team_roster_and_injuries(team_abbrev):
+    injuries = []
+    injury_malus = 1.0
+    if not team_abbrev:
+        return {"injuries": injuries, "malus": injury_malus}
+        
+    try:
+        url = f"https://api-web.nhle.com/v1/roster/{team_abbrev}/current"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            for group in ["forwards", "defensemen"]:
+                for player in data.get(group, []):
+                    if player.get("status") in ["IR", "LTIR", "OUT"]:
+                        p_name = f"{player.get('firstName', {}).get('default', '')} {player.get('lastName', {}).get('default', '')}"
+                        injuries.append(p_name)
+                        injury_malus -= 0.05
+    except Exception:
+        pass
+        
+    return {"injuries": injuries, "malus": max(0.75, round(injury_malus, 2))}
+
+def fetch_all_players_projections(team_abbrev, expected_team_goals):
+    players = []
+    top_scorer, top_passer = None, None
+    if not team_abbrev:
+        return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
+        
+    try:
+        url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            skaters = data.get("skaters", [])
+            
+            for p in skaters:
+                gp = max(1, p.get("gamesPlayed", 1))
+                goals = p.get("goals", 0)
+                assists = p.get("assists", 0)
+                points = goals + assists
+                
+                g_pg = goals / gp
+                a_pg = assists / gp
+                pts_pg = points / gp
+                
+                goal_prob = min(90, round((1 - np.exp(-g_pg * (expected_team_goals / 3.0))) * 100, 1))
+                assist_prob = min(90, round((1 - np.exp(-a_pg * (expected_team_goals / 3.0))) * 100, 1))
+                point_prob = min(95, round((1 - np.exp(-pts_pg * (expected_team_goals / 3.0))) * 100, 1))
+                
+                name = f"{p.get('firstName', {}).get('default', '')} {p.get('lastName', {}).get('default', '')}"
+                position = p.get("positionCode", "F")
+                
+                players.append({
+                    "name": name,
+                    "pos": position,
+                    "goals": goals,
+                    "assists": assists,
+                    "points": points,
+                    "goal_prob": goal_prob,
+                    "assist_prob": assist_prob,
+                    "point_prob": point_prob
+                })
+                
+            players = sorted(players, key=lambda x: x["point_prob"], reverse=True)
+            if players:
+                top_scorer = max(players, key=lambda x: x["goal_prob"])
+                top_passer = max(players, key=lambda x: x["assist_prob"])
+    except Exception:
+        pass
+        
+    return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
+
+def calculate_poisson_matrix(home_xg, away_xg):
+    max_goals = 10
+    matrix = np.zeros((max_goals, max_goals))
+    for h in range(max_goals):
+        for a in range(max_goals):
+            matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
+    return matrix
+
+@app.post("/predict/match")
+def predict_match(match: MatchInput):
+    team_stats = fetch_team_stats()
+    
+    home_abbrev, away_abbrev = "", ""
+    home_st = {"offense": 3.1, "defense": 2.7, "pp_pct": 0.20, "pk_pct": 0.80}
+    away_st = {"offense": 2.9, "defense": 2.9, "pp_pct": 0.18, "pk_pct": 0.78}
+    
+    for name, st in team_stats.items():
+        if name in match.home_team.lower() or match.home_team.lower() in name:
+            home_st = st
+            home_abbrev = st.get("abbrev", "")
+        if name in match.away_team.lower() or match.away_team.lower() in name:
+            away_st = st
+            away_abbrev = st.get("abbrev", "")
+
+    home_goalie = fetch_goalie_stats(home_abbrev)
+    away_goalie = fetch_goalie_stats(away_abbrev)
+
+    home_injuries_data = fetch_team_roster_and_injuries(home_abbrev)
+    away_injuries_data = fetch_team_roster_and_injuries(away_abbrev)
+
+    mat1 = calculate_poisson_matrix(3.1, 2.7)
+    p1_home = float(np.sum(np.tril(mat1, -1))) * 100
+
+    h_xg2 = home_st["offense"] * 1.08 * home_injuries_data["malus"]
+    a_xg2 = away_st["offense"] * 0.92 * away_injuries_data["malus"]
+    mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
+    p2_home = float(np.sum(np.tril(mat2, -1))) * 100
+
+    h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2) * home_injuries_data["malus"])
+    a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)) * away_injuries_data["malus"])
+    mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
+    p3_home = float(np.sum(np.tril(mat3, -1))) * 100
+
+    h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
+    a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
+    mat4 = calculate_poisson_matrix(h_xg4, a_xg4)
+    p4_home = float(np.sum(np.tril(mat4, -1))) * 100
+
+    pp_advantage_home = home_st["pp_pct"] * (1 - away_st["pk_pct"]) * 10.0
+    pp_advantage_away = away_st["pp_pct"] * (1 - home_st["pk_pct"]) * 10.0
+    h_xg5 = max(1.2, h_xg2 + pp_advantage_home)
+    a_xg5 = max(1.2, a_xg2 + pp_advantage_away)
+    mat5 = calculate_poisson_matrix(h_xg5, a_xg5)
+    p5_home = float(np.sum(np.tril(mat5, -1))) * 100
+
+    home_fatigue = 0.88 if match.home_b2b else 1.0
+    away_fatigue = 0.88 if match.away_b2b else 0.95
+    h_xg6 = max(1.2, h_xg2 * home_fatigue)
+    a_xg6 = max(1.2, a_xg2 * away_fatigue)
+    mat6 = calculate_poisson_matrix(h_xg6, a_xg6)
+    p6_home = float(np.sum(np.tril(mat6, -1))) * 100
+
+    final_home_win = round((p1_home + p2_home + p3_home + p4_home + p5_home + p6_home) / 6, 1)
+    final_away_win = round(max(5.0, 100 - final_home_win - 15.0), 1)
+    final_draw = round(15.0, 1)
+
+    final_h_xg = (h_xg2 + h_xg4 + h_xg5 + h_xg6) / 4
+    final_a_xg = (a_xg2 + a_xg4 + a_xg5 + a_xg6) / 4
+    mat_final = calculate_poisson_matrix(final_h_xg, final_a_xg)
+
+    best_score = np.unravel_index(np.argmax(mat_final), mat_final.shape)
+
+    over_5_5_prob = 0.0
+    for h in range(10):
+        for a in range(10):
+            if h + a > 5.5:
+                over_5_5_prob += mat_final[h, a]
+
+    home_players_data = fetch_all_players_projections(home_abbrev, final_h_xg)
+    away_players_data = fetch_all_players_projections(away_abbrev, final_a_xg)
+
+    return {
+        "match": f"{match.home_team} vs {match.away_team}",
+        "probabilities": {
+            "home_win": final_home_win,
+            "draw": final_draw,
+            "away_win": final_away_win
+        },
+        "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
+        "over_under_5_5": {
+            "over_prob": round(over_5_5_prob * 100, 1),
+            "under_prob": round((1 - over_5_5_prob) * 100, 1)
+        },
+        "goalies": {
+            "home": home_goalie,
+            "away": away_goalie
+        },
+        "special_teams": {
+            "home_pp": round(home_st["pp_pct"] * 100, 1),
+            "away_pp": round(away_st["pp_pct"] * 100, 1)
+        },
+        "injuries": {
+            "home": home_injuries_data["injuries"],
+            "away": away_injuries_data["injuries"]
+        },
+        "players": {
+            "home": home_players_data,
+            "away": away_players_data
         }
+    }
 
-        async function showPrediction(homeTeam, awayTeam, homeLogo, awayLogo) {
-            const modal = document.getElementById('prono-modal');
-            const headerTeams = document.getElementById('modal-teams-header');
-            const body = document.getElementById('modal-body');
-
-            const hLogo = homeLogo ? `<img src="${homeLogo}" class="modal-team-logo">` : '🏒';
-            const aLogo = awayLogo ? `<img src="${awayLogo}" class="modal-team-logo">` : '🏒';
-
-            headerTeams.innerHTML = `
-                <div class="modal-header-teams">
-                    <div class="modal-team-box">${hLogo}<span class="modal-team-name">${homeTeam}</span></div>
-                    <span class="vs-badge">VS</span>
-                    <div class="modal-team-box">${aLogo}<span class="modal-team-name">${awayTeam}</span></div>
-                </div>
-            `;
-
-            body.innerHTML = '<div class="no-match" style="margin-top:20px;">Analyse IA & Blessures en cours...</div>';
-            modal.style.display = 'flex';
-
-            try {
-                const response = await fetch('/predict/match', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        home_team: homeTeam,
-                        away_team: awayTeam,
-                        home_expected_goals: 3.1,
-                        away_expected_goals: 2.7
+@app.get("/api/matches/nhl")
+def get_nhl_matches(date: str = "now"):
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d") if date != "now" else datetime.now()
+        start_date = (target_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        url = f"https://api-web.nhle.com/v1/schedule/{start_date}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            matches = []
+            for day in data.get("gameWeek", []):
+                game_date = day.get("date")
+                for g in day.get("games", []):
+                    home_obj = g.get("homeTeam", {})
+                    away_obj = g.get("awayTeam", {})
+                    
+                    home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
+                    away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
+                    
+                    matches.append({
+                        "id": g.get("id"),
+                        "date": game_date,
+                        "home_team": home_name,
+                        "away_team": away_name,
+                        "home_logo": home_obj.get("logo", ""),
+                        "away_logo": away_obj.get("logo", ""),
+                        "time": g.get("startTimeUTC")
                     })
-                });
-                const data = await response.json();
-                const p = data.probabilities;
-                const ou = data.over_under_5_5;
-                const goalies = data.goalies || {};
-                const st = data.special_teams || {};
-                const inj = data.injuries || { home: [], away: [] };
-                currentMatchPlayers = data.players || { home: {all: []}, away: {all: []} };
+            return {"matches": matches}
+        return {"matches": []}
+    except Exception as e:
+        return {"error": str(e)}
 
-                let injuriesHtml = '';
-                if (inj.home.length > 0 || inj.away.length > 0) {
-                    injuriesHtml = `
-                        <div class="prono-section-title" style="margin-top:10px;">🚨 Absences Signatatives</div>
-                        <div class="injuries-box">
-                            ${inj.home.length > 0 ? `<div><b>${homeTeam}:</b>${inj.home.join(', ')}</div>` : ''}
-                            ${inj.away.length > 0 ? `<div><b>${awayTeam}:</b>${inj.away.join(', ')}</div>` : ''}
-                        </div>
-                    `;
-                }
-
-                body.innerHTML = `
-                    <div class="prono-box">
-                        <div style="text-align:center;"><span class="ia-badge-tag">🤖 CONSENSUS 6 IA ACTIF</span></div>
-                        
-                        <div class="prono-section-title">🎯 Score Prédit</div>
-                        <div class="predicted-score-box">
-                            <span class="predicted-score-val">${data.predicted_score}</span>
-                        </div>
-
-                        <div class="prono-section-title">📊 Probabilités Multi-IA</div>
-                        <div class="prob-row">
-                            <span>Victoire ${homeTeam}</span>
-                            <strong>${p.home_win}%</strong>
-                        </div>
-                        <div class="prob-bar-container"><div class="prob-bar home" style="width: ${p.home_win}%"></div></div>
-
-                        <div class="prob-row">
-                            <span>Match Nul</span>
-                            <strong>${p.draw}%</strong>
-                        </div>
-                        <div class="prob-bar-container"><div class="prob-bar draw" style="width: ${p.draw}%"></div></div>
-
-                        <div class="prob-row">
-                            <span>Victoire ${awayTeam}</span>
-                            <strong>${p.away_win}%</strong>
-                        </div>
-                        <div class="prob-bar-container"><div class="prob-bar away" style="width: ${p.away_win}%"></div></div>
-
-                        <div class="prono-section-title" style="margin-top:10px;">🏒 Total Buts (Over / Under 5.5)</div>
-                        <div class="prob-row">
-                            <span>Plus de 5.5 buts</span>
-                            <strong>${ou.over_prob}%</strong>
-                        </div>
-                        <div class="prob-bar-container"><div class="prob-bar over" style="width: ${ou.over_prob}%"></div></div>
-
-                        <div class="prono-section-title" style="margin-top:10px;">🥅 Gardiens & ⚡ Power Play</div>
-                        <div class="goalies-box">
-                            <div class="goalie-card">
-                                <div class="goalie-name">${goalies.home?.name || 'Gardien A'}</div>
-                                <div>SV%: <b>${(goalies.home?.save_pct * 100).toFixed(1)}%</b></div>
-                                <div>⚡ PP: <b>${st.home_pp || '20'}%</b></div>
-                            </div>
-                            <div class="goalie-card">
-                                <div class="goalie-name">${goalies.away?.name || 'Gardien B'}</div>
-                                <div>SV%: <b>${(goalies.away?.save_pct * 100).toFixed(1)}%</b></div>
-                                <div>⚡ PP: <b>${st.away_pp || '18'}%</b></div>
-                            </div>
-                        </div>
-
-                        ${injuriesHtml}
-
-                        <div class="prono-section-title" style="margin-top:12px;">👤 Projections Joueurs (Point %)</div>
-                        <div class="team-tabs-players">
-                            <div class="team-tab-btn active" id="btn-p-home" onclick="renderPlayersList('home', '${homeTeam}')">${homeTeam}</div>
-                            <div class="team-tab-btn" id="btn-p-away" onclick="renderPlayersList('away', '${awayTeam}')">${awayTeam}</div>
-                        </div>
-
-                        <div id="players-list-box"></div>
-                    </div>
-                `;
-
-                renderPlayersList('home', homeTeam);
-            } catch (err) {
-                body.innerHTML = '<div class="no-match" style="color:#ef4444;">Erreur lors du calcul.</div>';
-            }
-        }
-
-        function renderPlayersList(side, teamName) {
-            document.querySelectorAll('.team-tab-btn').forEach(b => b.classList.remove('active'));
-            const activeBtn = document.getElementById(`btn-p-${side}`);
-            if (activeBtn) activeBtn.classList.add('active');
-
-            const teamData = currentMatchPlayers[side] || { all: [], top_scorer: null, top_passer: null };
-            const list = teamData.all || [];
-            const topScorer = teamData.top_scorer;
-            const topPasser = teamData.top_passer;
-            
-            const box = document.getElementById('players-list-box');
-
-            if (list.length === 0) {
-                box.innerHTML = '<div class="no-match" style="padding:15px;">Aucune donnée disponible.</div>';
-                return;
-            }
-
-            let picksHtml = '';
-            if (topScorer || topPasser) {
-                picksHtml = `
-                    <div class="ia-picks-box">
-                        ${topScorer ? `<div class="ia-pick-item"><span class="ia-pick-label">🎯 Buteur Favori IA :</span><span class="ia-pick-val">${topScorer.name} (${topScorer.goal_prob}%)</span></div>` : ''}
-                        ${topPasser ? `<div class="ia-pick-item"><span class="ia-pick-label">🏒 Passeur Favori IA :</span><span class="ia-pick-val">${topPasser.name} (${topPasser.assist_prob}%)</span></div>` : ''}
-                    </div>
-                `;
-            }
-
-            let rows = list.map(p => `
-                <tr>
-                    <td><b>${p.name}</b> <span style="color:#888;">(${p.pos})</span></td>
-                    <td>${p.goals}B / ${p.assists}P</td>
-                    <td class="prob-badge">${p.point_prob}%</td>
-                </tr>
-            `).join('');
-
-            box.innerHTML = `
-                ${picksHtml}
-                <div class="players-table-container">
-                    <table class="players-table">
-                        <thead>
-                            <tr>
-                                <th>Joueur</th>
-                                <th>Stats</th>
-                                <th>Point %</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rows}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        }
-
-        function closeModal() {
-            document.getElementById('prono-modal').style.display = 'none';
-        }
-
-        generateDateStrip(todayStr);
-    </script>
-</body>
-</html>
+@app.get("/", response_class=HTMLResponse)
+def lire_index():
+    base_dir = os.path.dirname(__file__)
+    for path in [os.path.join(base_dir, "..", "index.html"), os.path.join(base_dir, "index.html"), "index.html"]:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return "<h1>index.html introuvable</h1>"
