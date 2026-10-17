@@ -17,60 +17,51 @@ class MatchInput(BaseModel):
     home_b2b: bool = False
     away_b2b: bool = False
 
-# Dictionnaire de puissance offensive/défensive approximative par équipe pour personnaliser chaque match
-# (Buts moyens marqués/encaissés)
-TEAM_STATS = {
-    "Edmonton": {"offense": 3.6, "defense": 2.8},
-    "Colorado": {"offense": 3.5, "defense": 2.9},
-    "Dallas": {"offense": 3.4, "defense": 2.6},
-    "Florida": {"offense": 3.3, "defense": 2.7},
-    "Carolina": {"offense": 3.3, "defense": 2.5},
-    "Boston": {"offense": 3.2, "defense": 2.6},
-    "NY Rangers": {"offense": 3.3, "defense": 2.7},
-    "Toronto": {"offense": 3.5, "defense": 3.1},
-    "Vancouver": {"offense": 3.3, "defense": 2.8},
-    "Vegas": {"offense": 3.2, "defense": 2.8},
-    "Tampa Bay": {"offense": 3.4, "defense": 3.1},
-    "Winnipeg": {"offense": 3.1, "defense": 2.4},
-    "Nashville": {"offense": 3.1, "defense": 2.9},
-    "LA Kings": {"offense": 3.0, "defense": 2.6},
-    "New Jersey": {"offense": 3.2, "defense": 3.1},
-    "Minnesota": {"offense": 3.0, "defense": 3.0},
-    "Detroit": {"offense": 3.0, "defense": 3.2},
-    "St. Louis": {"offense": 2.8, "defense": 3.0},
-    "Washington": {"offense": 2.9, "defense": 3.1},
-    "Calgary": {"offense": 2.9, "defense": 3.1},
-    "Buffalo": {"offense": 2.9, "defense": 3.3},
-    "Seattle": {"offense": 2.8, "defense": 3.1},
-    "NY Islanders": {"offense": 2.7, "defense": 3.1},
-    "Philadelphia": {"offense": 2.8, "defense": 3.2},
-    "Pittsburgh": {"offense": 2.9, "defense": 3.3},
-    "Ottawa": {"offense": 3.1, "defense": 3.4},
-    "Montréal": {"offense": 2.8, "defense": 3.4},
-    "Utah": {"offense": 2.8, "defense": 3.3},
-    "Columbus": {"offense": 2.8, "defense": 3.5},
-    "Anaheim": {"offense": 2.5, "defense": 3.5},
-    "Chicago": {"offense": 2.4, "defense": 3.5},
-    "San Jose": {"offense": 2.2, "defense": 3.8}
-}
-
-def get_team_xg(team_name, is_home=True):
-    # Chercher les stats de l'équipe
-    stats = {"offense": 3.0, "defense": 3.0}
-    for name, s in TEAM_STATS.items():
-        if name.lower() in team_name.lower():
-            stats = s
-            break
-    
-    # Avantage du terrain (+10% pour l'équipe à domicile)
-    home_factor = 1.10 if is_home else 0.90
-    return round(stats["offense"] * home_factor, 2)
+# Récupération dynamique des stats via l'API officielle des classements NHL
+def fetch_team_stats():
+    stats_map = {}
+    try:
+        url = "https://api-web.nhle.com/v1/standings/now"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            for record in data.get("standings", []):
+                team_name = record.get("teamName", {}).get("default", "")
+                place_name = record.get("placeName", {}).get("default", "")
+                full_name = f"{place_name} {team_name}".strip()
+                
+                # Récupération des buts marqués et joués pour estimer la moyenne offensive/défensive
+                goals_for = record.get("goalFor", 0)
+                goals_against = record.get("goalAgainst", 0)
+                games_played = record.get("gamesPlayed", 1)
+                if games_played < 1:
+                    games_played = 1
+                
+                offense = round(goals_for / games_played, 2)
+                defense = round(goals_against / games_played, 2)
+                
+                stats_map[full_name.lower()] = {"offense": max(2.0, offense), "defense": max(2.0, defense)}
+    except Exception:
+        pass
+    return stats_map
 
 @app.post("/predict/match")
 def predict_match(match: MatchInput):
-    # Calcul dynamique des buts attendus selon les équipes
-    home_xg = get_team_xg(match.home_team, is_home=True)
-    away_xg = get_team_xg(match.away_team, is_home=False)
+    team_stats = fetch_team_stats()
+    
+    # Recherche des stats dynamiques ou valeurs par défaut équilibrées
+    home_st = {"offense": 3.1, "defense": 2.7}
+    away_st = {"offense": 2.9, "defense": 2.9}
+    
+    for name, st in team_stats.items():
+        if name in match.home_team.lower() or match.home_team.lower() in name:
+            home_st = st
+        if name in match.away_team.lower() or match.away_team.lower() in name:
+            away_st = st
+
+    # Avantage du terrain (+10% pour l'équipe à domicile)
+    home_xg = round(home_st["offense"] * 1.10, 2)
+    away_xg = round(away_st["offense"] * 0.90, 2)
     
     # Application du malus Back-to-Back (fatigue)
     if match.home_b2b:
