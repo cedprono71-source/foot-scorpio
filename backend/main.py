@@ -17,16 +17,70 @@ class MatchInput(BaseModel):
     home_b2b: bool = False
     away_b2b: bool = False
 
+# Dictionnaire de puissance offensive/défensive approximative par équipe pour personnaliser chaque match
+# (Buts moyens marqués/encaissés)
+TEAM_STATS = {
+    "Edmonton": {"offense": 3.6, "defense": 2.8},
+    "Colorado": {"offense": 3.5, "defense": 2.9},
+    "Dallas": {"offense": 3.4, "defense": 2.6},
+    "Florida": {"offense": 3.3, "defense": 2.7},
+    "Carolina": {"offense": 3.3, "defense": 2.5},
+    "Boston": {"offense": 3.2, "defense": 2.6},
+    "NY Rangers": {"offense": 3.3, "defense": 2.7},
+    "Toronto": {"offense": 3.5, "defense": 3.1},
+    "Vancouver": {"offense": 3.3, "defense": 2.8},
+    "Vegas": {"offense": 3.2, "defense": 2.8},
+    "Tampa Bay": {"offense": 3.4, "defense": 3.1},
+    "Winnipeg": {"offense": 3.1, "defense": 2.4},
+    "Nashville": {"offense": 3.1, "defense": 2.9},
+    "LA Kings": {"offense": 3.0, "defense": 2.6},
+    "New Jersey": {"offense": 3.2, "defense": 3.1},
+    "Minnesota": {"offense": 3.0, "defense": 3.0},
+    "Detroit": {"offense": 3.0, "defense": 3.2},
+    "St. Louis": {"offense": 2.8, "defense": 3.0},
+    "Washington": {"offense": 2.9, "defense": 3.1},
+    "Calgary": {"offense": 2.9, "defense": 3.1},
+    "Buffalo": {"offense": 2.9, "defense": 3.3},
+    "Seattle": {"offense": 2.8, "defense": 3.1},
+    "NY Islanders": {"offense": 2.7, "defense": 3.1},
+    "Philadelphia": {"offense": 2.8, "defense": 3.2},
+    "Pittsburgh": {"offense": 2.9, "defense": 3.3},
+    "Ottawa": {"offense": 3.1, "defense": 3.4},
+    "Montréal": {"offense": 2.8, "defense": 3.4},
+    "Utah": {"offense": 2.8, "defense": 3.3},
+    "Columbus": {"offense": 2.8, "defense": 3.5},
+    "Anaheim": {"offense": 2.5, "defense": 3.5},
+    "Chicago": {"offense": 2.4, "defense": 3.5},
+    "San Jose": {"offense": 2.2, "defense": 3.8}
+}
+
+def get_team_xg(team_name, is_home=True):
+    # Chercher les stats de l'équipe
+    stats = {"offense": 3.0, "defense": 3.0}
+    for name, s in TEAM_STATS.items():
+        if name.lower() in team_name.lower():
+            stats = s
+            break
+    
+    # Avantage du terrain (+10% pour l'équipe à domicile)
+    home_factor = 1.10 if is_home else 0.90
+    return round(stats["offense"] * home_factor, 2)
+
 @app.post("/predict/match")
 def predict_match(match: MatchInput):
-    # Ajustement des buts attendus selon le Back-to-Back (fatigue)
-    home_xg = match.home_expected_goals * (0.90 if match.home_b2b else 1.0)
-    away_xg = match.away_expected_goals * (0.90 if match.away_b2b else 1.0)
+    # Calcul dynamique des buts attendus selon les équipes
+    home_xg = get_team_xg(match.home_team, is_home=True)
+    away_xg = get_team_xg(match.away_team, is_home=False)
+    
+    # Application du malus Back-to-Back (fatigue)
+    if match.home_b2b:
+        home_xg *= 0.90
+    if match.away_b2b:
+        away_xg *= 0.90
     
     max_goals = 10
     matrix = np.zeros((max_goals, max_goals))
     
-    # Matrice des probabilités de score exact
     for h in range(max_goals):
         for a in range(max_goals):
             matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
