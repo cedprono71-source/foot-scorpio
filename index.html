@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     
-    <title>Pronostics IA - IA Gardiens</title>
+    <title>Pronostics IA - Consensus 6 IA</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f7f7f7; color: #111111; padding: 0; }
@@ -72,10 +72,12 @@
         .prob-bar.away { background-color: #ef4444; }
         .prob-bar.over { background-color: #a855f7; }
 
-        /* SECTION GARDIENS */
+        /* SECTION GARDIENS & POWER PLAY */
         .goalies-box { display: flex; gap: 8px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 6px; padding: 8px; margin-top: 8px; margin-bottom: 10px; }
         .goalie-card { flex: 1; font-size: 0.75rem; color: #0369a1; }
         .goalie-name { font-weight: bold; margin-bottom: 2px; }
+
+        .ia-badge-tag { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 4px; padding: 2px 6px; font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; }
 
         /* FAVORIS BUTEUR / PASSEUR */
         .ia-picks-box { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; margin-top: 8px; margin-bottom: 10px; }
@@ -281,7 +283,7 @@
                 </div>
             `;
 
-            body.innerHTML = '<div class="no-match" style="margin-top:20px;">Analyse Gardiens & Consensual...</div>';
+            body.innerHTML = '<div class="no-match" style="margin-top:20px;">Analyse par Consensus 6 IA...</div>';
             modal.style.display = 'flex';
 
             try {
@@ -299,11 +301,14 @@
                 const p = data.probabilities;
                 const ou = data.over_under_5_5;
                 const goalies = data.goalies || {};
+                const st = data.special_teams || {};
                 currentMatchPlayers = data.players || { home: {all: []}, away: {all: []} };
 
                 body.innerHTML = `
                     <div class="prono-box">
-                        <div class="prono-section-title">🎯 Score Prédit par 4 IA</div>
+                        <div style="text-align:center;"><span class="ia-badge-tag">🤖 CONSENSUS 6 IA ACTIF</span></div>
+                        
+                        <div class="prono-section-title">🎯 Score Prédit</div>
                         <div class="predicted-score-box">
                             <span class="predicted-score-val">${data.predicted_score}</span>
                         </div>
@@ -334,15 +339,17 @@
                         </div>
                         <div class="prob-bar-container"><div class="prob-bar over" style="width: ${ou.over_prob}%"></div></div>
 
-                        <div class="prono-section-title" style="margin-top:10px;">🥅 Duel de Gardiens</div>
+                        <div class="prono-section-title" style="margin-top:10px;">🥅 Gardiens & ⚡ Power Play</div>
                         <div class="goalies-box">
                             <div class="goalie-card">
                                 <div class="goalie-name">${goalies.home?.name || 'Gardien A'}</div>
                                 <div>SV%: <b>${(goalies.home?.save_pct * 100).toFixed(1)}%</b></div>
+                                <div>⚡ PP: <b>${st.home_pp || '20'}%</b></div>
                             </div>
                             <div class="goalie-card">
                                 <div class="goalie-name">${goalies.away?.name || 'Gardien B'}</div>
                                 <div>SV%: <b>${(goalies.away?.save_pct * 100).toFixed(1)}%</b></div>
+                                <div>⚡ PP: <b>${st.away_pp || '18'}%</b></div>
                             </div>
                         </div>
 
