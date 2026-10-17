@@ -262,7 +262,6 @@ def predict_match(match: MatchInput):
 
     predicted_winner = match.home_team if final_home_win >= final_away_win else match.away_team
 
-    # Enregistrement automatique dans l'historique
     history = load_history()
     match_key = f"{match.home_team}_vs_{match.away_team}_{datetime.now().strftime('%Y-%m-%d')}"
     if match_key not in history:
@@ -314,8 +313,6 @@ def predict_match(match: MatchInput):
 @app.get("/api/history")
 def get_prediction_history():
     history = load_history()
-    
-    # Vérification et mise à jour des résultats réels via la NHL API
     updated = False
     for key, item in history.items():
         if item.get("status") == "PENDING":
@@ -352,7 +349,6 @@ def get_prediction_history():
     if updated:
         save_history(history)
 
-    # Calcul des métriques globales de performance
     total = 0
     winner_wins = 0
     over_wins = 0
