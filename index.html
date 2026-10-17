@@ -10,16 +10,16 @@
     <title>Pronostics IA - NHL & Football</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f7f7f7; color: #111111; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f9; color: #111111; padding: 0; }
         
-        header { background-color: #0d1e2b; padding: 12px 16px; color: #ffffff; }
+        header { background-color: #0d1e2b; padding: 12px 16px; color: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
         .header-title { font-size: 1.1rem; font-weight: bold; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
         
         .sport-selector { display: flex; gap: 6px; background-color: #162838; padding: 3px; border-radius: 6px; }
         .sport-tab { flex: 1; text-align: center; padding: 6px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s; white-space: nowrap; }
         .sport-tab.active { background-color: #e11238; color: #ffffff; }
 
-        .date-strip-container { background-color: #ffffff; display: flex; align-items: center; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 100; }
+        .date-strip-container { background-color: #ffffff; display: flex; align-items: center; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.03); }
         .date-strip { display: flex; overflow-x: auto; white-space: nowrap; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; scrollbar-width: none; width: 100%; }
         .date-strip::-webkit-scrollbar { display: none; }
         .date-item { flex: 0 0 auto; width: 54px; padding: 8px 0 6px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; background: #ffffff; }
@@ -28,44 +28,60 @@
         .date-item.active .day-name, .date-item.active .day-num { color: #e11238; }
         .date-item.active::after { content: ''; position: absolute; bottom: 0; left: 15%; width: 70%; height: 3px; background-color: #e11238; }
 
-        .main-content { background-color: #ffffff; min-height: 100vh; }
-        .section-title { font-size: 0.75rem; font-weight: 700; color: #666666; text-transform: uppercase; padding: 12px 16px 8px 16px; background-color: #f4f4f4; border-bottom: 1px solid #e8e8e8; }
+        .main-content { background-color: #f4f6f9; min-height: 100vh; padding: 12px; }
+        .section-title { font-size: 0.75rem; font-weight: 700; color: #666666; text-transform: uppercase; padding: 6px 4px 12px 4px; letter-spacing: 0.5px; }
         
-        .match-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #eeeeee; background-color: #ffffff; cursor: pointer; transition: background 0.1s; }
-        .match-row:active { background-color: #f5f5f5; }
+        /* DESIGN MODERNE EN CARTES DE MATCHS (CARDS) */
+        .match-card { 
+            background-color: #ffffff; 
+            border-radius: 12px; 
+            padding: 14px 16px; 
+            margin-bottom: 10px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+            border: 1px solid #eaeef2;
+            cursor: pointer; 
+            transition: transform 0.1s ease, box-shadow 0.1s ease; 
+        }
+        .match-card:active { 
+            transform: scale(0.98); 
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
         
         .match-left { display: flex; align-items: center; gap: 12px; flex: 1; }
         
-        .teams-list { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-        .team-item { display: flex; align-items: center; gap: 12px; font-size: 0.95rem; font-weight: 500; color: #222222; }
-        .team-logo { width: 32px; height: 32px; object-fit: contain; }
+        .teams-list { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+        .team-item { display: flex; align-items: center; gap: 12px; font-size: 0.95rem; font-weight: 600; color: #1e293b; }
+        .team-logo { width: 34px; height: 34px; object-fit: contain; }
         
-        .match-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-        .match-time { font-size: 0.85rem; font-weight: 600; color: #777777; }
+        .match-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+        .match-time { font-size: 0.8rem; font-weight: 600; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
         
         .btn-prono-badge { 
             background: linear-gradient(135deg, #e11238 0%, #b91c1c 100%);
             color: #ffffff; 
             font-size: 0.72rem; 
             font-weight: 700; 
-            padding: 5px 10px; 
+            padding: 6px 12px; 
             border-radius: 6px; 
             border: none; 
             display: flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 2px 4px rgba(225, 18, 56, 0.25);
+            box-shadow: 0 3px 6px rgba(225, 18, 56, 0.25);
             letter-spacing: 0.3px;
         }
 
-        .no-match { text-align: center; color: #888888; padding: 40px 16px; font-size: 0.9rem; }
+        .no-match { text-align: center; color: #888888; padding: 40px 16px; font-size: 0.9rem; background: #ffffff; border-radius: 12px; border: 1px solid #eaeef2; }
 
-        .history-summary { display: flex; gap: 10px; padding: 16px; background: #0d1e2b; color: #ffffff; }
+        .history-summary { display: flex; gap: 10px; padding: 16px; background: #0d1e2b; color: #ffffff; border-radius: 10px; margin-bottom: 12px; }
         .stat-card { flex: 1; background: #162838; padding: 12px; border-radius: 8px; text-align: center; }
         .stat-val { font-size: 1.4rem; font-weight: bold; color: #22c55e; margin-top: 4px; }
         .stat-label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; }
 
-        .history-item { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+        .history-item { background: #ffffff; border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; border: 1px solid #eaeef2; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
         .history-match-title { font-size: 0.85rem; font-weight: bold; color: #0f172a; }
         .history-sub { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
         .badge-win { background: #dcfce7; color: #15803d; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 4px; }
@@ -249,9 +265,9 @@
 
                 if (matchsDuJour.length > 0) {
                     matchsDuJour.forEach(match => {
-                        const row = document.createElement('div');
-                        row.className = 'match-row';
-                        row.onclick = () => showPrediction(match.home_team, match.away_team, match.home_logo, match.away_logo);
+                        const card = document.createElement('div');
+                        card.className = 'match-card';
+                        card.onclick = () => showPrediction(match.home_team, match.away_team, match.home_logo, match.away_logo);
                         
                         const matchTime = match.time 
                             ? new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
@@ -260,7 +276,7 @@
                         const homeLogoHtml = match.home_logo ? `<img src="${match.home_logo}" class="team-logo">` : '🏒';
                         const awayLogoHtml = match.away_logo ? `<img src="${match.away_logo}" class="team-logo">` : '🏒';
 
-                        row.innerHTML = `
+                        card.innerHTML = `
                             <div class="match-left">
                                 <div class="teams-list">
                                     <div class="team-item">${homeLogoHtml} ${match.home_team}</div>
@@ -272,7 +288,7 @@
                                 <button class="btn-prono-badge">⚡ PRONO</button>
                             </div>
                         `;
-                        container.appendChild(row);
+                        container.appendChild(card);
                     });
                 } else {
                     container.innerHTML = '<div class="no-match">Aucun match prévu à cette date.</div>';
