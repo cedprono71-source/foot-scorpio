@@ -15,7 +15,6 @@
         header { background-color: #06141d; padding: 14px 16px; border-bottom: 1px solid #142331; }
         .header-title { font-size: 1.2rem; font-weight: bold; color: #ffffff; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
         
-        /* BARRE DE SÉLECTION DU SPORT */
         .sport-selector { display: flex; gap: 8px; background-color: #0d1e2b; padding: 4px; border-radius: 8px; border: 1px solid #162838; }
         .sport-tab { flex: 1; text-align: center; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s; }
         .sport-tab.active { background-color: #e11238; color: #ffffff; }
@@ -55,12 +54,17 @@
         .vs-badge { font-size: 0.8rem; font-weight: bold; color: #8fa3b3; background: #162838; padding: 4px 8px; border-radius: 4px; }
         
         .prono-box { background-color: #06141d; border-radius: 8px; padding: 14px; margin-top: 12px; }
-        .prob-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9rem; }
-        .prob-bar-container { background-color: #162838; height: 8px; border-radius: 4px; width: 100%; overflow: hidden; margin-bottom: 12px; }
+        .prono-section-title { font-size: 0.75rem; font-weight: bold; color: #38bdf8; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; }
+        .predicted-score-box { background-color: #162838; text-align: center; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
+        .predicted-score-val { font-size: 1.4rem; font-weight: bold; color: #22c55e; }
+        
+        .prob-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 0.85rem; }
+        .prob-bar-container { background-color: #162838; height: 8px; border-radius: 4px; width: 100%; overflow: hidden; margin-bottom: 10px; }
         .prob-bar { height: 100%; background-color: #38bdf8; border-radius: 4px; transition: width 0.4s ease; }
         .prob-bar.home { background-color: #22c55e; }
         .prob-bar.draw { background-color: #eab308; }
         .prob-bar.away { background-color: #ef4444; }
+        .prob-bar.over { background-color: #a855f7; }
     </style>
 </head>
 <body>
@@ -84,7 +88,7 @@
         </div>
     </div>
 
-    <!-- POP-UP PRONOSTIC -->
+    <!-- POP-UP PRONOSTIC ENRICHI -->
     <div class="modal-overlay" id="prono-modal">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal()">✕</button>
@@ -97,7 +101,7 @@
 
     <script>
         const daysFr = ['DI', 'LU', 'MA', 'ME', 'JE', 'VE', 'SA'];
-        let currentSport = 'nhl'; // 'nhl' ou 'football'
+        let currentSport = 'nhl';
         
         function formatDateLocal(date) {
             const year = date.getFullYear();
@@ -260,9 +264,16 @@
                 });
                 const data = await response.json();
                 const p = data.probabilities;
+                const ou = data.over_under_5_5;
 
                 body.innerHTML = `
                     <div class="prono-box">
+                        <div class="prono-section-title">🎯 Score Prédit</div>
+                        <div class="predicted-score-box">
+                            <span class="predicted-score-val">${data.predicted_score}</span>
+                        </div>
+
+                        <div class="prono-section-title">📊 Probabilités issue du modèle</div>
                         <div class="prob-row">
                             <span>Victoire ${homeTeam}</span>
                             <strong>${p.home_win}%</strong>
@@ -280,6 +291,13 @@
                             <strong>${p.away_win}%</strong>
                         </div>
                         <div class="prob-bar-container"><div class="prob-bar away" style="width: ${p.away_win}%"></div></div>
+
+                        <div class="prono-section-title" style="margin-top:12px;">🏒 Total Buts (Over / Under 5.5)</div>
+                        <div class="prob-row">
+                            <span>Plus de 5.5 buts</span>
+                            <strong>${ou.over_prob}%</strong>
+                        </div>
+                        <div class="prob-bar-container"><div class="prob-bar over" style="width: ${ou.over_prob}%"></div></div>
                     </div>
                 `;
             } catch (err) {
