@@ -152,7 +152,7 @@
                 const data = await response.json();
                 container.innerHTML = '';
 
-                // CORRECTION DU DÉCALAGE HORAIRE : On compare avec la date locale du match
+                // Filtrage précis basé sur l'heure locale convertie de chaque match
                 const matchsDuJour = (data.matches || []).filter(match => {
                     if (!match.time) return match.date === dateStr;
                     const matchLocalDate = formatDateLocal(new Date(match.time));
