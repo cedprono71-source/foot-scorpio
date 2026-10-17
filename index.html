@@ -58,8 +58,10 @@
     </div>
 
     <div class="main-content">
-        <div class="section-title" id="section-title">TOUS LES MATCHS</div>
-        <div id="matches-container"><div class="no-match">Chargement des matchs...</div></div>
+        <div class="section-title" id="section-title">SELECTIONNEZ UNE DATE</div>
+        <div id="matches-container">
+            <div class="no-match">👈 Choisissez une date ci-dessus pour afficher les matchs.</div>
+        </div>
     </div>
 
     <!-- POP-UP PRONOSTIC -->
@@ -75,29 +77,29 @@
 
     <script>
         const daysFr = ['DI', 'LU', 'MA', 'ME', 'JE', 'VE', 'SA'];
-        let selectedDateStr = new Date().toISOString().split('T')[0];
-        const todayStr = selectedDateStr;
+        let selectedDateStr = null; // Aucune date sélectionnée au départ
+        const todayStr = new Date().toISOString().split('T')[0];
 
         function generateDateStrip(centerDateStr) {
             const strip = document.getElementById('date-strip');
             strip.innerHTML = '';
-            const centerDate = new Date(centerDateStr);
+            const centerDate = new Date(centerDateStr || todayStr);
+
             for (let i = -7; i <= 7; i++) {
                 const d = new Date(centerDate);
                 d.setDate(d.getDate() + i);
+
                 const dateStr = d.toISOString().split('T')[0];
                 const isToday = (dateStr === todayStr);
                 const dayName = isToday ? 'AJD' : daysFr[d.getDay()];
                 const dayNum = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
+
                 const item = document.createElement('div');
                 item.className = `date-item ${dateStr === selectedDateStr ? 'active' : ''}`;
                 item.dataset.date = dateStr;
                 item.onclick = () => selectDate(dateStr, item);
                 item.innerHTML = `<span class="day-name">${dayName}</span><span class="day-num">${dayNum}</span>`;
                 strip.appendChild(item);
-                if (dateStr === selectedDateStr) {
-                    setTimeout(() => { item.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); }, 100);
-                }
             }
         }
 
@@ -105,6 +107,8 @@
             selectedDateStr = dateStr;
             document.querySelectorAll('.date-item').forEach(el => el.classList.remove('active'));
             if (element) { element.classList.add('active'); }
+            
+            document.getElementById('section-title').innerText = `MATCHS DU ${dateStr.split('-').reverse().join('/')}`;
             chargerMatchs(dateStr);
         }
 
@@ -112,23 +116,28 @@
             if (!dateStr) return;
             selectedDateStr = dateStr;
             generateDateStrip(dateStr);
+            document.getElementById('section-title').innerText = `MATCHS DU ${dateStr.split('-').reverse().join('/')}`;
             chargerMatchs(dateStr);
         }
 
         async function chargerMatchs(dateStr) {
             const container = document.getElementById('matches-container');
-            container.innerHTML = '<div class="no-match">Chargement en cours...</div>';
+            container.innerHTML = '<div class="no-match">Chargement des matchs en cours...</div>';
+
             try {
                 const response = await fetch(`/api/matches/nhl?date=${dateStr}`);
                 const data = await response.json();
                 container.innerHTML = '';
+
                 const matchsDuJour = (data.matches || []).filter(m => !m.date || m.date === dateStr);
                 if (matchsDuJour.length > 0) {
                     matchsDuJour.forEach(match => {
                         const card = document.createElement('div');
                         card.className = 'match-card';
                         card.onclick = () => showPrediction(match.home_team, match.away_team);
-                        const matchTime = match.time ? new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD';
+                        const matchTime = match.time 
+                            ? new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                            : 'TBD';
                         card.innerHTML = `
                             <div class="teams-container">
                                 <div class="team-row">🏠 ${match.home_team}</div>
@@ -145,7 +154,7 @@
                     container.innerHTML = '<div class="no-match">Aucun match prévu à cette date.</div>';
                 }
             } catch (error) {
-                container.innerHTML = '<div class="no-match" style="color: #ef4444;">Erreur de chargement.</div>';
+                container.innerHTML = '<div class="no-match" style="color: #ef4444;">Erreur lors du chargement des matchs.</div>';
             }
         }
 
@@ -202,8 +211,8 @@
             document.getElementById('prono-modal').style.display = 'none';
         }
 
-        generateDateStrip(selectedDateStr);
-        chargerMatchs(selectedDateStr);
+        // Génère la barre de dates autour d'aujourd'hui mais ne charge AUCUN match automatiquement
+        generateDateStrip(todayStr);
     </script>
 </body>
 </html>
