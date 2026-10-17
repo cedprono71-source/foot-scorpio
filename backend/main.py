@@ -46,9 +46,25 @@ def get_nhl_matches(date: str = "now"):
             for day in data.get("gameWeek", []):
                 game_date = day.get("date")
                 for g in day.get("games", []):
-                    home = g.get("homeTeam", {}).get("placeName", {}).get("default") or g.get("homeTeam", {}).get("commonName", {}).get("default", "Domicile")
-                    away = g.get("awayTeam", {}).get("placeName", {}).get("default") or g.get("awayTeam", {}).get("commonName", {}).get("default", "Extérieur")
-                    matches.append({"id": g.get("id"), "date": game_date, "home_team": home, "away_team": away, "time": g.get("startTimeUTC")})
+                    home_obj = g.get("homeTeam", {})
+                    away_obj = g.get("awayTeam", {})
+                    
+                    home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
+                    away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
+                    
+                    # Récupération des logos officiels NHL
+                    home_logo = home_obj.get("logo", "")
+                    away_logo = away_obj.get("logo", "")
+                    
+                    matches.append({
+                        "id": g.get("id"),
+                        "date": game_date,
+                        "home_team": home_name,
+                        "away_team": away_name,
+                        "home_logo": home_logo,
+                        "away_logo": away_logo,
+                        "time": g.get("startTimeUTC")
+                    })
             return {"matches": matches}
         return {"matches": []}
     except Exception as e:
