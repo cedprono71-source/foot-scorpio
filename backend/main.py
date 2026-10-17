@@ -28,19 +28,70 @@ def fetch_team_stats():
                 team_name = record.get("teamName", {}).get("default", "")
                 place_name = record.get("placeName", {}).get("default", "")
                 full_name = f"{place_name} {team_name}".strip()
+                abbrev = record.get("teamAbbrev", {}).get("default", "")
                 
                 goals_for = record.get("goalFor", 0)
                 goals_against = record.get("goalAgainst", 0)
-                games_played = record.get("gamesPlayed", 1)
-                if games_played < 1:
-                    games_played = 1
+                games_played = max(1, record.get("gamesPlayed", 1))
                 
                 offense = round(goals_for / games_played, 2)
                 defense = round(goals_against / games_played, 2)
-                stats_map[full_name.lower()] = {"offense": max(2.0, offense), "defense": max(2.0, defense)}
+                stats_map[full_name.lower()] = {
+                    "abbrev": abbrev,
+                    "offense": max(2.0, offense), 
+                    "defense": max(2.0, defense)
+                }
     except Exception:
         pass
     return stats_map
+
+def fetch_all_players_projections(team_abbrev, expected_team_goals):
+    """Analyse TOUS les joueurs de l'effectif pour estimer leurs chances de point/but/passe"""
+    players = []
+    if not team_abbrev:
+        return players
+    try:
+        url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            skaters = data.get("skaters", [])
+            
+            for p in skaters:
+                gp = max(1, p.get("gamesPlayed", 1))
+                goals = p.get("goals", 0)
+                assists = p.get("assists", 0)
+                points = goals + assists
+                
+                # Moyennes par match
+                g_pg = goals / gp
+                a_pg = assists / gp
+                pts_pg = points / gp
+                
+                # Probabilité estimée pour ce match selon le xG de l'équipe
+                goal_prob = min(90, round((1 - np.exp(-g_pg * (expected_team_goals / 3.0))) * 100, 1))
+                assist_prob = min(90, round((1 - np.exp(-a_pg * (expected_team_goals / 3.0))) * 100, 1))
+                point_prob = min(95, round((1 - np.exp(-pts_pg * (expected_team_goals / 3.0))) * 100, 1))
+                
+                name = f"{p.get('firstName', {}).get('default', '')} {p.get('lastName', {}).get('default', '')}"
+                position = p.get("positionCode", "F")
+                
+                players.append({
+                    "name": name,
+                    "pos": position,
+                    "goals": goals,
+                    "assists": assists,
+                    "points": points,
+                    "goal_prob": goal_prob,
+                    "assist_prob": assist_prob,
+                    "point_prob": point_prob
+                })
+                
+            # Trier l'ensemble de l'effectif par probabilité d'inscrire un point
+            players = sorted(players, key=lambda x: x["point_prob"], reverse=True)
+    except Exception:
+        pass
+    return players
 
 def calculate_poisson_matrix(home_xg, away_xg):
     max_goals = 10
@@ -54,40 +105,43 @@ def calculate_poisson_matrix(home_xg, away_xg):
 def predict_match(match: MatchInput):
     team_stats = fetch_team_stats()
     
+    home_abbrev, away_abbrev = "", ""
     home_st = {"offense": 3.1, "defense": 2.7}
     away_st = {"offense": 2.9, "defense": 2.9}
     
     for name, st in team_stats.items():
         if name in match.home_team.lower() or match.home_team.lower() in name:
             home_st = st
+            home_abbrev = st.get("abbrev", "")
         if name in match.away_team.lower() or match.away_team.lower() in name:
             away_st = st
+            away_abbrev = st.get("abbrev", "")
 
-    # --- IA 1 : Modèle Poisson pur (Global) ---
+    # Calcul des xG pour la rencontre
+    h_xg = round(home_st["offense"] * 1.08, 2)
+    a_xg = round(away_st["offense"] * 0.92, 2)
+
+    # Récupération et analyse de TOUS les joueurs pour chaque équipe
+    home_players = fetch_all_players_projections(home_abbrev, h_xg)
+    away_players = fetch_all_players_projections(away_abbrev, a_xg)
+
     mat1 = calculate_poisson_matrix(3.1, 2.7)
     p1_home = float(np.sum(np.tril(mat1, -1))) * 100
 
-    # --- IA 2 : Modèle Dynamique (Basé sur le classement actuel) ---
-    h_xg2 = home_st["offense"] * 1.08
-    a_xg2 = away_st["offense"] * 0.92
-    mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
+    mat2 = calculate_poisson_matrix(h_xg, a_xg)
     p2_home = float(np.sum(np.tril(mat2, -1))) * 100
 
-    # --- IA 3 : Modèle Tactique / Momentum (Pondéré par la défense) ---
     h_xg3 = max(1.5, home_st["offense"] - (away_st["defense"] * 0.1) + 0.2)
     a_xg3 = max(1.5, away_st["offense"] - (home_st["defense"] * 0.1))
     mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
     p3_home = float(np.sum(np.tril(mat3, -1))) * 100
 
-    # Consensus global des 3 IA
     final_home_win = round((p1_home + p2_home + p3_home) / 3, 1)
-    final_away_win = round(100 - final_home_win - 15.0, 1) # Marge de tirage
+    final_away_win = round(max(5.0, 100 - final_home_win - 15.0), 1)
     final_draw = round(15.0, 1)
 
-    # Score le plus probable de l'IA principale (Modèle 2)
     best_score = np.unravel_index(np.argmax(mat2), mat2.shape)
 
-    # Over / Under 5.5
     over_5_5_prob = 0.0
     for h in range(10):
         for a in range(10):
@@ -101,15 +155,14 @@ def predict_match(match: MatchInput):
             "draw": final_draw,
             "away_win": final_away_win
         },
-        "ai_consensus": {
-            "ia_standard": round(p1_home, 1),
-            "ia_stats_saison": round(p2_home, 1),
-            "ia_tactique": round(p3_home, 1)
-        },
         "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
         "over_under_5_5": {
             "over_prob": round(over_5_5_prob * 100, 1),
             "under_prob": round((1 - over_5_5_prob) * 100, 1)
+        },
+        "players": {
+            "home": home_players,
+            "away": away_players
         }
     }
 
@@ -130,7 +183,7 @@ def get_nhl_matches(date: str = "now"):
                     home_obj = g.get("homeTeam", {})
                     away_obj = g.get("awayTeam", {})
                     
-                    home_name = home_obj.get("placeName", {}).default if hasattr(home_obj.get("placeName", {}), "default") else home_obj.get("placeName", {}).get("default", "Domicile")
+                    home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
                     away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
                     
                     matches.append({
