@@ -45,11 +45,34 @@ def fetch_team_stats():
         pass
     return stats_map
 
+def fetch_goalie_stats(team_abbrev):
+    """Récupère le gardien numéro 1 de l'équipe et son taux d'arrêt (SV%)"""
+    if not team_abbrev:
+        return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
+    try:
+        url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            goalies = data.get("goalies", [])
+            if goalies:
+                # Filtrer le gardien ayant joué le plus de matchs
+                top_goalie = max(goalies, key=lambda x: x.get("gamesPlayed", 0))
+                name = f"{top_goalie.get('firstName', {}).get('default', '')} {top_goalie.get('lastName', {}).get('default', '')}"
+                sv_pct = top_goalie.get("savePercentage", 0.905)
+                gaa = top_goalie.get("goalsAgainstAverage", 2.80)
+                return {
+                    "name": name,
+                    "save_pct": round(sv_pct, 3) if sv_pct else 0.905,
+                    "gaa": round(gaa, 2) if gaa else 2.80
+                }
+    except Exception:
+        pass
+    return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
+
 def fetch_all_players_projections(team_abbrev, expected_team_goals):
     players = []
-    top_scorer = None
-    top_passer = None
-    
+    top_scorer, top_passer = None, None
     if not team_abbrev:
         return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
         
@@ -89,12 +112,9 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                 })
                 
             players = sorted(players, key=lambda x: x["point_prob"], reverse=True)
-            
-            # Sélection des favoris Buteur et Passeur
             if players:
                 top_scorer = max(players, key=lambda x: x["goal_prob"])
                 top_passer = max(players, key=lambda x: x["assist_prob"])
-                
     except Exception:
         pass
         
@@ -124,34 +144,49 @@ def predict_match(match: MatchInput):
             away_st = st
             away_abbrev = st.get("abbrev", "")
 
-    h_xg = round(home_st["offense"] * 1.08, 2)
-    a_xg = round(away_st["offense"] * 0.92, 2)
+    # Récupération des données des gardiens
+    home_goalie = fetch_goalie_stats(home_abbrev)
+    away_goalie = fetch_goalie_stats(away_abbrev)
 
-    home_players_data = fetch_all_players_projections(home_abbrev, h_xg)
-    away_players_data = fetch_all_players_projections(away_abbrev, a_xg)
-
+    # --- IA 1 : Poisson Standard ---
     mat1 = calculate_poisson_matrix(3.1, 2.7)
     p1_home = float(np.sum(np.tril(mat1, -1))) * 100
 
-    mat2 = calculate_poisson_matrix(h_xg, a_xg)
+    # --- IA 2 : Saison Dynamique ---
+    h_xg2 = home_st["offense"] * 1.08
+    a_xg2 = away_st["offense"] * 0.92
+    mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
     p2_home = float(np.sum(np.tril(mat2, -1))) * 100
 
+    # --- IA 3 : Tactique / Defense ---
     h_xg3 = max(1.5, home_st["offense"] - (away_st["defense"] * 0.1) + 0.2)
     a_xg3 = max(1.5, away_st["offense"] - (home_st["defense"] * 0.1))
     mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
     p3_home = float(np.sum(np.tril(mat3, -1))) * 100
 
-    final_home_win = round((p1_home + p2_home + p3_home) / 3, 1)
+    # --- IA 4 : Modèle Gardiens (Goalie Matchup AI) ---
+    # Un gardien adverse avec un SV% élevé réduit les xG de l'attaque
+    h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
+    a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
+    mat4 = calculate_poisson_matrix(h_xg4, a_xg4)
+    p4_home = float(np.sum(np.tril(mat4, -1))) * 100
+
+    # Consensus combiné des 4 IA
+    final_home_win = round((p1_home + p2_home + p3_home + p4_home) / 4, 1)
     final_away_win = round(max(5.0, 100 - final_home_win - 15.0), 1)
     final_draw = round(15.0, 1)
 
-    best_score = np.unravel_index(np.argmax(mat2), mat2.shape)
+    best_score = np.unravel_index(np.argmax(mat4), mat4.shape)
 
     over_5_5_prob = 0.0
     for h in range(10):
         for a in range(10):
             if h + a > 5.5:
-                over_5_5_prob += mat2[h, a]
+                over_5_5_prob += mat4[h, a]
+
+    # Effectifs et projections
+    home_players_data = fetch_all_players_projections(home_abbrev, h_xg4)
+    away_players_data = fetch_all_players_projections(away_abbrev, a_xg4)
 
     return {
         "match": f"{match.home_team} vs {match.away_team}",
@@ -164,6 +199,10 @@ def predict_match(match: MatchInput):
         "over_under_5_5": {
             "over_prob": round(over_5_5_prob * 100, 1),
             "under_prob": round((1 - over_5_5_prob) * 100, 1)
+        },
+        "goalies": {
+            "home": home_goalie,
+            "away": away_goalie
         },
         "players": {
             "home": home_players_data,
