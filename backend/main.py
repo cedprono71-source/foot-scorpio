@@ -12,39 +12,61 @@ app = FastAPI(title="NHL IA Pronostics")
 class MatchInput(BaseModel):
     home_team: str
     away_team: str
-    home_expected_goals: float = 3.0
+    home_expected_goals: float = 3.1
     away_expected_goals: float = 2.7
+    home_b2b: bool = False
+    away_b2b: bool = False
 
 @app.post("/predict/match")
 def predict_match(match: MatchInput):
+    # Ajustement des buts attendus selon le Back-to-Back (fatigue)
+    home_xg = match.home_expected_goals * (0.90 if match.home_b2b else 1.0)
+    away_xg = match.away_expected_goals * (0.90 if match.away_b2b else 1.0)
+    
     max_goals = 10
     matrix = np.zeros((max_goals, max_goals))
+    
+    # Matrice des probabilités de score exact
     for h in range(max_goals):
         for a in range(max_goals):
-            matrix[h, a] = poisson.pmf(h, match.home_expected_goals) * poisson.pmf(a, match.away_expected_goals)
+            matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
             
     prob_home = float(np.sum(np.tril(matrix, -1)))
     prob_draw = float(np.sum(np.diag(matrix)))
     prob_away = float(np.sum(np.triu(matrix, 1)))
     
+    # Score le plus probable
+    best_score = np.unravel_index(np.argmax(matrix), matrix.shape)
+    predicted_home_goals = int(best_score[0])
+    predicted_away_goals = int(best_score[1])
+    
+    # Over / Under 5.5 buts
+    over_5_5_prob = 0.0
+    for h in range(max_goals):
+        for a in range(max_goals):
+            if h + a > 5.5:
+                over_5_5_prob += matrix[h, a]
+                
     return {
         "match": f"{match.home_team} vs {match.away_team}",
         "probabilities": {
             "home_win": round(prob_home * 100, 1),
             "draw": round(prob_draw * 100, 1),
             "away_win": round(prob_away * 100, 1)
+        },
+        "predicted_score": f"{predicted_home_goals} - {predicted_away_goals}",
+        "over_under_5_5": {
+            "over_prob": round(over_5_5_prob * 100, 1),
+            "under_prob": round((1 - over_5_5_prob) * 100, 1)
         }
     }
 
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
     try:
-        # Si une date spécifique est demandée, on élargit la recherche de -1 à +1 jour pour attraper les décalages horaires
         target_date = datetime.strptime(date, "%Y-%m-%d") if date != "now" else datetime.now()
         start_date = (target_date - timedelta(days=1)).strftime("%Y-%m-%d")
-        end_date = (target_date + timedelta(days=2)).strftime("%Y-%m-%d")
         
-        # On interroge l'endpoint par intervalle (schedule/YYYY-MM-DD/YYYY-MM-DD)
         url = f"https://api-web.nhle.com/v1/schedule/{start_date}"
         
         response = requests.get(url)
