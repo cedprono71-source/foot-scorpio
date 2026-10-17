@@ -106,9 +106,17 @@
             let parts = (centerDateStr || todayStr).split('-');
             let baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
 
-            for (let i = -7; i <= 7; i++) {
+            let todayObj = new Date();
+            todayObj.setHours(0,0,0,0);
+
+            // On génère uniquement à partir d'aujourd'hui et pour les 14 jours suivants (zéro date passée)
+            for (let i = 0; i <= 14; i++) {
                 let d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + i);
                 let dateStr = formatDateLocal(d);
+                
+                let dCompare = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                if (dCompare < todayObj) continue;
+
                 let isToday = (dateStr === todayStr);
                 let dayName = isToday ? 'AJD' : daysFr[d.getDay()];
                 let dayNum = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
@@ -119,10 +127,6 @@
                 item.onclick = () => selectDate(dateStr, item);
                 item.innerHTML = `<span class="day-name">${dayName}</span><span class="day-num">${dayNum}</span>`;
                 strip.appendChild(item);
-                
-                if (dateStr === selectedDateStr || (!selectedDateStr && isToday)) {
-                    setTimeout(() => { item.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); }, 100);
-                }
             }
         }
 
@@ -152,7 +156,6 @@
                 const data = await response.json();
                 container.innerHTML = '';
 
-                // Filtrage précis basé sur l'heure locale convertie de chaque match
                 const matchsDuJour = (data.matches || []).filter(match => {
                     if (!match.time) return match.date === dateStr;
                     const matchLocalDate = formatDateLocal(new Date(match.time));
