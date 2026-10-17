@@ -5,9 +5,28 @@ import numpy as np
 from scipy.stats import poisson
 import requests
 import os
+import json
 from datetime import datetime, timedelta
 
 app = FastAPI(title="Multi-IA NHL Pronostics")
+
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
+
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_history(history):
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 class MatchInput(BaseModel):
     home_team: str
@@ -103,7 +122,6 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
         return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
         
     try:
-        # 1. Obtenir l'alignement actif (pour filtrer les blessés/absents)
         active_player_ids = set()
         roster_url = f"https://api-web.nhle.com/v1/roster/{team_abbrev}/current"
         roster_res = requests.get(roster_url)
@@ -114,7 +132,6 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                     if p.get("status") not in ["IR", "LTIR", "OUT"]:
                         active_player_ids.add(p.get("id"))
 
-        # 2. Récupérer les stats cumulées
         url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
         response = requests.get(url)
         if response.status_code == 200:
@@ -123,7 +140,6 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
             
             for p in skaters:
                 p_id = p.get("playerId")
-                # Si le joueur n'est pas dans l'alignement actif, on l'ignore
                 if active_player_ids and p_id not in active_player_ids:
                     continue
 
@@ -244,6 +260,27 @@ def predict_match(match: MatchInput):
     home_players_data = fetch_all_players_projections(home_abbrev, final_h_xg)
     away_players_data = fetch_all_players_projections(away_abbrev, final_a_xg)
 
+    predicted_winner = match.home_team if final_home_win >= final_away_win else match.away_team
+
+    # Enregistrement automatique dans l'historique
+    history = load_history()
+    match_key = f"{match.home_team}_vs_{match.away_team}_{datetime.now().strftime('%Y-%m-%d')}"
+    if match_key not in history:
+        history[match_key] = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "match": f"{match.home_team} vs {match.away_team}",
+            "home_team": match.home_team,
+            "away_team": match.away_team,
+            "predicted_winner": predicted_winner,
+            "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
+            "predicted_over": round(over_5_5_prob * 100, 1) > 50.0,
+            "actual_score": None,
+            "winner_correct": None,
+            "over_correct": None,
+            "status": "PENDING"
+        }
+        save_history(history)
+
     return {
         "match": f"{match.home_team} vs {match.away_team}",
         "probabilities": {
@@ -272,6 +309,73 @@ def predict_match(match: MatchInput):
             "home": home_players_data,
             "away": away_players_data
         }
+    }
+
+@app.get("/api/history")
+def get_prediction_history():
+    history = load_history()
+    
+    # Vérification et mise à jour des résultats réels via la NHL API
+    updated = False
+    for key, item in history.items():
+        if item.get("status") == "PENDING":
+            try:
+                m_date = item.get("date")
+                url = f"https://api-web.nhle.com/v1/schedule/{m_date}"
+                res = requests.get(url)
+                if res.status_code == 200:
+                    data = res.json()
+                    for day in data.get("gameWeek", []):
+                        if day.get("date") == m_date:
+                            for g in day.get("games", []):
+                                h_name = g.get("homeTeam", {}).get("placeName", {}).get("default") or g.get("homeTeam", {}).get("commonName", {}).get("default", "")
+                                a_name = g.get("awayTeam", {}).get("placeName", {}).get("default") or g.get("awayTeam", {}).get("commonName", {}).get("default", "")
+                                
+                                if (h_name.lower() in item["home_team"].lower() or item["home_team"].lower() in h_name.lower()) and \
+                                   (a_name.lower() in item["away_team"].lower() or item["away_team"].lower() in a_name.lower()):
+                                    
+                                    gameState = g.get("gameState")
+                                    if gameState in ["OFF", "FINAL"]:
+                                        h_score = g.get("homeTeam", {}).get("score", 0)
+                                        a_score = g.get("awayTeam", {}).get("score", 0)
+                                        actual_winner = item["home_team"] if h_score > a_score else item["away_team"]
+                                        actual_over = (h_score + a_score) > 5.5
+                                        
+                                        item["actual_score"] = f"{h_score} - {a_score}"
+                                        item["winner_correct"] = (actual_winner == item["predicted_winner"])
+                                        item["over_correct"] = (actual_over == item["predicted_over"])
+                                        item["status"] = "FINISHED"
+                                        updated = True
+            except Exception:
+                pass
+
+    if updated:
+        save_history(history)
+
+    # Calcul des métriques globales de performance
+    total = 0
+    winner_wins = 0
+    over_wins = 0
+    
+    items_list = list(history.values())
+    for item in items_list:
+        if item.get("status") == "FINISHED":
+            total += 1
+            if item.get("winner_correct"):
+                winner_wins += 1
+            if item.get("over_correct"):
+                over_wins += 1
+
+    winrate_winner = round((winner_wins / total * 100), 1) if total > 0 else 0.0
+    winrate_over = round((over_wins / total * 100), 1) if total > 0 else 0.0
+
+    return {
+        "stats": {
+            "total_matches": total,
+            "winrate_winner": winrate_winner,
+            "winrate_over": winrate_over
+        },
+        "history": sorted(items_list, key=lambda x: x["date"], reverse=True)
     }
 
 @app.get("/api/matches/nhl")
