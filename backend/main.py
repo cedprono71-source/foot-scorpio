@@ -111,3 +111,11 @@ def get_todays_nhl_matches():
         return {"matches": []}
     except Exception as e:
         return {"error": str(e)}
+# Route pour afficher la page d'accueil (index.html)
+@app.get("/", response_class=HTMLResponse)
+def lire_index():
+    chemin_index = os.path.join(os.path.dirname(__file__), "..", "index.html")
+    if os.path.exists(chemin_index):
+        with open(chemin_index, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>Fichier index.html introuvable</h1>"
