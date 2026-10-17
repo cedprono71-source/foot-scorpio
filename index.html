@@ -5,72 +5,174 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NHL IA - Pronostics</title>
     <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #0f172a;
+            background-color: #0b0f19;
             color: #f8fafc;
-            margin: 0;
-            padding: 20px;
+            padding: 15px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 15px;
         }
         h1 {
-            text-align: center;
             color: #38bdf8;
-            font-size: 1.5rem;
-            margin-bottom: 5px;
-        }
-        .subtitle {
-            text-align: center;
-            color: #94a3b8;
-            font-size: 0.9rem;
-            margin-bottom: 20px;
-        }
-        .date-container {
+            font-size: 1.4rem;
             display: flex;
+            align-items: center;
             justify-content: center;
-            margin-bottom: 25px;
+            gap: 8px;
         }
-        input[type="date"] {
-            background-color: #1e293b;
-            color: #fff;
-            border: 1px solid #334155;
-            padding: 10px 15px;
-            border-radius: 8px;
-            font-size: 1rem;
-            outline: none;
-        }
-        .match-card {
-            background-color: #1e293b;
-            border: 1px solid #334155;
+        
+        /* Bandeau de navigation Flashscore */
+        .calendar-strip-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+            background-color: #161e2e;
+            padding: 8px;
             border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 15px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: 1px solid #1e293b;
         }
-        .match-teams {
-            font-weight: bold;
+
+        .date-picker-btn {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #f8fafc;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-size: 1.1rem;
-            margin-bottom: 8px;
+            position: relative;
+        }
+
+        .date-picker-btn input[type="date"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            cursor: pointer;
+        }
+
+        .date-strip {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+
+        .date-strip::-webkit-scrollbar {
+            display: none;
+        }
+
+        .date-item {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 58px;
+            height: 58px;
+            background-color: #1e293b;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .date-item .day-name {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: #94a3b8;
+            font-weight: 600;
+        }
+
+        .date-item .day-num {
+            font-size: 0.95rem;
+            font-weight: bold;
+            color: #f1f5f9;
+            margin-top: 2px;
+        }
+
+        .date-item.active {
+            background-color: #0284c7;
+            border-color: #38bdf8;
+            box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
+        }
+
+        .date-item.active .day-name,
+        .date-item.active .day-num {
+            color: #ffffff;
+        }
+
+        /* Cartes des Matchs */
+        .match-card {
+            background-color: #161e2e;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .team {
+            font-weight: 600;
+            font-size: 1rem;
             color: #e2e8f0;
         }
-        .match-info {
-            font-size: 0.85rem;
-            color: #94a3b8;
+
+        .vs {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin: 4px 0;
         }
+
+        .match-time {
+            background-color: #1e293b;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: #38bdf8;
+            font-weight: 600;
+        }
+
         .no-match {
             text-align: center;
-            color: #94a3b8;
+            color: #64748b;
             margin-top: 40px;
+            font-size: 0.95rem;
         }
     </style>
 </head>
 <body>
 
-    <h1>🏒 NHL IA Pronostics</h1>
-    <div class="subtitle">Sélectionnez une date pour voir les matchs</div>
+    <header>
+        <h1>🏒 NHL IA Pronostics</h1>
+    </header>
 
-    <!-- Sélecteur de date -->
-    <div class="date-container">
-        <input type="date" id="match-date" onchange="chargerMatchs()">
+    <!-- Navigation des dates -->
+    <div class="calendar-strip-wrapper">
+        <div class="date-picker-btn" title="Choisir une date dans le calendrier">
+            📅
+            <input type="date" id="calendar-picker" onchange="onCustomDateSelect(this.value)">
+        </div>
+        <div class="date-strip" id="date-strip"></div>
     </div>
 
     <div id="matches-container">
@@ -78,46 +180,115 @@
     </div>
 
     <script>
-        // Sélectionner la date du jour par défaut au format AAAA-MM-JJ
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('match-date').value = today;
+        const daysFr = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+        let selectedDateStr = new Date().toISOString().split('T')[0];
 
-        async function chargerMatchs() {
-            const selectedDate = document.getElementById('match-date').value;
+        // Générer la bande de dates autour de la date active (-7j à +7j)
+        function generateDateStrip(centerDateStr) {
+            const strip = document.getElementById('date-strip');
+            strip.innerHTML = '';
+
+            const centerDate = new Date(centerDateStr);
+
+            for (let i = -7; i <= 7; i++) {
+                const d = new Date(centerDate);
+                d.setDate(d.getDate() + i);
+
+                const dateStr = d.toISOString().split('T')[0];
+                const dayName = daysFr[d.getDay()];
+                const dayNum = `${d.getDate()}/${d.getMonth() + 1}`;
+
+                const item = document.createElement('div');
+                item.className = `date-item ${dateStr === selectedDateStr ? 'active' : ''}`;
+                item.dataset.date = dateStr;
+                
+                // Clic sur une date
+                item.onclick = () => selectDate(dateStr, item);
+
+                item.innerHTML = `
+                    <span class="day-name">${dayName}</span>
+                    <span class="day-num">${dayNum}</span>
+                `;
+
+                strip.appendChild(item);
+
+                if (dateStr === selectedDateStr) {
+                    setTimeout(() => {
+                        item.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }, 100);
+                }
+            }
+        }
+
+        // Action au clic sur une date de la bande
+        function selectDate(dateStr, element) {
+            selectedDateStr = dateStr;
+            
+            // Met à jour la classe active
+            document.querySelectorAll('.date-item').forEach(el => el.classList.remove('active'));
+            if (element) {
+                element.classList.add('active');
+            }
+
+            // Affiche les matchs du jour sélectionné
+            chargerMatchs(dateStr);
+        }
+
+        // Action quand on choisit une date spécifique depuis le calendrier
+        function onCustomDateSelect(dateStr) {
+            if (!dateStr) return;
+            selectedDateStr = dateStr;
+            generateDateStrip(dateStr);
+            chargerMatchs(dateStr);
+        }
+
+        // Récupérer les matchs du jour sélectionné auprès du backend
+        async function chargerMatchs(dateStr) {
             const container = document.getElementById('matches-container');
-            container.innerHTML = '<div class="no-match">Recherche en cours...</div>';
+            container.innerHTML = '<div class="no-match">Recherche des matchs...</div>';
 
             try {
-                // Appel vers notre backend FastAPI avec la date choisie
-                const response = await fetch(`/api/matches/nhl?date=${selectedDate}`);
+                const response = await fetch(`/api/matches/nhl?date=${dateStr}`);
                 const data = await response.json();
                 
                 container.innerHTML = '';
 
-                if (data.matches && data.matches.length > 0) {
-                    data.matches.forEach(match => {
+                // Filtrer les matchs exactement pour la date sélectionnée
+                const matchsDuJour = (data.matches || []).filter(m => {
+                    if (!m.date) return true;
+                    return m.date === dateStr;
+                });
+
+                if (matchsDuJour.length > 0) {
+                    matchsDuJour.forEach(match => {
                         const card = document.createElement('div');
                         card.className = 'match-card';
                         
-                        // Formater l'heure du match proprement
-                        const matchTime = new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        const matchTime = match.time 
+                            ? new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : 'TBD';
 
                         card.innerHTML = `
-                            <div class="match-teams">${match.home_team} vs ${match.away_team}</div>
-                            <div class="match-info">📅 ${match.date || selectedDate} | ⏰ ${matchTime} UTC</div>
+                            <div>
+                                <div class="team">🏠 ${match.home_team}</div>
+                                <div class="vs">vs</div>
+                                <div class="team">✈️ ${match.away_team}</div>
+                            </div>
+                            <div class="match-time">⏰ ${matchTime}</div>
                         `;
                         container.appendChild(card);
                     });
                 } else {
-                    container.innerHTML = '<div class="no-match">Aucun match prévu pour cette date.</div>';
+                    container.innerHTML = '<div class="no-match">Aucun match prévu pour ce jour.</div>';
                 }
             } catch (error) {
-                container.innerHTML = '<div class="no-match" style="color: #ef4444;">Erreur lors du chargement des matchs.</div>';
+                container.innerHTML = '<div class="no-match" style="color: #ef4444;">Erreur de connexion au serveur.</div>';
             }
         }
 
-        // Charger les matchs dès l'ouverture de la page
-        chargerMatchs();
+        // Initialisation au chargement de la page
+        generateDateStrip(selectedDateStr);
+        chargerMatchs(selectedDateStr);
     </script>
 
 </body>
