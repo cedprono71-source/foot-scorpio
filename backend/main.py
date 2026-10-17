@@ -124,3 +124,19 @@ def lire_index():
             with open(chemin, "r", encoding="utf-8") as f:
                 return f.read()
     return "<h1>Fichier index.html introuvable</h1>"
+from fastapi.responses import HTMLResponse
+import os
+
+@app.get("/", response_class=HTMLResponse)
+def lire_index():
+    chemins_possibles = [
+        os.path.join(os.path.dirname(__file__), "..", "index.html"),
+        os.path.join(os.path.dirname(__file__), "index.html"),
+        "index.html",
+        "../index.html"
+    ]
+    for chemin in chemins_possibles:
+        if os.path.exists(chemin):
+            with open(chemin, "r", encoding="utf-8") as f:
+                return f.read()
+    return "<h1>Fichier index.html introuvable</h1>"
