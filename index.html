@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     
-    <title>Pronostics IA - Tous les Joueurs</title>
+    <title>Pronostics IA - Favoris Buteur & Passeur</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f7f7f7; color: #111111; padding: 0; }
@@ -72,12 +72,18 @@
         .prob-bar.away { background-color: #ef4444; }
         .prob-bar.over { background-color: #a855f7; }
 
+        /* BOITE FAVORIS BUTEUR / PASSEUR */
+        .ia-picks-box { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; margin-top: 8px; margin-bottom: 10px; }
+        .ia-pick-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; padding: 3px 0; }
+        .ia-pick-label { font-weight: bold; color: #0f172a; display: flex; align-items: center; gap: 4px; }
+        .ia-pick-val { font-weight: 700; color: #e11238; }
+
         /* TABLEAU JOUEURS COMPLETE */
         .team-tabs-players { display: flex; gap: 6px; margin-top: 10px; border-bottom: 2px solid #e2e8f0; }
         .team-tab-btn { flex: 1; padding: 6px; text-align: center; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #666; background: #edf2f7; border-radius: 4px 4px 0 0; }
         .team-tab-btn.active { background: #0d1e2b; color: #fff; }
 
-        .players-table-container { max-height: 220px; overflow-y: auto; margin-top: 8px; }
+        .players-table-container { max-height: 200px; overflow-y: auto; margin-top: 8px; }
         .players-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
         .players-table th { background: #f1f5f9; position: sticky; top: 0; padding: 6px; text-align: left; color: #475569; }
         .players-table td { padding: 6px; border-bottom: 1px solid #f1f5f9; }
@@ -287,7 +293,7 @@
                 const data = await response.json();
                 const p = data.probabilities;
                 const ou = data.over_under_5_5;
-                currentMatchPlayers = data.players || { home: [], away: [] };
+                currentMatchPlayers = data.players || { home: {all: []}, away: {all: []} };
 
                 body.innerHTML = `
                     <div class="prono-box">
@@ -328,7 +334,7 @@
                             <div class="team-tab-btn" id="btn-p-away" onclick="renderPlayersList('away', '${awayTeam}')">${awayTeam}</div>
                         </div>
 
-                        <div class="players-table-container" id="players-list-box"></div>
+                        <div id="players-list-box"></div>
                     </div>
                 `;
 
@@ -343,12 +349,26 @@
             const activeBtn = document.getElementById(`btn-p-${side}`);
             if (activeBtn) activeBtn.classList.add('active');
 
-            const list = currentMatchPlayers[side] || [];
+            const teamData = currentMatchPlayers[side] || { all: [], top_scorer: null, top_passer: null };
+            const list = teamData.all || [];
+            const topScorer = teamData.top_scorer;
+            const topPasser = teamData.top_passer;
+            
             const box = document.getElementById('players-list-box');
 
             if (list.length === 0) {
                 box.innerHTML = '<div class="no-match" style="padding:15px;">Aucune donnée disponible.</div>';
                 return;
+            }
+
+            let picksHtml = '';
+            if (topScorer || topPasser) {
+                picksHtml = `
+                    <div class="ia-picks-box">
+                        ${topScorer ? `<div class="ia-pick-item"><span class="ia-pick-label">🎯 Buteur Favori IA :</span><span class="ia-pick-val">${topScorer.name} (${topScorer.goal_prob}%)</span></div>` : ''}
+                        ${topPasser ? `<div class="ia-pick-item"><span class="ia-pick-label">🏒 Passeur Favori IA :</span><span class="ia-pick-val">${topPasser.name} (${topPasser.assist_prob}%)</span></div>` : ''}
+                    </div>
+                `;
             }
 
             let rows = list.map(p => `
@@ -360,18 +380,21 @@
             `).join('');
 
             box.innerHTML = `
-                <table class="players-table">
-                    <thead>
-                        <tr>
-                            <th>Joueur</th>
-                            <th>Stats</th>
-                            <th>Point %</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows}
-                    </tbody>
-                </table>
+                ${picksHtml}
+                <div class="players-table-container">
+                    <table class="players-table">
+                        <thead>
+                            <tr>
+                                <th>Joueur</th>
+                                <th>Stats</th>
+                                <th>Point %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
             `;
         }
 
