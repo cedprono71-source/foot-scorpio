@@ -88,4 +88,40 @@ async def get_nhl_matches():
             "time": "01:30",
             "prediction": "Tampa Bay Lightning (52%)",
             "over_under": "Under 5.5 buts",
-            "opponent_def_rating": 2
+            "opponent_def_rating": 2.5,
+            "home_players": [
+                {"name": "Charlie Coyle", "shots_per_game": 2.5, "pp_unit": 2, "toi_minutes": 16.0},
+                {"name": "Pavel Zacha", "shots_per_game": 2.2, "pp_unit": 2, "toi_minutes": 16.5}
+            ]
+        }
+    ]
+
+    # Application de l'algorithme de pépite 3+ sur chaque match
+    for match in matches:
+        match["value_pick"] = find_value_goalscorers(
+            match["home_players"], 
+            match["opponent_def_rating"]
+        )
+
+    return {"sport": "NHL", "matches": matches}
+
+@app.get("/api/football/matches")
+async def get_football_matches():
+    """
+    Route pour l'onglet Football de votre application.
+    """
+    matches = [
+        {
+            "id": 201,
+            "home_team": "Real Madrid",
+            "away_team": "FC Barcelone",
+            "time": "21:00",
+            "prediction": "Match Nul ou Real (55%)",
+            "over_under": "Over 2.5 buts"
+        }
+    ]
+    return {"sport": "Football", "matches": matches}
+
+# Lancement propre de l'application
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
