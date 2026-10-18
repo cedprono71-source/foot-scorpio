@@ -11,17 +11,20 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
-        /* FOND D'ÉCRAN GLOBAL GLASSMORPHISM */
+        /* FOND D'ÉCRAN INSPIRÉ DU BOUCLIER LNH (NOIR PROFOND & REFLET MÉTALLIQUE) */
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            background: #0d1117;
+            background: 
+                radial-gradient(circle at 50% 15%, rgba(148, 163, 184, 0.15) 0%, transparent 45%),
+                linear-gradient(135deg, #090d12 0%, #111822 50%, #05070a 100%);
+            background-attachment: fixed;
             color: #f0f6fc; 
             padding: 0; 
             min-height: 100vh;
         }
         
         header { 
-            background: rgba(13, 17, 23, 0.85); 
+            background: rgba(9, 13, 18, 0.85); 
             backdrop-filter: blur(12px); 
             -webkit-backdrop-filter: blur(12px); 
             padding: 12px 16px; 
@@ -35,7 +38,7 @@
         .sport-tab { flex: 1; text-align: center; padding: 6px 6px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s ease; white-space: nowrap; }
         .sport-tab.active { background: linear-gradient(135deg, #e11238 0%, #b91c1c 100%); color: #ffffff; box-shadow: 0 4px 12px rgba(225,18,56,0.4); }
 
-        .date-strip-container { background: rgba(13, 17, 23, 0.85); backdrop-filter: blur(12px); display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .date-strip-container { background: rgba(9, 13, 18, 0.85); backdrop-filter: blur(12px); display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .date-strip { display: flex; overflow-x: auto; white-space: nowrap; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; scrollbar-width: none; width: 100%; }
         .date-strip::-webkit-scrollbar { display: none; }
         .date-item { flex: 0 0 auto; width: 54px; padding: 10px 0 8px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; background: transparent; transition: background 0.2s; }
@@ -316,9 +319,12 @@
 
         async function chargerMatchs(dateStr) {
             const container = document.getElementById('matches-container');
-            container.innerHTML = '<div class="no-match">Chargement des matchs...</div>';
+            container.innerHTML = '<div class="no-match">Synchronisation et chargement des matchs...</div>';
 
             try {
+                // SYNCHRONISATION AUTOMATIQUE DES PRONOS DU JOUR EN ARRIÈRE-PLAN
+                await fetch(`/api/predict/auto-sync?date=${dateStr}`);
+
                 const response = await fetch(`/api/matches/nhl?date=${dateStr}`);
                 const data = await response.json();
                 container.innerHTML = '';
@@ -393,7 +399,7 @@
                 `;
 
                 if (history.length === 0) {
-                    container.innerHTML = statsHtml + '<div class="no-match">Aucun pronostic enregistré pour le moment. Consultez des matchs pour commencer à enregistrer l\'historique !</div>';
+                    container.innerHTML = statsHtml + '<div class="no-match">Aucun pronostic enregistré pour le moment.</div>';
                     return;
                 }
 
