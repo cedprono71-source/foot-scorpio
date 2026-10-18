@@ -252,4 +252,39 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                     "goal_prob": goal_prob,
                     "assist_prob": assist_prob,
                     "point_prob": point_prob,
-                    "shots_per_game": round(g_pg *
+                    "shots_per_game": round(g_pg * 2.5 + 1.2, 1),
+                    "pp_unit": 2 if goals < 5 else 1,
+                    "toi_minutes": 16.5
+                })
+                
+            players = sorted(players, key=lambda x: x["point_prob"], reverse=True)
+            if players:
+                top_scorer = max(players, key=lambda x: x["goal_prob"])
+                top_passer = max(players, key=lambda x: x["assist_prob"])
+    except Exception:
+        pass
+        
+    return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
+
+def calculate_poisson_matrix(home_xg, away_xg):
+    max_goals = 10
+    matrix = np.zeros((max_goals, max_goals))
+    for h in range(max_goals):
+        for a in range(max_goals):
+            matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
+    return matrix
+
+# ---------------------------------------------------------
+# ROUTES API DE L'APPLICATION
+# ---------------------------------------------------------
+
+@app.get("/")
+def read_root(response_class=HTMLResponse):
+    base_dir = os.path.dirname(__file__)
+    file_path = os.path.join(base_dir, "index.html")
+    
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+            
+    return {"status":
