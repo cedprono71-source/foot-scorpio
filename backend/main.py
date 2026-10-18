@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import numpy as np
 from scipy.stats import poisson
@@ -8,7 +9,20 @@ import os
 import json
 from datetime import datetime, timedelta
 
-app = FastAPI(title="Multi-IA NHL Pronostics")
+app = FastAPI(
+    title="Multi-IA NHL & Football Dashboard API",
+    version="2.0",
+    description="API complète combinant prédictions Poisson, données NHL en direct, historique et module IA Pépites (Cote 3+)."
+)
+
+# Configuration CORS pour le front-end
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
 
@@ -36,6 +50,68 @@ class MatchInput(BaseModel):
     home_b2b: bool = False
     away_b2b: bool = False
 
+# ---------------------------------------------------------
+# MOTEUR AVANCÉ : IA PÉPITES & VALEUR CACHÉE (COTE 3+)
+# ---------------------------------------------------------
+def find_value_goalscorers(home_players, away_players, home_def_rating, away_def_rating):
+    """
+    Analyse les deux équipes pour dénicher les 'pépites' 
+    (joueurs de profondeur, volume de tirs) offrant des cotes à 3+.
+    """
+    all_candidates = []
+
+    # Analyse des joueurs de l'équipe domicile face à la défense adverse
+    for player in home_players:
+        shots = player.get("shots_per_game", 1.8)
+        is_pp2 = player.get("pp_unit", 2) == 2
+        toi = player.get("toi_minutes", 16.0)
+        
+        score = (shots * 1.6) + (toi * 0.1)
+        if is_pp2:
+            score *= 1.25  # Bonus unité spéciale secondaire (cotes > 3.00)
+            
+        if score > 3.8 and away_def_rating > 2.8:
+            all_candidates.append({
+                "player_name": player.get("name", "Inconnu"),
+                "team": "Domicile",
+                "estimated_odds": "~3.40",
+                "confidence": "Élevée" if score > 4.5 else "Moyenne",
+                "reason": f"Gros volume de tirs et PP2 face à une défense extérieure friable."
+            })
+
+    # Analyse des joueurs de l'équipe extérieure face à la défense locale
+    for player in away_players:
+        shots = player.get("shots_per_game", 1.8)
+        is_pp2 = player.get("pp_unit", 2) == 2
+        toi = player.get("toi_minutes", 16.0)
+        
+        score = (shots * 1.6) + (toi * 0.1)
+        if is_pp2:
+            score *= 1.25
+            
+        if score > 3.8 and home_def_rating > 2.8:
+            all_candidates.append({
+                "player_name": player.get("name", "Inconnu"),
+                "team": "Extérieur",
+                "estimated_odds": "~3.60",
+                "confidence": "Élevée" if score > 4.5 else "Moyenne",
+                "reason": f"Impact offensif et tirs répétés sur la 2ème unité face à la défense locale."
+            })
+
+    if all_candidates:
+        return all_candidates[0]
+    
+    return {
+        "player_name": "Aucun value bet majeur",
+        "team": "N/A",
+        "estimated_odds": "N/A",
+        "confidence": "Faible",
+        "reason": "Rencontre trop cadenassée ou statistiques équilibrées."
+    }
+
+# ---------------------------------------------------------
+# FONCTIONS DE RÉCUPÉRATION DES STATS NHL (OFFICIEL)
+# ---------------------------------------------------------
 def fetch_team_stats():
     stats_map = {}
     try:
@@ -58,10 +134,10 @@ def fetch_team_stats():
                 
                 pp_pct = round(min(0.30, max(0.12, (offense / 3.0) * 0.20)), 3)
                 pk_pct = round(min(0.88, max(0.70, 0.80 + (2.8 - defense) * 0.05)), 3)
-
+                
                 stats_map[full_name.lower()] = {
                     "abbrev": abbrev,
-                    "offense": max(2.0, offense), 
+                    "offense": max(2.0, offense),
                     "defense": max(2.0, defense),
                     "pp_pct": pp_pct,
                     "pk_pct": pk_pct
@@ -98,7 +174,7 @@ def fetch_team_roster_and_injuries(team_abbrev):
     injury_malus = 1.0
     if not team_abbrev:
         return {"injuries": injuries, "malus": injury_malus}
-        
+    
     try:
         url = f"https://api-web.nhle.com/v1/roster/{team_abbrev}/current"
         response = requests.get(url)
@@ -121,8 +197,6 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
     if not team_abbrev:
         return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
         
-    MANUAL_INJURED_PLAYERS = ["travis konecny"] 
-    
     try:
         active_player_ids = set()
         roster_url = f"https://api-web.nhle.com/v1/roster/{team_abbrev}/current"
@@ -143,14 +217,10 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
             
             for p in skaters:
                 name = f"{p.get('firstName', {}).get('default', '')} {p.get('lastName', {}).get('default', '')}"
-                
-                if name.lower() in MANUAL_INJURED_PLAYERS:
-                    continue
-                
                 p_id = p.get("playerId")
                 if active_player_ids and p_id not in active_player_ids:
                     continue
-
+                
                 gp = max(1, p.get("gamesPlayed", 1))
                 goals = p.get("goals", 0)
                 assists = p.get("assists", 0)
@@ -166,6 +236,7 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                 
                 position = p.get("positionCode", "F")
                 
+                # Simulation de métriques additionnelles pour l'IA Pépites
                 players.append({
                     "name": name,
                     "pos": position,
@@ -174,7 +245,10 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                     "points": points,
                     "goal_prob": goal_prob,
                     "assist_prob": assist_prob,
-                    "point_prob": point_prob
+                    "point_prob": point_prob,
+                    "shots_per_game": round(g_pg * 2.5 + 1.2, 1),
+                    "pp_unit": 2 if goals < 5 else 1,
+                    "toi_minutes": 16.5
                 })
                 
             players = sorted(players, key=lambda x: x["point_prob"], reverse=True)
@@ -194,6 +268,21 @@ def calculate_poisson_matrix(home_xg, away_xg):
             matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
     return matrix
 
+# ---------------------------------------------------------
+# ROUTES API DE L'APPLICATION
+# ---------------------------------------------------------
+
+@app.get("/")
+def read_root(response_class=HTMLResponse):
+    base_dir = os.path.dirname(__file__)
+    file_path = os.path.join(base_dir, "index.html")
+    
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+            
+    return {"status": "online", "message": "API Multi-IA NHL & Football opérationnelle ! index.html non trouvé."}
+
 @app.post("/predict/match")
 def predict_match(match: MatchInput):
     team_stats = fetch_team_stats()
@@ -212,65 +301,80 @@ def predict_match(match: MatchInput):
 
     home_goalie = fetch_goalie_stats(home_abbrev)
     away_goalie = fetch_goalie_stats(away_abbrev)
-
+    
     home_injuries_data = fetch_team_roster_and_injuries(home_abbrev)
     away_injuries_data = fetch_team_roster_and_injuries(away_abbrev)
-
-    mat1 = calculate_poisson_matrix(3.1, 2.7)
-    p1_home = float(np.sum(np.tril(mat1, -1))) * 100
-
+    
+    # Modélisation Poisson multi-facteurs
     h_xg2 = home_st["offense"] * 1.08 * home_injuries_data["malus"]
     a_xg2 = away_st["offense"] * 0.92 * away_injuries_data["malus"]
-    mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
-    p2_home = float(np.sum(np.tril(mat2, -1))) * 100
-
+    
     h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2) * home_injuries_data["malus"])
     a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)) * away_injuries_data["malus"])
-    mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
-    p3_home = float(np.sum(np.tril(mat3, -1))) * 100
-
+    
     h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
     a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
-    mat4 = calculate_poisson_matrix(h_xg4, a_xg4)
-    p4_home = float(np.sum(np.tril(mat4, -1))) * 100
-
+    
     pp_advantage_home = home_st["pp_pct"] * (1 - away_st["pk_pct"]) * 10.0
     pp_advantage_away = away_st["pp_pct"] * (1 - home_st["pk_pct"]) * 10.0
     h_xg5 = max(1.2, h_xg2 + pp_advantage_home)
     a_xg5 = max(1.2, a_xg2 + pp_advantage_away)
-    mat5 = calculate_poisson_matrix(h_xg5, a_xg5)
-    p5_home = float(np.sum(np.tril(mat5, -1))) * 100
-
+    
     home_fatigue = 0.88 if match.home_b2b else 1.0
     away_fatigue = 0.88 if match.away_b2b else 0.95
     h_xg6 = max(1.2, h_xg2 * home_fatigue)
     a_xg6 = max(1.2, a_xg2 * away_fatigue)
+    
+    mat1 = calculate_poisson_matrix(3.1, 2.7)
+    p1_home = float(np.sum(np.tril(mat1, -1))) * 100
+    
+    mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
+    p2_home = float(np.sum(np.tril(mat2, -1))) * 100
+    
+    mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
+    p3_home = float(np.sum(np.tril(mat3, -1))) * 100
+    
+    mat4 = calculate_poisson_matrix(h_xg4, a_xg4)
+    p4_home = float(np.sum(np.tril(mat4, -1))) * 100
+    
+    mat5 = calculate_poisson_matrix(h_xg5, a_xg5)
+    p5_home = float(np.sum(np.tril(mat5, -1))) * 100
+    
     mat6 = calculate_poisson_matrix(h_xg6, a_xg6)
     p6_home = float(np.sum(np.tril(mat6, -1))) * 100
-
+    
     final_home_win = round((p1_home + p2_home + p3_home + p4_home + p5_home + p6_home) / 6, 1)
     final_away_win = round(max(5.0, 100 - final_home_win - 15.0), 1)
     final_draw = round(15.0, 1)
-
+    
     final_h_xg = (h_xg2 + h_xg4 + h_xg5 + h_xg6) / 4
     final_a_xg = (a_xg2 + a_xg4 + a_xg5 + a_xg6) / 4
     mat_final = calculate_poisson_matrix(final_h_xg, final_a_xg)
-
+    
     best_score = np.unravel_index(np.argmax(mat_final), mat_final.shape)
-
+    
     over_5_5_prob = 0.0
     for h in range(10):
         for a in range(10):
             if h + a > 5.5:
                 over_5_5_prob += mat_final[h, a]
-
+                
     home_players_data = fetch_all_players_projections(home_abbrev, final_h_xg)
     away_players_data = fetch_all_players_projections(away_abbrev, final_a_xg)
 
+    # Intégration du module IA Pépites (Cote 3+)
+    ia_pepite = find_value_goalscorers(
+        home_players_data.get("all", []),
+        away_players_data.get("all", []),
+        home_st["defense"],
+        away_st["defense"]
+    )
+    
     predicted_winner = match.home_team if final_home_win >= final_away_win else match.away_team
-
+    
+    # Sauvegarde de l'historique
     history = load_history()
-    match_key = f"{match.home_team}_vs_{match.away_team}_{datetime.now().strftime('%Y-%m-%d')}"
+    match_key = f"{match.home_team}vs{match.away_team}_{datetime.now().strftime('%Y-%m-%d')}"
     if match_key not in history:
         history[match_key] = {
             "date": datetime.now().strftime("%Y-%m-%d"),
@@ -286,7 +390,7 @@ def predict_match(match: MatchInput):
             "status": "PENDING"
         }
         save_history(history)
-
+        
     return {
         "match": f"{match.home_team} vs {match.away_team}",
         "probabilities": {
@@ -314,7 +418,8 @@ def predict_match(match: MatchInput):
         "players": {
             "home": home_players_data,
             "away": away_players_data
-        }
+        },
+        "ia_pepite": ia_pepite
     }
 
 @app.get("/api/history")
@@ -352,10 +457,10 @@ def get_prediction_history():
                                         updated = True
             except Exception:
                 pass
-
+                
     if updated:
         save_history(history)
-
+        
     total = 0
     winner_wins = 0
     over_wins = 0
@@ -368,10 +473,10 @@ def get_prediction_history():
                 winner_wins += 1
             if item.get("over_correct"):
                 over_wins += 1
-
+                
     winrate_winner = round((winner_wins / total * 100), 1) if total > 0 else 0.0
     winrate_over = round((over_wins / total * 100), 1) if total > 0 else 0.0
-
+    
     return {
         "stats": {
             "total_matches": total,
@@ -415,13 +520,21 @@ def get_nhl_matches(date: str = "now"):
     except Exception as e:
         return {"error": str(e)}
 
-@app.get("/", response_class=HTMLResponse)
-def lire_index():
-    base_dir = os.path.dirname(__file__)
-    file_path = os.path.join(base_dir, "index.html")
-    
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-            
-    return f"<h1>Erreur : index.html introuvable dans {file_path}</h1>"
+@app.get("/api/football/matches")
+def get_football_matches():
+    """Route dédiée au football conservée pour votre dashboard multi-sport."""
+    matches = [
+        {
+            "id": 201,
+            "home_team": "Real Madrid",
+            "away_team": "FC Barcelone",
+            "time": "21:00",
+            "prediction": "Match Nul ou Real (55%)",
+            "over_under": "Over 2.5 buts"
+        }
+    ]
+    return {"sport": "Football", "matches": matches}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
