@@ -415,11 +415,14 @@ def get_nhl_matches(date: str = "now"):
     except Exception as e:
         return {"error": str(e)}
 
-# --- ROUTE PRINCIPALE CORRIGÉE (index.html est directement dans le dossier backend) ---
+# --- ROUTE PRINCIPALE SÉCURISÉE AVEC CHEMIN ABSOLU ---
 @app.get("/", response_class=HTMLResponse)
 def lire_index():
-    file_path = "index.html"
+    base_dir = os.path.dirname(__file__)
+    file_path = os.path.join(base_dir, "index.html")
+    
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-    return "<h1>index.html introuvable dans le dossier backend</h1>"
+            
+    return f"<h1>Erreur : index.html introuvable dans {file_path}</h1>"
