@@ -1,4 +1,4 @@
-From fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -56,7 +56,7 @@ class MatchInput(BaseModel):
 def find_value_goalscorers(home_players, away_players, home_def_rating, away_def_rating):
     """
     Analyse les deux équipes pour dénicher les 'pépites' 
-    (joueurs de profondeur, volume de tirs) offrant des cotes à 3+.
+    (joueurs de profondeur, volume de tirs) offrant des cotes dynamiques à 3+.
     """
     all_candidates = []
 
@@ -71,12 +71,13 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
             score *= 1.25  # Bonus unité spéciale secondaire (cotes > 3.00)
             
         if score > 3.8 and away_def_rating > 2.8:
+            dynamic_odds = round(max(3.10, min(4.80, 5.2 - (score * 0.20))), 2)
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Domicile",
-                "estimated_odds": "~3.40",
+                "estimated_odds": f"~{dynamic_odds:.2f}",
                 "confidence": "Élevée" if score > 4.5 else "Moyenne",
-                "reason": f"Gros volume de tirs et PP2 face à une défense extérieure friable."
+                "reason": f"Gros volume de tirs ({shots} tirs/m) et PP2 face à une défense extérieure friable."
             })
 
     # Analyse des joueurs de l'équipe extérieure face à la défense locale
@@ -90,10 +91,11 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
             score *= 1.25
             
         if score > 3.8 and home_def_rating > 2.8:
+            dynamic_odds = round(max(3.10, min(4.80, 5.3 - (score * 0.20))), 2)
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Extérieur",
-                "estimated_odds": "~3.60",
+                "estimated_odds": f"~{dynamic_odds:.2f}",
                 "confidence": "Élevée" if score > 4.5 else "Moyenne",
                 "reason": f"Impact offensif et tirs répétés sur la 2ème unité face à la défense locale."
             })
@@ -236,7 +238,6 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                 
                 position = p.get("positionCode", "F")
                 
-                # Simulation de métriques additionnelles pour l'IA Pépites
                 players.append({
                     "name": name,
                     "pos": position,
@@ -273,7 +274,7 @@ def calculate_poisson_matrix(home_xg, away_xg):
 # ---------------------------------------------------------
 
 @app.get("/")
-def read_root(response_class=HTMLResponse):
+def read_root():
     base_dir = os.path.dirname(__file__)
     file_path = os.path.join(base_dir, "index.html")
     
@@ -305,7 +306,6 @@ def predict_match(match: MatchInput):
     home_injuries_data = fetch_team_roster_and_injuries(home_abbrev)
     away_injuries_data = fetch_team_roster_and_injuries(away_abbrev)
     
-    # Modélisation Poisson multi-facteurs
     h_xg2 = home_st["offense"] * 1.08 * home_injuries_data["malus"]
     a_xg2 = away_st["offense"] * 0.92 * away_injuries_data["malus"]
     
@@ -362,7 +362,6 @@ def predict_match(match: MatchInput):
     home_players_data = fetch_all_players_projections(home_abbrev, final_h_xg)
     away_players_data = fetch_all_players_projections(away_abbrev, final_a_xg)
 
-    # Intégration du module IA Pépites (Cote 3+)
     ia_pepite = find_value_goalscorers(
         home_players_data.get("all", []),
         away_players_data.get("all", []),
@@ -372,7 +371,6 @@ def predict_match(match: MatchInput):
     
     predicted_winner = match.home_team if final_home_win >= final_away_win else match.away_team
     
-    # Sauvegarde de l'historique
     history = load_history()
     match_key = f"{match.home_team}vs{match.away_team}_{datetime.now().strftime('%Y-%m-%d')}"
     if match_key not in history:
@@ -522,7 +520,6 @@ def get_nhl_matches(date: str = "now"):
 
 @app.get("/api/football/matches")
 def get_football_matches():
-    """Route dédiée au football conservée pour votre dashboard multi-sport."""
     matches = [
         {
             "id": 201,
