@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="2.0",
-    description="API complète combinant prédictions Poisson, données NHL en direct, historique et module IA Pépites (Cote 3+)."
+    description="API complète combinant prédictions Poisson, données NHL en direct, historique et module IA Pépites."
 )
 
 # Configuration CORS pour le front-end
@@ -51,7 +51,7 @@ class MatchInput(BaseModel):
     away_b2b: bool = False
 
 # ---------------------------------------------------------
-# MOTEUR AVANCÉ : IA PÉPITES & VALEUR CACHÉE (COTE 3+)
+# MOTEUR AVANCÉ : IA PÉPITES & VALEUR CACHÉE (SANS COTE ESTIMÉE)
 # ---------------------------------------------------------
 def find_value_goalscorers(home_players, away_players, home_def_rating, away_def_rating):
     """
@@ -76,11 +76,9 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
             score *= 1.40  # Fort bonus pour cibler la 2ème unité
             
         if score > 2.8 and away_def_rating > 2.8:
-            dynamic_odds = round(max(3.50, min(5.50, 6.0 - (score * 0.30))), 2)
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Domicile",
-                "estimated_odds": f"~{dynamic_odds:.2f}",
                 "confidence": "Spéculative",
                 "reason": f"Value pur (PP2 / profondeur) avec {shots} tirs/m face à une défense perméable."
             })
@@ -101,11 +99,9 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
             score *= 1.40
             
         if score > 2.8 and home_def_rating > 2.8:
-            dynamic_odds = round(max(3.50, min(5.50, 6.0 - (score * 0.30))), 2)
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Extérieur",
-                "estimated_odds": f"~{dynamic_odds:.2f}",
                 "confidence": "Spéculative",
                 "reason": f"Coup à tenter sur un joueur secondaire (PP2) face à la défense locale."
             })
@@ -116,7 +112,6 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
     return {
         "player_name": "Aucun value bet majeur",
         "team": "N/A",
-        "estimated_odds": "N/A",
         "confidence": "Faible",
         "reason": "Pas de pépite de profondeur identifiée pour cette rencontre."
     }
