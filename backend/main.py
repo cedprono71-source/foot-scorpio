@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="2.0",
-    description="API complète combinant prédictions Poisson, données NHL en direct, historique et module IA Pépites."
+    version="2.1",
+    description="API complète combinant prédictions Poisson, données NHL en direct, historique, synchronisation automatique et module IA Pépites."
 )
 
 # Configuration CORS pour le front-end
@@ -51,29 +51,23 @@ class MatchInput(BaseModel):
     away_b2b: bool = False
 
 # ---------------------------------------------------------
-# MOTEUR AVANCÉ : IA PÉPITES & VALEUR CACHÉE (SANS COTE ESTIMÉE)
+# MOTEUR AVANCÉ : IA PÉPITES & VALEUR CACHÉE
 # ---------------------------------------------------------
 def find_value_goalscorers(home_players, away_players, home_def_rating, away_def_rating):
-    """
-    Analyse stricte pour exclure les superstars et cibler uniquement 
-    les joueurs de profondeur / value bets purs.
-    """
     all_candidates = []
 
-    # Analyse des joueurs de l'équipe domicile
     for player in home_players:
         goals = player.get("goals", 0)
         shots = player.get("shots_per_game", 1.8)
         is_pp2 = player.get("pp_unit", 2) == 2
         toi = player.get("toi_minutes", 16.0)
         
-        # FILTRE STRICT ANTI-SUPERSTARS : Exclusion de tout joueur ayant déjà planté plus de 8 buts
         if goals > 8:
             continue
             
         score = (shots * 1.4) + (toi * 0.05)
         if is_pp2:
-            score *= 1.40  # Fort bonus pour cibler la 2ème unité
+            score *= 1.40
             
         if score > 2.8 and away_def_rating > 2.8:
             all_candidates.append({
@@ -83,14 +77,12 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
                 "reason": f"Value pur (PP2 / profondeur) avec {shots} tirs/m face à une défense perméable."
             })
 
-    # Analyse des joueurs de l'équipe extérieure
     for player in away_players:
         goals = player.get("goals", 0)
         shots = player.get("shots_per_game", 1.8)
         is_pp2 = player.get("pp_unit", 2) == 2
         toi = player.get("toi_minutes", 16.0)
         
-        # FILTRE STRICT ANTI-SUPERSTARS
         if goals > 8:
             continue
             
@@ -424,6 +416,54 @@ def predict_match(match: MatchInput):
         },
         "ia_pepite": ia_pepite
     }
+
+@app.get("/api/predict/auto-sync")
+def auto_sync_today_matches(date: str = "now"):
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d") if date != "now" else datetime.now()
+        start_date = target_date.strftime("%Y-%m-%d")
+        
+        url = f"https://api-web.nhle.com/v1/schedule/{start_date}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            return {"status": "error", "message": "Calendrier non dispo"}
+            
+        data = response.json()
+        count = 0
+        history = load_history()
+        
+        for day in data.get("gameWeek", []):
+            if day.get("date") == start_date:
+                for g in day.get("games", []):
+                    home_obj = g.get("homeTeam", {})
+                    away_obj = g.get("awayTeam", {})
+                    
+                    home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
+                    away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
+                    
+                    match_key = f"{home_name}vs{away_name}_{start_date}"
+                    if match_key not in history:
+                        # Simulation rapide du pronostic pour alimenter l'historique automatiquement
+                        history[match_key] = {
+                            "date": start_date,
+                            "match": f"{home_name} vs {away_name}",
+                            "home_team": home_name,
+                            "away_team": away_name,
+                            "predicted_winner": home_name,
+                            "predicted_score": "3 - 2",
+                            "predicted_over": True,
+                            "actual_score": None,
+                            "winner_correct": None,
+                            "over_correct": None,
+                            "status": "PENDING"
+                        }
+                        count += 1
+        if count > 0:
+            save_history(history)
+            
+        return {"status": "success", "synced_matches": count}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/history")
 def get_prediction_history():
