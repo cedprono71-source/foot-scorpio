@@ -47,36 +47,34 @@
         .main-content { min-height: 100vh; padding: 14px; }
         .section-title { font-size: 0.75rem; font-weight: 700; color: #8fa3b3; text-transform: uppercase; padding: 6px 4px 12px 4px; letter-spacing: 0.5px; }
         
-        /* CARTES DE MATCHS STYLE GLASSMORPHISM */
+        /* CARTES DE MATCHS STYLE PATINOIRE DE HOCKEY (GLACE) */
         .match-card { 
-            background: rgba(22, 27, 34, 0.65);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
             border-radius: 14px; 
             padding: 14px 16px; 
             margin-bottom: 12px; 
             display: flex; 
             align-items: center; 
             justify-content: space-between; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: inset 0 0 20px rgba(0, 119, 182, 0.12), 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border: 2px solid #cbd5e1;
             cursor: pointer; 
             transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease; 
         }
         .match-card:active { 
             transform: scale(0.97); 
-            background: rgba(30, 36, 46, 0.85);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+            box-shadow: inset 0 0 15px rgba(0, 119, 182, 0.2), 0 4px 15px rgba(0, 0, 0, 0.5);
         }
         
         .match-left { display: flex; align-items: center; gap: 12px; flex: 1; }
         
         .teams-list { display: flex; flex-direction: column; gap: 10px; flex: 1; }
-        .team-item { display: flex; align-items: center; gap: 12px; font-size: 0.95rem; font-weight: 700; color: #f0f6fc; }
-        .team-logo { width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+        .team-item { display: flex; align-items: center; gap: 12px; font-size: 0.95rem; font-weight: 700; color: #0f172a; }
+        .team-logo { width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); }
         
         .match-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-        .match-time { font-size: 0.75rem; font-weight: 700; color: #8fa3b3; background: rgba(255, 255, 255, 0.05); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.06); }
+        .match-time { font-size: 0.75rem; font-weight: 700; color: #475569; background: rgba(0, 0, 0, 0.06); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(0, 0, 0, 0.08); }
         
         .btn-prono-badge { 
             background: linear-gradient(135deg, #e11238 0%, #b91c1c 100%);
@@ -138,7 +136,7 @@
         .predicted-score-box { background: #0d1117; text-align: center; padding: 10px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08); }
         .predicted-score-val { font-size: 1.4rem; font-weight: bold; color: #3fb950; letter-spacing: 1px; }
         
-        /* STYLE DU BLOC IA PÉPITES (COTE 3+) */
+        /* STYLE DU BLOC IA PÉPITES */
         .pepite-card {
             background: linear-gradient(135deg, rgba(210, 153, 34, 0.15), rgba(22, 27, 34, 0.9));
             border: 1px solid #d29922;
@@ -157,14 +155,6 @@
             font-size: 0.8rem;
             font-weight: bold;
             color: #d29922;
-        }
-        .pepite-odds {
-            background-color: #d29922;
-            color: #0d1117;
-            font-weight: bold;
-            font-size: 0.75rem;
-            padding: 2px 8px;
-            border-radius: 6px;
         }
         .pepite-player {
             font-size: 0.95rem;
@@ -492,11 +482,10 @@
                             <span class="predicted-score-val">${data.predicted_score || '3 - 2'}</span>
                         </div>
 
-                        <!-- BLOC IA PÉPITES (Cote 3+) -->
+                        <!-- BLOC IA PÉPITES -->
                         <div class="pepite-card">
                             <div class="pepite-header">
                                 <span class="pepite-title">🔥 IA PÉPITES : Value Bet</span>
-                                <span class="pepite-odds">${pepite.estimated_odds || '~3.40'}</span>
                             </div>
                             <div class="pepite-player">${pepite.player_name || 'Aucune value majeure'} ${pepite.team ? '(' + pepite.team + ')' : ''}</div>
                             <div class="pepite-reason">${pepite.reason || 'Analyse du volume de tirs et des unités spéciales.'}</div>
@@ -590,7 +579,7 @@
 
             let rows = list.map(p => `
                 <tr>
-                    <td><b>${p.name}</b> <span style="color:#8fa3b3;">(${p.pos})</span></td>
+                    <td><b>${p.name}</b> <span style="color:#475569;">(${p.pos})</span></td>
                     <td>${p.goals}B / ${p.assists}P</td>
                     <td class="prob-badge">${p.point_prob}%</td>
                 </tr>
