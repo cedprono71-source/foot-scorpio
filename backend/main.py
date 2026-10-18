@@ -55,66 +55,62 @@ class MatchInput(BaseModel):
 # ---------------------------------------------------------
 def find_value_goalscorers(home_players, away_players, home_def_rating, away_def_rating):
     """
-    Analyse les deux équipes pour dénicher les 'pépites' de profondeur 
-    (exclut les superstars/favoris) offrant de vraies cotes value (3.50+).
+    Analyse stricte pour exclure les superstars et cibler uniquement 
+    les joueurs de profondeur / value bets purs.
     """
     all_candidates = []
 
-    # Analyse des joueurs de l'équipe domicile face à la défense adverse
+    # Analyse des joueurs de l'équipe domicile
     for player in home_players:
         goals = player.get("goals", 0)
         shots = player.get("shots_per_game", 1.8)
         is_pp2 = player.get("pp_unit", 2) == 2
         toi = player.get("toi_minutes", 16.0)
         
-        # FILTRE ANTI-FAVORIS : On exclut les joueurs qui marquent trop de buts (les superstars évidentes)
-        if goals > 12: 
+        # FILTRE STRICT ANTI-SUPERSTARS : Exclusion de tout joueur ayant déjà planté plus de 8 buts
+        if goals > 8:
             continue
             
-        score = (shots * 1.5) + (toi * 0.08)
+        score = (shots * 1.4) + (toi * 0.05)
         if is_pp2:
-            score *= 1.30  # Bonus pour cibler la profondeur et les unités secondaires
+            score *= 1.40  # Fort bonus pour cibler la 2ème unité
             
-        if score > 3.2 and away_def_rating > 2.8:
-            # Génère des cotes plus élevées (entre 3.40 et 5.20) car ce sont des profils cachés
-            dynamic_odds = round(max(3.40, min(5.20, 5.8 - (score * 0.35))), 2)
-            
+        if score > 2.8 and away_def_rating > 2.8:
+            dynamic_odds = round(max(3.50, min(5.50, 6.0 - (score * 0.30))), 2)
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Domicile",
                 "estimated_odds": f"~{dynamic_odds:.2f}",
-                "confidence": "Moyenne" if dynamic_odds < 4.2 else "Spéculative",
-                "reason": f"Joueur de profondeur / PP2 avec un bon volume de tirs ({shots} tirs/m) face à une défense perméable."
+                "confidence": "Spéculative",
+                "reason": f"Value pur (PP2 / profondeur) avec {shots} tirs/m face à une défense perméable."
             })
 
-    # Analyse des joueurs de l'équipe extérieure face à la défense locale
+    # Analyse des joueurs de l'équipe extérieure
     for player in away_players:
         goals = player.get("goals", 0)
         shots = player.get("shots_per_game", 1.8)
         is_pp2 = player.get("pp_unit", 2) == 2
         toi = player.get("toi_minutes", 16.0)
         
-        # FILTRE ANTI-FAVORIS
-        if goals > 12:
+        # FILTRE STRICT ANTI-SUPERSTARS
+        if goals > 8:
             continue
             
-        score = (shots * 1.5) + (toi * 0.08)
+        score = (shots * 1.4) + (toi * 0.05)
         if is_pp2:
-            score *= 1.30
+            score *= 1.40
             
-        if score > 3.2 and home_def_rating > 2.8:
-            dynamic_odds = round(max(3.40, min(5.20, 5.8 - (score * 0.35))), 2)
-            
+        if score > 2.8 and home_def_rating > 2.8:
+            dynamic_odds = round(max(3.50, min(5.50, 6.0 - (score * 0.30))), 2)
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Extérieur",
                 "estimated_odds": f"~{dynamic_odds:.2f}",
-                "confidence": "Moyenne" if dynamic_odds < 4.2 else "Spéculative",
-                "reason": f"Coup à tenter sur la profondeur adverse et les tirs de loin face à la défense locale."
+                "confidence": "Spéculative",
+                "reason": f"Coup à tenter sur un joueur secondaire (PP2) face à la défense locale."
             })
 
     if all_candidates:
-        # Trier pour prendre le profil le plus intéressant en terme de value
         return all_candidates[0]
     
     return {
@@ -122,7 +118,7 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
         "team": "N/A",
         "estimated_odds": "N/A",
         "confidence": "Faible",
-        "reason": "Pas assez de valeur décelée hors des superstars pour ce match."
+        "reason": "Pas de pépite de profondeur identifiée pour cette rencontre."
     }
 
 # ---------------------------------------------------------
