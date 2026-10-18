@@ -56,7 +56,7 @@ class MatchInput(BaseModel):
 def find_value_goalscorers(home_players, away_players, home_def_rating, away_def_rating):
     """
     Analyse les deux équipes pour dénicher les 'pépites' 
-    (joueurs de profondeur, volume de tirs) offrant des cotes à 3+.
+    (joueurs de profondeur, volume de tirs) offrant des cotes dynamiques à 3+.
     """
     all_candidates = []
 
@@ -71,12 +71,15 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
             score *= 1.25  # Bonus unité spéciale secondaire (cotes > 3.00)
             
         if score > 3.8 and away_def_rating > 2.8:
+            # Calcul dynamique de la cote en fonction du score (entre 3.10 et 4.80)
+            dynamic_odds = round(max(3.10, min(4.80, 5.2 - (score * 0.20))), 2)
+            
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Domicile",
-                "estimated_odds": "~3.40",
+                "estimated_odds": f"~{dynamic_odds:.2f}",
                 "confidence": "Élevée" if score > 4.5 else "Moyenne",
-                "reason": f"Gros volume de tirs et PP2 face à une défense extérieure friable."
+                "reason": f"Gros volume de tirs ({shots} tirs/m) et PP2 face à une défense extérieure friable."
             })
 
     # Analyse des joueurs de l'équipe extérieure face à la défense locale
@@ -90,10 +93,13 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
             score *= 1.25
             
         if score > 3.8 and home_def_rating > 2.8:
+            # Calcul dynamique de la cote pour l'équipe extérieure
+            dynamic_odds = round(max(3.10, min(4.80, 5.3 - (score * 0.20))), 2)
+            
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Extérieur",
-                "estimated_odds": "~3.60",
+                "estimated_odds": f"~{dynamic_odds:.2f}",
                 "confidence": "Élevée" if score > 4.5 else "Moyenne",
                 "reason": f"Impact offensif et tirs répétés sur la 2ème unité face à la défense locale."
             })
@@ -246,295 +252,4 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals):
                     "goal_prob": goal_prob,
                     "assist_prob": assist_prob,
                     "point_prob": point_prob,
-                    "shots_per_game": round(g_pg * 2.5 + 1.2, 1),
-                    "pp_unit": 2 if goals < 5 else 1,
-                    "toi_minutes": 16.5
-                })
-                
-            players = sorted(players, key=lambda x: x["point_prob"], reverse=True)
-            if players:
-                top_scorer = max(players, key=lambda x: x["goal_prob"])
-                top_passer = max(players, key=lambda x: x["assist_prob"])
-    except Exception:
-        pass
-        
-    return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
-
-def calculate_poisson_matrix(home_xg, away_xg):
-    max_goals = 10
-    matrix = np.zeros((max_goals, max_goals))
-    for h in range(max_goals):
-        for a in range(max_goals):
-            matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
-    return matrix
-
-# ---------------------------------------------------------
-# ROUTES API DE L'APPLICATION
-# ---------------------------------------------------------
-
-@app.get("/")
-def read_root(response_class=HTMLResponse):
-    base_dir = os.path.dirname(__file__)
-    file_path = os.path.join(base_dir, "index.html")
-    
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-            
-    return {"status": "online", "message": "API Multi-IA NHL & Football opérationnelle ! index.html non trouvé."}
-
-@app.post("/predict/match")
-def predict_match(match: MatchInput):
-    team_stats = fetch_team_stats()
-    
-    home_abbrev, away_abbrev = "", ""
-    home_st = {"offense": 3.1, "defense": 2.7, "pp_pct": 0.20, "pk_pct": 0.80}
-    away_st = {"offense": 2.9, "defense": 2.9, "pp_pct": 0.18, "pk_pct": 0.78}
-    
-    for name, st in team_stats.items():
-        if name in match.home_team.lower() or match.home_team.lower() in name:
-            home_st = st
-            home_abbrev = st.get("abbrev", "")
-        if name in match.away_team.lower() or match.away_team.lower() in name:
-            away_st = st
-            away_abbrev = st.get("abbrev", "")
-
-    home_goalie = fetch_goalie_stats(home_abbrev)
-    away_goalie = fetch_goalie_stats(away_abbrev)
-    
-    home_injuries_data = fetch_team_roster_and_injuries(home_abbrev)
-    away_injuries_data = fetch_team_roster_and_injuries(away_abbrev)
-    
-    # Modélisation Poisson multi-facteurs
-    h_xg2 = home_st["offense"] * 1.08 * home_injuries_data["malus"]
-    a_xg2 = away_st["offense"] * 0.92 * away_injuries_data["malus"]
-    
-    h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2) * home_injuries_data["malus"])
-    a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)) * away_injuries_data["malus"])
-    
-    h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
-    a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
-    
-    pp_advantage_home = home_st["pp_pct"] * (1 - away_st["pk_pct"]) * 10.0
-    pp_advantage_away = away_st["pp_pct"] * (1 - home_st["pk_pct"]) * 10.0
-    h_xg5 = max(1.2, h_xg2 + pp_advantage_home)
-    a_xg5 = max(1.2, a_xg2 + pp_advantage_away)
-    
-    home_fatigue = 0.88 if match.home_b2b else 1.0
-    away_fatigue = 0.88 if match.away_b2b else 0.95
-    h_xg6 = max(1.2, h_xg2 * home_fatigue)
-    a_xg6 = max(1.2, a_xg2 * away_fatigue)
-    
-    mat1 = calculate_poisson_matrix(3.1, 2.7)
-    p1_home = float(np.sum(np.tril(mat1, -1))) * 100
-    
-    mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
-    p2_home = float(np.sum(np.tril(mat2, -1))) * 100
-    
-    mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
-    p3_home = float(np.sum(np.tril(mat3, -1))) * 100
-    
-    mat4 = calculate_poisson_matrix(h_xg4, a_xg4)
-    p4_home = float(np.sum(np.tril(mat4, -1))) * 100
-    
-    mat5 = calculate_poisson_matrix(h_xg5, a_xg5)
-    p5_home = float(np.sum(np.tril(mat5, -1))) * 100
-    
-    mat6 = calculate_poisson_matrix(h_xg6, a_xg6)
-    p6_home = float(np.sum(np.tril(mat6, -1))) * 100
-    
-    final_home_win = round((p1_home + p2_home + p3_home + p4_home + p5_home + p6_home) / 6, 1)
-    final_away_win = round(max(5.0, 100 - final_home_win - 15.0), 1)
-    final_draw = round(15.0, 1)
-    
-    final_h_xg = (h_xg2 + h_xg4 + h_xg5 + h_xg6) / 4
-    final_a_xg = (a_xg2 + a_xg4 + a_xg5 + a_xg6) / 4
-    mat_final = calculate_poisson_matrix(final_h_xg, final_a_xg)
-    
-    best_score = np.unravel_index(np.argmax(mat_final), mat_final.shape)
-    
-    over_5_5_prob = 0.0
-    for h in range(10):
-        for a in range(10):
-            if h + a > 5.5:
-                over_5_5_prob += mat_final[h, a]
-                
-    home_players_data = fetch_all_players_projections(home_abbrev, final_h_xg)
-    away_players_data = fetch_all_players_projections(away_abbrev, final_a_xg)
-
-    # Intégration du module IA Pépites (Cote 3+)
-    ia_pepite = find_value_goalscorers(
-        home_players_data.get("all", []),
-        away_players_data.get("all", []),
-        home_st["defense"],
-        away_st["defense"]
-    )
-    
-    predicted_winner = match.home_team if final_home_win >= final_away_win else match.away_team
-    
-    # Sauvegarde de l'historique
-    history = load_history()
-    match_key = f"{match.home_team}vs{match.away_team}_{datetime.now().strftime('%Y-%m-%d')}"
-    if match_key not in history:
-        history[match_key] = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "match": f"{match.home_team} vs {match.away_team}",
-            "home_team": match.home_team,
-            "away_team": match.away_team,
-            "predicted_winner": predicted_winner,
-            "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
-            "predicted_over": round(over_5_5_prob * 100, 1) > 50.0,
-            "actual_score": None,
-            "winner_correct": None,
-            "over_correct": None,
-            "status": "PENDING"
-        }
-        save_history(history)
-        
-    return {
-        "match": f"{match.home_team} vs {match.away_team}",
-        "probabilities": {
-            "home_win": final_home_win,
-            "draw": final_draw,
-            "away_win": final_away_win
-        },
-        "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
-        "over_under_5_5": {
-            "over_prob": round(over_5_5_prob * 100, 1),
-            "under_prob": round((1 - over_5_5_prob) * 100, 1)
-        },
-        "goalies": {
-            "home": home_goalie,
-            "away": away_goalie
-        },
-        "special_teams": {
-            "home_pp": round(home_st["pp_pct"] * 100, 1),
-            "away_pp": round(away_st["pp_pct"] * 100, 1)
-        },
-        "injuries": {
-            "home": home_injuries_data["injuries"],
-            "away": away_injuries_data["injuries"]
-        },
-        "players": {
-            "home": home_players_data,
-            "away": away_players_data
-        },
-        "ia_pepite": ia_pepite
-    }
-
-@app.get("/api/history")
-def get_prediction_history():
-    history = load_history()
-    updated = False
-    for key, item in history.items():
-        if item.get("status") == "PENDING":
-            try:
-                m_date = item.get("date")
-                url = f"https://api-web.nhle.com/v1/schedule/{m_date}"
-                res = requests.get(url)
-                if res.status_code == 200:
-                    data = res.json()
-                    for day in data.get("gameWeek", []):
-                        if day.get("date") == m_date:
-                            for g in day.get("games", []):
-                                h_name = g.get("homeTeam", {}).get("placeName", {}).get("default") or g.get("homeTeam", {}).get("commonName", {}).get("default", "")
-                                a_name = g.get("awayTeam", {}).get("placeName", {}).get("default") or g.get("awayTeam", {}).get("commonName", {}).get("default", "")
-                                
-                                if (h_name.lower() in item["home_team"].lower() or item["home_team"].lower() in h_name.lower()) and \
-                                   (a_name.lower() in item["away_team"].lower() or item["away_team"].lower() in a_name.lower()):
-                                    
-                                    gameState = g.get("gameState")
-                                    if gameState in ["OFF", "FINAL"]:
-                                        h_score = g.get("homeTeam", {}).get("score", 0)
-                                        a_score = g.get("awayTeam", {}).get("score", 0)
-                                        actual_winner = item["home_team"] if h_score > a_score else item["away_team"]
-                                        actual_over = (h_score + a_score) > 5.5
-                                        
-                                        item["actual_score"] = f"{h_score} - {a_score}"
-                                        item["winner_correct"] = (actual_winner == item["predicted_winner"])
-                                        item["over_correct"] = (actual_over == item["predicted_over"])
-                                        item["status"] = "FINISHED"
-                                        updated = True
-            except Exception:
-                pass
-                
-    if updated:
-        save_history(history)
-        
-    total = 0
-    winner_wins = 0
-    over_wins = 0
-    
-    items_list = list(history.values())
-    for item in items_list:
-        if item.get("status") == "FINISHED":
-            total += 1
-            if item.get("winner_correct"):
-                winner_wins += 1
-            if item.get("over_correct"):
-                over_wins += 1
-                
-    winrate_winner = round((winner_wins / total * 100), 1) if total > 0 else 0.0
-    winrate_over = round((over_wins / total * 100), 1) if total > 0 else 0.0
-    
-    return {
-        "stats": {
-            "total_matches": total,
-            "winrate_winner": winrate_winner,
-            "winrate_over": winrate_over
-        },
-        "history": sorted(items_list, key=lambda x: x["date"], reverse=True)
-    }
-
-@app.get("/api/matches/nhl")
-def get_nhl_matches(date: str = "now"):
-    try:
-        target_date = datetime.strptime(date, "%Y-%m-%d") if date != "now" else datetime.now()
-        start_date = (target_date - timedelta(days=1)).strftime("%Y-%m-%d")
-        
-        url = f"https://api-web.nhle.com/v1/schedule/{start_date}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            matches = []
-            for day in data.get("gameWeek", []):
-                game_date = day.get("date")
-                for g in day.get("games", []):
-                    home_obj = g.get("homeTeam", {})
-                    away_obj = g.get("awayTeam", {})
-                    
-                    home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
-                    away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
-                    
-                    matches.append({
-                        "id": g.get("id"),
-                        "date": game_date,
-                        "home_team": home_name,
-                        "away_team": away_name,
-                        "home_logo": home_obj.get("logo", ""),
-                        "away_logo": away_obj.get("logo", ""),
-                        "time": g.get("startTimeUTC")
-                    })
-            return {"matches": matches}
-        return {"matches": []}
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.get("/api/football/matches")
-def get_football_matches():
-    """Route dédiée au football conservée pour votre dashboard multi-sport."""
-    matches = [
-        {
-            "id": 201,
-            "home_team": "Real Madrid",
-            "away_team": "FC Barcelone",
-            "time": "21:00",
-            "prediction": "Match Nul ou Real (55%)",
-            "over_under": "Over 2.5 buts"
-        }
-    ]
-    return {"sport": "Football", "matches": matches}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+                    "shots_per_game": round(g_pg *
