@@ -11,61 +11,72 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
-        /* FOND D'ÉCRAN GLOBAL SOBRE */
+        /* FOND D'ÉCRAN GLOBAL GLASSMORPHISM */
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            background: #0b1722;
-            color: #111111; 
+            background: #0d1117;
+            color: #f0f6fc; 
             padding: 0; 
             min-height: 100vh;
         }
         
-        header { background-color: rgba(13, 30, 43, 0.95); backdrop-filter: blur(10px); padding: 12px 16px; color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-bottom: 1px solid rgba(255,255,255,0.08); }
+        header { 
+            background: rgba(13, 17, 23, 0.85); 
+            backdrop-filter: blur(12px); 
+            -webkit-backdrop-filter: blur(12px); 
+            padding: 12px 16px; 
+            color: #ffffff; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4); 
+            border-bottom: 1px solid rgba(255,255,255,0.08); 
+        }
         .header-title { font-size: 1.1rem; font-weight: bold; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
         
-        .sport-selector { display: flex; gap: 6px; background-color: #162838; padding: 3px; border-radius: 6px; }
-        .sport-tab { flex: 1; text-align: center; padding: 6px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s; white-space: nowrap; }
-        .sport-tab.active { background-color: #e11238; color: #ffffff; box-shadow: 0 2px 6px rgba(225,18,56,0.4); }
+        .sport-selector { display: flex; gap: 6px; background: rgba(22, 27, 34, 0.6); backdrop-filter: blur(8px); padding: 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); }
+        .sport-tab { flex: 1; text-align: center; padding: 6px 6px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #8fa3b3; transition: all 0.2s ease; white-space: nowrap; }
+        .sport-tab.active { background: linear-gradient(135deg, #e11238 0%, #b91c1c 100%); color: #ffffff; box-shadow: 0 4px 12px rgba(225,18,56,0.4); }
 
-        .date-strip-container { background-color: rgba(255, 255, 255, 0.95); backdrop-filter: blur(8px); display: flex; align-items: center; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+        .date-strip-container { background: rgba(13, 17, 23, 0.85); backdrop-filter: blur(12px); display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .date-strip { display: flex; overflow-x: auto; white-space: nowrap; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; scrollbar-width: none; width: 100%; }
         .date-strip::-webkit-scrollbar { display: none; }
-        .date-item { flex: 0 0 auto; width: 54px; padding: 8px 0 6px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; background: transparent; }
-        .date-item .day-name { font-size: 0.65rem; font-weight: 700; color: #666666; text-transform: uppercase; }
-        .date-item .day-num { font-size: 0.8rem; font-weight: 700; color: #111111; margin-top: 2px; }
-        .date-item.active .day-name, .date-item.active .day-num { color: #e11238; }
-        .date-item.active::after { content: ''; position: absolute; bottom: 0; left: 15%; width: 70%; height: 3px; background-color: #e11238; }
+        .date-item { flex: 0 0 auto; width: 54px; padding: 10px 0 8px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; background: transparent; transition: background 0.2s; }
+        .date-item .day-name { font-size: 0.65rem; font-weight: 700; color: #8fa3b3; text-transform: uppercase; }
+        .date-item .day-num { font-size: 0.8rem; font-weight: 700; color: #f0f6fc; margin-top: 2px; }
+        .date-item.active .day-name, .date-item.active .day-num { color: #ff5269; }
+        .date-item.active::after { content: ''; position: absolute; bottom: 0; left: 15%; width: 70%; height: 3px; background: linear-gradient(90deg, #e11238, #ff5269); border-radius: 2px; }
 
-        .main-content { min-height: 100vh; padding: 12px; }
-        .section-title { font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; padding: 6px 4px 12px 4px; letter-spacing: 0.5px; }
+        .main-content { min-height: 100vh; padding: 14px; }
+        .section-title { font-size: 0.75rem; font-weight: 700; color: #8fa3b3; text-transform: uppercase; padding: 6px 4px 12px 4px; letter-spacing: 0.5px; }
         
-        /* CARTES DE MATCHS AVEC LA TEXTURE DE GLACE EN FOND */
+        /* CARTES DE MATCHS STYLE GLASSMORPHISM */
         .match-card { 
-            background: linear-gradient(rgba(180, 215, 245, 0.85), rgba(150, 195, 235, 0.9)), url('https://images.unsplash.com/photo-1548625361-124b22579b76?q=80&w=600&auto=format&fit=crop') center/cover;
-            border-radius: 12px; 
+            background: rgba(22, 27, 34, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 14px; 
             padding: 14px 16px; 
-            margin-bottom: 10px; 
+            margin-bottom: 12px; 
             display: flex; 
             align-items: center; 
             justify-content: space-between; 
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             cursor: pointer; 
-            transition: transform 0.15s ease, box-shadow 0.15s ease; 
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease; 
         }
         .match-card:active { 
-            transform: scale(0.98); 
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            transform: scale(0.97); 
+            background: rgba(30, 36, 46, 0.85);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
         }
         
         .match-left { display: flex; align-items: center; gap: 12px; flex: 1; }
         
         .teams-list { display: flex; flex-direction: column; gap: 10px; flex: 1; }
-        .team-item { display: flex; align-items: center; gap: 12px; font-size: 0.95rem; font-weight: 800; color: #081622; text-shadow: 0 1px 1px rgba(255, 255, 255, 0.6); }
-        .team-logo { width: 34px; height: 34px; object-fit: contain; }
+        .team-item { display: flex; align-items: center; gap: 12px; font-size: 0.95rem; font-weight: 700; color: #f0f6fc; }
+        .team-logo { width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
         
         .match-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-        .match-time { font-size: 0.8rem; font-weight: 700; color: #0f172a; background: rgba(255, 255, 255, 0.6); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.8); }
+        .match-time { font-size: 0.75rem; font-weight: 700; color: #8fa3b3; background: rgba(255, 255, 255, 0.05); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.06); }
         
         .btn-prono-badge { 
             background: linear-gradient(135deg, #e11238 0%, #b91c1c 100%);
@@ -73,83 +84,90 @@
             font-size: 0.72rem; 
             font-weight: 700; 
             padding: 6px 12px; 
-            border-radius: 6px; 
+            border-radius: 8px; 
             border: none; 
             display: flex;
             align-items: center;
             gap: 4px;
-            box-shadow: 0 3px 8px rgba(225, 18, 56, 0.35);
+            box-shadow: 0 4px 15px rgba(225, 18, 56, 0.4);
             letter-spacing: 0.3px;
+            transition: transform 0.2s;
         }
+        .btn-prono-badge:active { transform: scale(0.95); }
 
-        .no-match { text-align: center; color: #8fa3b3; padding: 40px 16px; font-size: 0.9rem; background: #132230; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); }
+        .no-match { text-align: center; color: #8fa3b3; padding: 40px 16px; font-size: 0.9rem; background: rgba(22, 27, 34, 0.5); backdrop-filter: blur(8px); border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
 
-        .history-summary { display: flex; gap: 10px; padding: 16px; background: #132230; color: #ffffff; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08); }
-        .stat-card { flex: 1; background: #1b2f42; padding: 12px; border-radius: 8px; text-align: center; }
-        .stat-val { font-size: 1.4rem; font-weight: bold; color: #22c55e; margin-top: 4px; }
-        .stat-label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; }
+        .history-summary { display: flex; gap: 10px; padding: 14px; background: rgba(22, 27, 34, 0.65); backdrop-filter: blur(12px); color: #ffffff; border-radius: 14px; margin-bottom: 14px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
+        .stat-card { flex: 1; background: rgba(30, 36, 46, 0.6); padding: 12px; border-radius: 10px; text-align: center; border: 1px solid rgba(255,255,255,0.04); }
+        .stat-val { font-size: 1.4rem; font-weight: bold; color: #3fb950; margin-top: 4px; }
+        .stat-label { font-size: 0.65rem; color: #8fa3b3; text-transform: uppercase; font-weight: bold; }
 
         .history-item { 
-            background: linear-gradient(rgba(180, 215, 245, 0.85), rgba(150, 195, 235, 0.9)), url('https://images.unsplash.com/photo-1548625361-124b22579b76?q=80&w=600&auto=format&fit=crop') center/cover;
-            border-radius: 10px; 
+            background: rgba(22, 27, 34, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 12px; 
             padding: 12px 16px; 
-            margin-bottom: 8px; 
-            border: 1px solid rgba(255, 255, 255, 0.6); 
+            margin-bottom: 10px; 
+            border: 1px solid rgba(255, 255, 255, 0.08); 
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3); 
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3); 
         }
-        .history-match-title { font-size: 0.85rem; font-weight: 800; color: #081622; text-shadow: 0 1px 1px rgba(255, 255, 255, 0.6); }
-        .history-sub { font-size: 0.75rem; color: #1e293b; font-weight: 600; margin-top: 2px; }
-        .badge-win { background: #dcfce7; color: #15803d; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 4px; }
-        .badge-loss { background: #fee2e2; color: #b91c1c; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 4px; }
-        .badge-pending { background: #fef3c7; color: #b45309; font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 4px; }
+        .history-match-title { font-size: 0.85rem; font-weight: 700; color: #f0f6fc; }
+        .history-sub { font-size: 0.75rem; color: #8fa3b3; margin-top: 2px; }
+        .badge-win { background: rgba(46, 160, 67, 0.15); color: #3fb950; border: 1px solid rgba(46, 160, 67, 0.3); font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 6px; }
+        .badge-loss { background: rgba(248, 81, 73, 0.15); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.3); font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 6px; }
+        .badge-pending { background: rgba(210, 153, 34, 0.15); color: #d29922; border: 1px solid rgba(210, 153, 34, 0.3); font-size: 0.7rem; font-weight: bold; padding: 3px 8px; border-radius: 6px; }
 
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(5px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 12px; }
-        .modal-content { background-color: #ffffff; border-radius: 12px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto; padding: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); position: relative; color: #111111; }
-        .modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; color: #888888; font-size: 1.5rem; cursor: pointer; }
-        .modal-header-teams { display: flex; align-items: center; justify-content: space-around; margin: 10px 0; }
-        .modal-team-box { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; width: 40%; }
-        .modal-team-logo { width: 48px; height: 48px; object-fit: contain; }
-        .modal-team-name { font-size: 0.85rem; font-weight: bold; color: #111111; }
-        .vs-badge { font-size: 0.75rem; font-weight: bold; color: #666666; background: #f0f0f0; padding: 4px 8px; border-radius: 4px; }
+        /* POPUP MODAL EN MODE SOMBRE & GLASSMORPHISM */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 12px; }
+        .modal-content { background: #161b22; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto; padding: 18px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); position: relative; color: #f0f6fc; }
+        .modal-close { position: absolute; top: 14px; right: 16px; background: rgba(255,255,255,0.06); border: none; color: #8fa3b3; width: 32px; height: 32px; border-radius: 50%; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+        .modal-close:active { background: rgba(255,255,255,0.15); }
         
-        .prono-box { background-color: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; border: 1px solid #e9ecef; }
-        .prono-section-title { font-size: 0.75rem; font-weight: bold; color: #0d1e2b; text-transform: uppercase; margin-bottom: 8px; }
-        .predicted-score-box { background-color: #0d1e2b; text-align: center; padding: 8px; border-radius: 6px; margin-bottom: 10px; }
-        .predicted-score-val { font-size: 1.3rem; font-weight: bold; color: #22c55e; }
+        .modal-header-teams { display: flex; align-items: center; justify-content: space-around; margin: 12px 0 16px 0; }
+        .modal-team-box { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; width: 40%; }
+        .modal-team-logo { width: 48px; height: 48px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4)); }
+        .modal-team-name { font-size: 0.85rem; font-weight: bold; color: #f0f6fc; }
+        .vs-badge { font-size: 0.75rem; font-weight: bold; color: #8fa3b3; background: rgba(255,255,255,0.06); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04); }
         
-        .prob-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 0.82rem; color: #333333; }
-        .prob-bar-container { background-color: #e2e8f0; height: 7px; border-radius: 4px; width: 100%; overflow: hidden; margin-bottom: 8px; }
+        .prono-box { background: rgba(13, 17, 23, 0.6); border-radius: 12px; padding: 14px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.06); }
+        .prono-section-title { font-size: 0.75rem; font-weight: bold; color: #8fa3b3; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; }
+        .predicted-score-box { background: #0d1117; text-align: center; padding: 10px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08); }
+        .predicted-score-val { font-size: 1.4rem; font-weight: bold; color: #3fb950; letter-spacing: 1px; }
+        
+        .prob-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 0.82rem; color: #f0f6fc; }
+        .prob-bar-container { background-color: rgba(255,255,255,0.06); height: 7px; border-radius: 4px; width: 100%; overflow: hidden; margin-bottom: 10px; }
         .prob-bar { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
-        .prob-bar.home { background-color: #22c55e; }
-        .prob-bar.draw { background-color: #eab308; }
-        .prob-bar.away { background-color: #ef4444; }
-        .prob-bar.over { background-color: #a855f7; }
+        .prob-bar.home { background: linear-gradient(90deg, #238636, #2ea043); }
+        .prob-bar.draw { background: linear-gradient(90deg, #bb8009, #d29922); }
+        .prob-bar.away { background: linear-gradient(90deg, #da3633, #f85149); }
+        .prob-bar.over { background: linear-gradient(90deg, #8957e5, #a371f7); }
 
-        .goalies-box { display: flex; gap: 8px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 6px; padding: 8px; margin-top: 8px; margin-bottom: 10px; }
-        .goalie-card { flex: 1; font-size: 0.75rem; color: #0369a1; }
-        .goalie-name { font-weight: bold; margin-bottom: 2px; }
+        .goalies-box { display: flex; gap: 8px; background: rgba(56, 139, 253, 0.08); border: 1px solid rgba(56, 139, 253, 0.2); border-radius: 10px; padding: 10px; margin-top: 10px; margin-bottom: 12px; }
+        .goalie-card { flex: 1; font-size: 0.75rem; color: #58a6ff; }
+        .goalie-name { font-weight: bold; margin-bottom: 3px; color: #79c0ff; }
 
-        .injuries-box { background: #fff1f2; border: 1px solid #fecdd3; border-radius: 6px; padding: 8px; margin-top: 8px; margin-bottom: 10px; font-size: 0.75rem; color: #be123c; }
+        .injuries-box { background: rgba(248, 81, 73, 0.08); border: 1px solid rgba(248, 81, 73, 0.2); border-radius: 10px; padding: 10px; margin-top: 10px; margin-bottom: 12px; font-size: 0.75rem; color: #f85149; }
 
-        .ia-badge-tag { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 4px; padding: 2px 6px; font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; }
+        .ia-badge-tag { display: inline-block; background: rgba(210, 153, 34, 0.15); color: #d29922; border: 1px solid rgba(210, 153, 34, 0.3); border-radius: 6px; padding: 3px 8px; font-size: 0.7rem; font-weight: bold; margin-bottom: 10px; }
 
-        .ia-picks-box { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; margin-top: 8px; margin-bottom: 10px; }
-        .ia-pick-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; padding: 3px 0; }
-        .ia-pick-label { font-weight: bold; color: #0f172a; display: flex; align-items: center; gap: 4px; }
-        .ia-pick-val { font-weight: 700; color: #e11238; }
+        .ia-picks-box { background: rgba(22, 27, 34, 0.8); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px; margin-top: 10px; margin-bottom: 12px; }
+        .ia-pick-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; padding: 4px 0; }
+        .ia-pick-label { font-weight: bold; color: #f0f6fc; display: flex; align-items: center; gap: 4px; }
+        .ia-pick-val { font-weight: 700; color: #ff5269; }
 
-        .team-tabs-players { display: flex; gap: 6px; margin-top: 10px; border-bottom: 2px solid #e2e8f0; }
-        .team-tab-btn { flex: 1; padding: 6px; text-align: center; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #666; background: #edf2f7; border-radius: 4px 4px 0 0; }
-        .team-tab-btn.active { background: #0d1e2b; color: #fff; }
+        .team-tabs-players { display: flex; gap: 6px; margin-top: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 2px; }
+        .team-tab-btn { flex: 1; padding: 8px; text-align: center; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #8fa3b3; background: rgba(255,255,255,0.04); border-radius: 8px 8px 0 0; transition: all 0.2s; }
+        .team-tab-btn.active { background: #21262d; color: #f0f6fc; border-top: 2px solid #e11238; }
 
-        .players-table-container { max-height: 200px; overflow-y: auto; margin-top: 8px; }
+        .players-table-container { max-height: 200px; overflow-y: auto; margin-top: 8px; scrollbar-width: thin; }
         .players-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
-        .players-table th { background: #f1f5f9; position: sticky; top: 0; padding: 6px; text-align: left; color: #475569; }
-        .players-table td { padding: 6px; border-bottom: 1px solid #f1f5f9; }
-        .prob-badge { font-weight: bold; color: #0284c7; }
+        .players-table th { background: #161b22; position: sticky; top: 0; padding: 8px 6px; text-align: left; color: #8fa3b3; border-bottom: 1px solid rgba(255,255,255,0.08); }
+        .players-table td { padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #f0f6fc; }
+        .prob-badge { font-weight: bold; color: #58a6ff; }
     </style>
 </head>
 <body>
@@ -288,270 +306,3 @@
                         card.onclick = () => showPrediction(match.home_team, match.away_team, match.home_logo, match.away_logo);
                         
                         const matchTime = match.time 
-                            ? new Date(match.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-                            : '00:00';
-                        
-                        const homeLogoHtml = match.home_logo ? `<img src="${match.home_logo}" class="team-logo">` : '🏒';
-                        const awayLogoHtml = match.away_logo ? `<img src="${match.away_logo}" class="team-logo">` : '🏒';
-
-                        card.innerHTML = `
-                            <div class="match-left">
-                                <div class="teams-list">
-                                    <div class="team-item">${homeLogoHtml} ${match.home_team}</div>
-                                    <div class="team-item">${awayLogoHtml} ${match.away_team}</div>
-                                </div>
-                            </div>
-                            <div class="match-right">
-                                <span class="match-time">${matchTime}</span>
-                                <button class="btn-prono-badge">⚡ PRONO</button>
-                            </div>
-                        `;
-                        container.appendChild(card);
-                    });
-                } else {
-                    container.innerHTML = '<div class="no-match">Aucun match prévu à cette date.</div>';
-                }
-            } catch (error) {
-                container.innerHTML = '<div class="no-match" style="color: #ef4444;">Erreur lors du chargement.</div>';
-            }
-        }
-
-        async function chargerHistorique() {
-            const container = document.getElementById('matches-container');
-            document.getElementById('section-title').innerText = "HISTORIQUE ET PERFORMANCES DES PRONOS";
-            container.innerHTML = '<div class="no-match">Analyse du taux de réussite...</div>';
-
-            try {
-                const res = await fetch('/api/history');
-                const data = await res.json();
-                const stats = data.stats || {};
-                const history = data.history || [];
-
-                let statsHtml = `
-                    <div class="history-summary">
-                        <div class="stat-card">
-                            <div class="stat-label">Victoire 1N2</div>
-                            <div class="stat-val">${stats.winrate_winner}%</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Over/Under 5.5</div>
-                            <div class="stat-val" style="color:#a855f7;">${stats.winrate_over}%</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Matchs Analystes</div>
-                            <div class="stat-val" style="color:#38bdf8;">${stats.total_matches}</div>
-                        </div>
-                    </div>
-                `;
-
-                if (history.length === 0) {
-                    container.innerHTML = statsHtml + '<div class="no-match">Aucun pronostic enregistré pour le moment. Consultez des matchs pour commencer à enregistrer l\'historique !</div>';
-                    return;
-                }
-
-                let itemsHtml = history.map(item => {
-                    let badgeWinner = '<span class="badge-pending">EN ATTENTE</span>';
-                    if (item.status === 'FINISHED') {
-                        badgeWinner = item.winner_correct 
-                            ? '<span class="badge-win">✅ PRONO VALIDE</span>' 
-                            : '<span class="badge-loss">❌ MANQUÉ</span>';
-                    }
-
-                    return `
-                        <div class="history-item">
-                            <div>
-                                <div class="history-match-title">${item.match}</div>
-                                <div class="history-sub">📅 ${item.date} | Prédit: <b>${item.predicted_winner}</b> (${item.predicted_score})</div>
-                                ${item.actual_score ? `<div class="history-sub" style="color:#10b981;">Score Réel: <b>${item.actual_score}</b></div>` : ''}
-                            </div>
-                            <div>${badgeWinner}</div>
-                        </div>
-                    `;
-                }).join('');
-
-                container.innerHTML = statsHtml + itemsHtml;
-            } catch (err) {
-                container.innerHTML = '<div class="no-match" style="color:#ef4444;">Erreur lors du chargement du bilan.</div>';
-            }
-        }
-
-        async function showPrediction(homeTeam, awayTeam, homeLogo, awayLogo) {
-            const modal = document.getElementById('prono-modal');
-            const headerTeams = document.getElementById('modal-teams-header');
-            const body = document.getElementById('modal-body');
-
-            const hLogo = homeLogo ? `<img src="${homeLogo}" class="modal-team-logo">` : '🏒';
-            const aLogo = awayLogo ? `<img src="${awayLogo}" class="modal-team-logo">` : '🏒';
-
-            headerTeams.innerHTML = `
-                <div class="modal-header-teams">
-                    <div class="modal-team-box">${hLogo}<span class="modal-team-name">${homeTeam}</span></div>
-                    <span class="vs-badge">VS</span>
-                    <div class="modal-team-box">${aLogo}<span class="modal-team-name">${awayTeam}</span></div>
-                </div>
-            `;
-
-            body.innerHTML = '<div class="no-match" style="margin-top:20px;">Analyse IA & Blessures en cours...</div>';
-            modal.style.display = 'flex';
-
-            try {
-                const response = await fetch('/predict/match', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        home_team: homeTeam,
-                        away_team: awayTeam,
-                        home_expected_goals: 3.1,
-                        away_expected_goals: 2.7
-                    })
-                });
-                const data = await response.json();
-                const p = data.probabilities;
-                const ou = data.over_under_5_5;
-                const goalies = data.goalies || {};
-                const st = data.special_teams || {};
-                const inj = data.injuries || { home: [], away: [] };
-                currentMatchPlayers = data.players || { home: {all: []}, away: {all: []} };
-
-                let injuriesHtml = '';
-                if (inj.home.length > 0 || inj.away.length > 0) {
-                    injuriesHtml = `
-                        <div class="prono-section-title" style="margin-top:10px;">🚨 Absences Signatatives</div>
-                        <div class="injuries-box">
-                            ${inj.home.length > 0 ? `<div><b>${homeTeam}:</b>${inj.home.join(', ')}</div>` : ''}
-                            ${inj.away.length > 0 ? `<div><b>${awayTeam}:</b>${inj.away.join(', ')}</div>` : ''}
-                        </div>
-                    `;
-                }
-
-                body.innerHTML = `
-                    <div class="prono-box">
-                        <div style="text-align:center;"><span class="ia-badge-tag">🤖 CONSENSUS 6 IA ACTIF</span></div>
-                        
-                        <div class="prono-section-title">🎯 Score Prédit</div>
-                        <div class="predicted-score-box">
-                            <span class="predicted-score-val">${data.predicted_score}</span>
-                        </div>
-
-                        <div class="prono-section-title">📊 Probabilités Multi-IA</div>
-                        <div class="prob-row">
-                            <span>Victoire ${homeTeam}</span>
-                            <strong>${p.home_win}%</strong>
-                        </div>
-                        <div class="prob-bar-container"><div class="prob-bar home" style="width: ${p.home_win}%"></div></div>
-
-                        <div class="prob-row">
-                            <span>Match Nul</span>
-                            <strong>${p.draw}%</strong>
-                        </div>
-                        <div class="prob-bar-container"><div class="prob-bar draw" style="width: ${p.draw}%"></div></div>
-
-                        <div class="prob-row">
-                            <span>Victoire ${awayTeam}</span>
-                            <strong>${p.away_win}%</strong>
-                        </div>
-                        <div class="prob-bar-container"><div class="prob-bar away" style="width: ${p.away_win}%"></div></div>
-
-                        <div class="prono-section-title" style="margin-top:10px;">🏒 Total Buts (Over / Under 5.5)</div>
-                        <div class="prob-row">
-                            <span>Plus de 5.5 buts</span>
-                            <strong>${ou.over_prob}%</strong>
-                        </div>
-                        <div class="prob-bar-container"><div class="prob-bar over" style="width: ${ou.over_prob}%"></div></div>
-
-                        <div class="prono-section-title" style="margin-top:10px;">🥅 Gardiens & ⚡ Power Play</div>
-                        <div class="goalies-box">
-                            <div class="goalie-card">
-                                <div class="goalie-name">${goalies.home?.name || 'Gardien A'}</div>
-                                <div>SV%: <b>${(goalies.home?.save_pct * 100).toFixed(1)}%</b></div>
-                                <div>⚡ PP: <b>${st.home_pp || '20'}%</b></div>
-                            </div>
-                            <div class="goalie-card">
-                                <div class="goalie-name">${goalies.away?.name || 'Gardien B'}</div>
-                                <div>SV%: <b>${(goalies.away?.save_pct * 100).toFixed(1)}%</b></div>
-                                <div>⚡ PP: <b>${st.away_pp || '18'}%</b></div>
-                            </div>
-                        </div>
-
-                        ${injuriesHtml}
-
-                        <div class="prono-section-title" style="margin-top:12px;">👤 Projections Joueurs (Point %)</div>
-                        <div class="team-tabs-players">
-                            <div class="team-tab-btn active" id="btn-p-home" onclick="renderPlayersList('home', '${homeTeam}')">${homeTeam}</div>
-                            <div class="team-tab-btn" id="btn-p-away" onclick="renderPlayersList('away', '${awayTeam}')">${awayTeam}</div>
-                        </div>
-
-                        <div id="players-list-box"></div>
-                    </div>
-                `;
-
-                renderPlayersList('home', homeTeam);
-            } catch (err) {
-                body.innerHTML = '<div class="no-match" style="color:#ef4444;">Erreur lors du calcul.</div>';
-            }
-        }
-
-        function renderPlayersList(side, teamName) {
-            document.querySelectorAll('.team-tab-btn').forEach(b => b.classList.remove('active'));
-            const activeBtn = document.getElementById(`btn-p-${side}`);
-            if (activeBtn) activeBtn.classList.add('active');
-
-            const teamData = currentMatchPlayers[side] || { all: [], top_scorer: null, top_passer: null };
-            const list = teamData.all || [];
-            const topScorer = teamData.top_scorer;
-            const topPasser = teamData.top_passer;
-            
-            const box = document.getElementById('players-list-box');
-
-            if (list.length === 0) {
-                box.innerHTML = '<div class="no-match" style="padding:15px;">Aucune donnée disponible.</div>';
-                return;
-            }
-
-            let picksHtml = '';
-            if (topScorer || topPasser) {
-                picksHtml = `
-                    <div class="ia-picks-box">
-                        ${topScorer ? `<div class="ia-pick-item"><span class="ia-pick-label">🎯 Buteur Favori IA :</span><span class="ia-pick-val">${topScorer.name} (${topScorer.goal_prob}%)</span></div>` : ''}
-                        ${topPasser ? `<div class="ia-pick-item"><span class="ia-pick-label">🏒 Passeur Favori IA :</span><span class="ia-pick-val">${topPasser.name} (${topPasser.assist_prob}%)</span></div>` : ''}
-                    </div>
-                `;
-            }
-
-            let rows = list.map(p => `
-                <tr>
-                    <td><b>${p.name}</b> <span style="color:#888;">(${p.pos})</span></td>
-                    <td>${p.goals}B / ${p.assists}P</td>
-                    <td class="prob-badge">${p.point_prob}%</td>
-                </tr>
-            `).join('');
-
-            box.innerHTML = `
-                ${picksHtml}
-                <div class="players-table-container">
-                    <table class="players-table">
-                        <thead>
-                            <tr>
-                                <th>Joueur</th>
-                                <th>Stats</th>
-                                <th>Point %</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rows}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        }
-
-        function closeModal() {
-            document.getElementById('prono-modal').style.display = 'none';
-        }
-
-        generateDateStrip(todayStr);
-        selectDate(todayStr, document.querySelector(`.date-item[data-date="${todayStr}"]`));
-    </script>
-</body>
-</html>
-
