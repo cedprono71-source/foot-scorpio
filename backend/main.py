@@ -55,52 +55,66 @@ class MatchInput(BaseModel):
 # ---------------------------------------------------------
 def find_value_goalscorers(home_players, away_players, home_def_rating, away_def_rating):
     """
-    Analyse les deux équipes pour dénicher les 'pépites' 
-    (joueurs de profondeur, volume de tirs) offrant des cotes dynamiques à 3+.
+    Analyse les deux équipes pour dénicher les 'pépites' de profondeur 
+    (exclut les superstars/favoris) offrant de vraies cotes value (3.50+).
     """
     all_candidates = []
 
     # Analyse des joueurs de l'équipe domicile face à la défense adverse
     for player in home_players:
+        goals = player.get("goals", 0)
         shots = player.get("shots_per_game", 1.8)
         is_pp2 = player.get("pp_unit", 2) == 2
         toi = player.get("toi_minutes", 16.0)
         
-        score = (shots * 1.6) + (toi * 0.1)
-        if is_pp2:
-            score *= 1.25  # Bonus unité spéciale secondaire (cotes > 3.00)
+        # FILTRE ANTI-FAVORIS : On exclut les joueurs qui marquent trop de buts (les superstars évidentes)
+        if goals > 12: 
+            continue
             
-        if score > 3.8 and away_def_rating > 2.8:
-            dynamic_odds = round(max(3.10, min(4.80, 5.2 - (score * 0.20))), 2)
+        score = (shots * 1.5) + (toi * 0.08)
+        if is_pp2:
+            score *= 1.30  # Bonus pour cibler la profondeur et les unités secondaires
+            
+        if score > 3.2 and away_def_rating > 2.8:
+            # Génère des cotes plus élevées (entre 3.40 et 5.20) car ce sont des profils cachés
+            dynamic_odds = round(max(3.40, min(5.20, 5.8 - (score * 0.35))), 2)
+            
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Domicile",
                 "estimated_odds": f"~{dynamic_odds:.2f}",
-                "confidence": "Élevée" if score > 4.5 else "Moyenne",
-                "reason": f"Gros volume de tirs ({shots} tirs/m) et PP2 face à une défense extérieure friable."
+                "confidence": "Moyenne" if dynamic_odds < 4.2 else "Spéculative",
+                "reason": f"Joueur de profondeur / PP2 avec un bon volume de tirs ({shots} tirs/m) face à une défense perméable."
             })
 
     # Analyse des joueurs de l'équipe extérieure face à la défense locale
     for player in away_players:
+        goals = player.get("goals", 0)
         shots = player.get("shots_per_game", 1.8)
         is_pp2 = player.get("pp_unit", 2) == 2
         toi = player.get("toi_minutes", 16.0)
         
-        score = (shots * 1.6) + (toi * 0.1)
-        if is_pp2:
-            score *= 1.25
+        # FILTRE ANTI-FAVORIS
+        if goals > 12:
+            continue
             
-        if score > 3.8 and home_def_rating > 2.8:
-            dynamic_odds = round(max(3.10, min(4.80, 5.3 - (score * 0.20))), 2)
+        score = (shots * 1.5) + (toi * 0.08)
+        if is_pp2:
+            score *= 1.30
+            
+        if score > 3.2 and home_def_rating > 2.8:
+            dynamic_odds = round(max(3.40, min(5.20, 5.8 - (score * 0.35))), 2)
+            
             all_candidates.append({
                 "player_name": player.get("name", "Inconnu"),
                 "team": "Extérieur",
                 "estimated_odds": f"~{dynamic_odds:.2f}",
-                "confidence": "Élevée" if score > 4.5 else "Moyenne",
-                "reason": f"Impact offensif et tirs répétés sur la 2ème unité face à la défense locale."
+                "confidence": "Moyenne" if dynamic_odds < 4.2 else "Spéculative",
+                "reason": f"Coup à tenter sur la profondeur adverse et les tirs de loin face à la défense locale."
             })
 
     if all_candidates:
+        # Trier pour prendre le profil le plus intéressant en terme de value
         return all_candidates[0]
     
     return {
@@ -108,7 +122,7 @@ def find_value_goalscorers(home_players, away_players, home_def_rating, away_def
         "team": "N/A",
         "estimated_odds": "N/A",
         "confidence": "Faible",
-        "reason": "Rencontre trop cadenassée ou statistiques équilibrées."
+        "reason": "Pas assez de valeur décelée hors des superstars pour ce match."
     }
 
 # ---------------------------------------------------------
@@ -428,31 +442,39 @@ def get_prediction_history():
         if item.get("status") == "PENDING":
             try:
                 m_date = item.get("date")
-                url = f"https://api-web.nhle.com/v1/schedule/{m_date}"
-                res = requests.get(url)
-                if res.status_code == 200:
-                    data = res.json()
-                    for day in data.get("gameWeek", []):
-                        if day.get("date") == m_date:
-                            for g in day.get("games", []):
-                                h_name = g.get("homeTeam", {}).get("placeName", {}).get("default") or g.get("homeTeam", {}).get("commonName", {}).get("default", "")
-                                a_name = g.get("awayTeam", {}).get("placeName", {}).get("default") or g.get("awayTeam", {}).get("commonName", {}).get("default", "")
-                                
-                                if (h_name.lower() in item["home_team"].lower() or item["home_team"].lower() in h_name.lower()) and \
-                                   (a_name.lower() in item["away_team"].lower() or item["away_team"].lower() in a_name.lower()):
+                dt_obj = datetime.strptime(m_date, "%Y-%m-%d")
+                dates_to_check = [m_date, (dt_obj - timedelta(days=1)).strftime("%Y-%m-%d")]
+                
+                found = False
+                for check_date in dates_to_check:
+                    if found:
+                        break
+                    url = f"https://api-web.nhle.com/v1/schedule/{check_date}"
+                    res = requests.get(url)
+                    if res.status_code == 200:
+                        data = res.json()
+                        for day in data.get("gameWeek", []):
+                            if day.get("date") == check_date:
+                                for g in day.get("games", []):
+                                    h_name = g.get("homeTeam", {}).get("placeName", {}).get("default") or g.get("homeTeam", {}).get("commonName", {}).get("default", "")
+                                    a_name = g.get("awayTeam", {}).get("placeName", {}).get("default") or g.get("awayTeam", {}).get("commonName", {}).get("default", "")
                                     
-                                    gameState = g.get("gameState")
-                                    if gameState in ["OFF", "FINAL"]:
-                                        h_score = g.get("homeTeam", {}).get("score", 0)
-                                        a_score = g.get("awayTeam", {}).get("score", 0)
-                                        actual_winner = item["home_team"] if h_score > a_score else item["away_team"]
-                                        actual_over = (h_score + a_score) > 5.5
+                                    if (h_name.lower() in item["home_team"].lower() or item["home_team"].lower() in h_name.lower()) and \
+                                       (a_name.lower() in item["away_team"].lower() or item["away_team"].lower() in a_name.lower()):
                                         
-                                        item["actual_score"] = f"{h_score} - {a_score}"
-                                        item["winner_correct"] = (actual_winner == item["predicted_winner"])
-                                        item["over_correct"] = (actual_over == item["predicted_over"])
-                                        item["status"] = "FINISHED"
-                                        updated = True
+                                        gameState = g.get("gameState")
+                                        if gameState in ["OFF", "FINAL"]:
+                                            h_score = g.get("homeTeam", {}).get("score", 0)
+                                            a_score = g.get("awayTeam", {}).get("score", 0)
+                                            actual_winner = item["home_team"] if h_score > a_score else item["away_team"]
+                                            actual_over = (h_score + a_score) > 5.5
+                                            
+                                            item["actual_score"] = f"{h_score} - {a_score}"
+                                            item["winner_correct"] = (actual_winner == item["predicted_winner"])
+                                            item["over_correct"] = (actual_over == item["predicted_over"])
+                                            item["status"] = "FINISHED"
+                                            updated = True
+                                            found = True
             except Exception:
                 pass
                 
