@@ -6,7 +6,7 @@ import random
 
 app = FastAPI(title="NHL & Football Prediction Dashboard API", version="2.0")
 
-# Autoriser les requêtes (CORS) pour que votre index.html communique sans souci
+# Autoriser les requêtes (CORS) pour que votre interface communique sans souci
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,7 +16,7 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------
-# MOTEUR DE DÉTECTION DES "VALEURS CACHÉES / COTE 3+" (NOUVEAU)
+# MOTEUR DE DÉTECTION DES "VALEURS CACHÉES / COTE 3+"
 # ---------------------------------------------------------
 def find_value_goalscorers(players_list, opponent_def_rating):
     """
@@ -28,7 +28,7 @@ def find_value_goalscorers(players_list, opponent_def_rating):
     
     for player in players_list:
         shots_per_game = player.get("shots_per_game", 1.5)
-        is_on_pp2 = player.get("pp_unit", 2) == 2  # Souvent sur la 2ème unité = cotes plus hautes
+        is_on_pp2 = player.get("pp_unit", 2) == 2  # 2ème unité = cotes plus hautes
         ice_time = player.get("toi_minutes", 15.0)
         
         # Calcul du score de valeur cachée
@@ -67,7 +67,6 @@ async def get_nhl_matches():
     Récupère ou simule les matchs NHL du jour avec intégration 
     du calcul de pépite (cote 3+).
     """
-    # Exemple de données structurées pour alimenter votre dashboard
     matches = [
         {
             "id": 101,
@@ -76,7 +75,7 @@ async def get_nhl_matches():
             "time": "01:00",
             "prediction": "Edmonton Oilers (58%)",
             "over_under": "Over 6.5 buts",
-            "opponent_def_rating": 3.8, # Défense un peu fragile
+            "opponent_def_rating": 3.8,
             "home_players": [
                 {"name": "Evander Kane", "shots_per_game": 3.2, "pp_unit": 2, "toi_minutes": 17.5},
                 {"name": "Ryan Nugent-Hopkins", "shots_per_game": 2.1, "pp_unit": 1, "toi_minutes": 20.0}
@@ -89,40 +88,4 @@ async def get_nhl_matches():
             "time": "01:30",
             "prediction": "Tampa Bay Lightning (52%)",
             "over_under": "Under 5.5 buts",
-            "opponent_def_rating": 2.5, # Solide défense
-            "home_players": [
-                {"name": "Charlie Coyle", "shots_per_game": 2.5, "pp_unit": 2, "toi_minutes": 16.0},
-                {"name": "Pavel Zacha", "shots_per_game": 2.2, "pp_unit": 2, "toi_minutes": 16.5}
-            ]
-        }
-    ]
-
-    # Pour chaque match, on applique notre algorithme de pépite 3+
-    for match in matches:
-        match["value_pick"] = find_value_goalscorers(
-            match["home_players"], 
-            match["opponent_def_rating"]
-        )
-
-    return {"sport": "NHL", "matches": matches}
-
-@app.get("/api/football/matches")
-async def get_football_matches():
-    """
-    Route pour l'onglet Football de votre application.
-    """
-    matches = [
-        {
-            "id": 201,
-            "home_team": "Real Madrid",
-            "away_team": "FC Barcelone",
-            "time": "21:00",
-            "prediction": "Match Nul ou Real (55%)",
-            "over_under": "Over 2.5 buts"
-        }
-    ]
-    return {"sport": "Football", "matches": matches}
-
-# Lancement du serveur si exécuté directement
-if __name__ == "__main__":
-    uvicorn.run("main:py" if __name__ == "__main__" else "main:app", host="0.0.0.0", port=8000, reload=True)
+            "opponent_def_rating": 2
