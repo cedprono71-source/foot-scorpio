@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-IA NHL & Football Dashboard</title>
+    <title>Multi-IA NHL Dashboard</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -26,7 +26,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 900px;
             margin: 0 auto;
         }
 
@@ -42,18 +42,6 @@
 
         header p {
             color: var(--text-muted);
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        @media (max-width: 768px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
         }
 
         .card {
@@ -84,7 +72,7 @@
             font-size: 0.9rem;
         }
 
-        input, select {
+        input {
             width: 100%;
             padding: 10px;
             background-color: var(--bg-color);
@@ -137,94 +125,55 @@
         .badge-success { background-color: rgba(34, 197, 94, 0.2); color: var(--success-color); }
         .badge-danger { background-color: rgba(239, 68, 68, 0.2); color: var(--danger-color); }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-
-        th, td {
-            padding: 10px;
-            text-align: left;
-            border-bottom: 1px solid var(--border-color);
-            font-size: 0.9rem;
-        }
-
-        th {
-            color: var(--text-muted);
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Tableau de Bord LNH Avancé</h1>
-            <p>Moteur de Prédiction Autonome (Forme, Fatigue, OT/SO & Value Betting)</p>
+            <h1>Tableau de Bord LNH</h1>
+            <p>Moteur de Prédiction Avancé (Forme, Fatigue & Value)</p>
         </header>
 
-        <div class="grid">
-            <!-- Formulaire de Prédiction -->
-            <div class="card">
-                <h2>Lancer une Prédiction de Match</h2>
-                <div class="form-group">
-                    <label for="homeTeam">Équipe à Domicile</label>
-                    <input type="text" id="homeTeam" value="New York Rangers">
-                </div>
-                <div class="form-group">
-                    <label for="awayTeam">Équipe à l'Extérieur</label>
-                    <input type="text" id="awayTeam" value="New York Islanders">
-                </div>
-                <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-                    <div class="form-group">
-                        <label for="homeOdds">Cote Domicile (Optionnel)</label>
-                        <input type="number" step="0.01" id="homeOdds" placeholder="ex: 1.95">
-                    </div>
-                    <div class="form-group">
-                        <label for="awayOdds">Cote Extérieur (Optionnel)</label>
-                        <input type="number" step="0.01" id="awayOdds" placeholder="ex: 2.10">
-                    </div>
-                </div>
-                <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-                    <div class="form-group">
-                        <label><input type="checkbox" id="homeB2B"> Domicile en Back-to-Back</label>
-                    </div>
-                    <div class="form-group">
-                        <label><input type="checkbox" id="awayB2B"> Extérieur en Back-to-Back</label>
-                    </div>
-                </div>
-                <button onclick="runPrediction()">Calculer les Probabilités</button>
+        <div class="card">
+            <h2>Paramètres du Match</h2>
+            <div class="form-group">
+                <label for="homeTeam">Équipe à Domicile</label>
+                <input type="text" id="homeTeam" value="New York Rangers">
             </div>
-
-            <!-- Résultats et Métriques Avancées -->
-            <div class="card">
-                <h2>Résultats & Analyse Avancée</h2>
-                <div id="predictionResult" class="result-box">
-                    <p style="color: var(--text-muted); text-align: center;">Lancez une prédiction pour voir l'analyse détaillée.</p>
+            <div class="form-group">
+                <label for="awayTeam">Équipe à l'Extérieur</label>
+                <input type="text" id="awayTeam" value="New York Islanders">
+            </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="homeOdds">Cote Domicile (Optionnel)</label>
+                    <input type="number" step="0.01" id="homeOdds" placeholder="ex: 1.95">
+                </div>
+                <div class="form-group">
+                    <label for="awayOdds">Cote Extérieur (Optionnel)</label>
+                    <input type="number" step="0.01" id="awayOdds" placeholder="ex: 2.10">
                 </div>
             </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label><input type="checkbox" id="homeB2B"> Domicile en Back-to-Back</label>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="awayB2B"> Extérieur en Back-to-Back</label>
+                </div>
+            </div>
+            <button onclick="runPrediction()">Lancer l'Analyse</button>
         </div>
 
-        <!-- Historique des Paris Précédents -->
         <div class="card">
-            <h2>Historique des Paris Précédents</h2>
-            <div id="historyStats" style="margin-bottom: 15px; font-weight: bold; color: var(--accent-color);">
-                Chargement des statistiques...
-            </div>
-            <div style="overflow-x: auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Match</th>
-                            <th>Pronostic</th>
-                            <th>Cote</th>
-                            <th>Statut</th>
-                        </tr>
-                    </thead>
-                    <tbody id="historyTableBody">
-                        <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Aucun pari enregistré pour le moment.</td></tr>
-                    </tbody>
-                </table>
+            <h2>Résultats de la Prédiction</h2>
+            <div id="predictionResult" class="result-box">
+                <p style="color: var(--text-muted); text-align: center;">Lancez une prédiction pour voir les résultats.</p>
             </div>
         </div>
     </div>
@@ -239,7 +188,7 @@
             const awayB2b = document.getElementById('awayB2B').checked;
 
             const resultBox = document.getElementById('predictionResult');
-            resultBox.innerHTML = "<p style='text-align: center;'>Calcul en cours par le modèle...</p>";
+            resultBox.innerHTML = "<p style='text-align: center;'>Calcul en cours...</p>";
 
             try {
                 const response = await fetch('/predict/match', {
@@ -264,6 +213,7 @@
                     const hEdge = data.advanced_metrics.home_value_edge;
                     const aEdge = data.advanced_metrics.away_value_edge;
                     valueHtml = `
+                        <hr style="border-color: var(--border-color); margin: 10px 0;">
                         <div class="stat-row"><span>Value Edge (Domicile):</span> <span class="badge ${hEdge >= 0 ? 'badge-success' : 'badge-danger'}">${hEdge > 0 ? '+' : ''}${hEdge}%</span></div>
                         <div class="stat-row"><span>Value Edge (Extérieur):</span> <span class="badge ${aEdge >= 0 ? 'badge-success' : 'badge-danger'}">${aEdge > 0 ? '+' : ''}${aEdge}%</span></div>
                     `;
@@ -283,48 +233,9 @@
                     ${valueHtml}
                 `;
             } catch (error) {
-                resultBox.innerHTML = "<p style='color: var(--danger-color); text-align: center;'>Erreur lors de la communication avec l'API.</p>";
+                resultBox.innerHTML = "<p style='color: var(--danger-color); text-align: center;'>Erreur de communication avec l'API.</p>";
             }
         }
-
-        async function loadHistory() {
-            try {
-                const response = await fetch('/api/history/list');
-                const data = await response.json();
-
-                const statsDiv = document.getElementById('historyStats');
-                statsDiv.innerHTML = `Total Paris : ${data.stats.total} | Gagnés : ${data.stats.won} | Perdus : ${data.stats.lost} | Taux de Réussite : ${data.stats.win_rate}%`;
-
-                const tbody = document.getElementById('historyTableBody');
-                tbody.innerHTML = '';
-
-                const historyEntries = Object.entries(data.history);
-                if (historyEntries.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Aucun pari enregistré pour le moment.</td></tr>';
-                    return;
-                }
-
-                for (const [id, entry] of historyEntries) {
-                    let badgeClass = 'badge-success';
-                    if (entry.status === 'Perdu') badgeClass = 'badge-danger';
-                    
-                    tbody.innerHTML += `
-                        <tr>
-                            <td>${entry.date}</td>
-                            <td>${entry.match}</td>
-                            <td>${entry.prediction}</td>
-                            <td>${entry.odds}</td>
-                            <td><span class="badge ${badgeClass}">${entry.status}</span></td>
-                        </tr>
-                    `;
-                }
-            } catch (error) {
-                console.error("Erreur chargement historique", error);
-            }
-        }
-
-        // Charger l'historique au démarrage de la page
-        loadHistory();
     </script>
 </body>
 </html>
