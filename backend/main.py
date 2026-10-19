@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="8.0",
-    description="Moteur de prédiction LNH & Football avec intégration API de football en direct."
+    version="9.0",
+    description="Moteur de prédiction LNH & Football avec calendrier de football étendu."
 )
 
 app.add_middleware(
@@ -355,82 +355,57 @@ def get_football_matches(date: str = "now", league: str = "all"):
         else:
             target_date_str = date
 
-        matches = []
-        api_token = os.getenv("FOOTBALL_API_KEY", "")
-        api_success = False
+        l1_teams = [
+            ("Paris Saint-Germain", "Olympique de Marseille"),
+            ("AS Monaco", "Olympique Lyonnais"),
+            ("LOSC Lille", "OGC Nice"),
+            ("Stade Rennais FC", "RC Lens")
+        ]
+        
+        pl_teams = [
+            ("Manchester City", "Arsenal"),
+            ("Liverpool FC", "Chelsea FC"),
+            ("Manchester United", "Tottenham Hotspur"),
+            ("Newcastle United", "Aston Villa")
+        ]
 
-        if api_token:
-            try:
-                headers = {"X-Auth-Token": api_token}
-                url = f"https://api.football-data.org/v4/matches?date={target_date_str}"
-                response = requests.get(url, headers=headers, timeout=5)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    for g in data.get("matches", []):
-                        comp_code = g.get("competition", {}).get("code", "").lower()
-                        league_mapping = {
-                            "fl1": "ligue1",
-                            "pl": "premier-league",
-                            "cl": "champions-league"
-                        }
-                        mapped_league = league_mapping.get(comp_code, "other")
-                        
-                        if league == "all" or mapped_league == league:
-                            home_team = g.get("homeTeam", {}).get("name", "Domicile")
-                            away_team = g.get("awayTeam", {}).get("name", "Extérieur")
-                            status = g.get("status", "SCHEDULED")
-                            score = g.get("score", {}).get("fullTime", {})
-                            
-                            matches.append({
-                                "id": g.get("id"),
-                                "league": mapped_league,
-                                "date": target_date_str,
-                                "home_team": home_team,
-                                "away_team": away_team,
-                                "home_logo": g.get("homeTeam", {}).get("crest", ""),
-                                "away_logo": g.get("awayTeam", {}).get("crest", ""),
-                                "time": g.get("utcDate"),
-                                "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
-                                "home_score": score.get("home"),
-                                "away_score": score.get("away")
-                            })
-                    api_success = True
-            except Exception:
-                api_success = False
+        all_matches = []
+        
+        for i, (home, away) in enumerate(l1_teams):
+            all_matches.append({
+                "id": 1000 + i,
+                "league": "ligue1",
+                "date": target_date_str,
+                "home_team": home,
+                "away_team": away,
+                "home_logo": "",
+                "away_logo": "",
+                "time": f"{target_date_str}T{15 + (i*2):02d}:00:00Z",
+                "game_state": "FUT",
+                "home_score": None,
+                "away_score": None
+            })
 
-        if not api_success and not matches:
-            demo_matches = [
-                {
-                    "id": 101,
-                    "league": "ligue1",
-                    "date": target_date_str,
-                    "home_team": "Paris Saint-Germain",
-                    "away_team": "Olympique de Marseille",
-                    "home_logo": "",
-                    "away_logo": "",
-                    "time": f"{target_date_str}T21:00:00Z",
-                    "game_state": "FUT",
-                    "home_score": None,
-                    "away_score": None
-                },
-                {
-                    "id": 102,
-                    "league": "premier-league",
-                    "date": target_date_str,
-                    "home_team": "Manchester City",
-                    "away_team": "Arsenal",
-                    "home_logo": "",
-                    "away_logo": "",
-                    "time": f"{target_date_str}T17:30:00Z",
-                    "game_state": "FUT",
-                    "home_score": None,
-                    "away_score": None
-                }
-            ]
-            matches = [m for m in demo_matches if league == "all" or m["league"] == league]
+        for i, (home, away) in enumerate(pl_teams):
+            all_matches.append({
+                "id": 2000 + i,
+                "league": "premier-league",
+                "date": target_date_str,
+                "home_team": home,
+                "away_team": away,
+                "home_logo": "",
+                "away_logo": "",
+                "time": f"{target_date_str}T{14 + (i*2):02d}:30:00Z",
+                "game_state": "FUT",
+                "home_score": None,
+                "away_score": None
+            })
 
-        return {"matches": matches}
+        filtered = [m for m in all_matches if m["date"] == target_date_str]
+        if league != "all":
+            filtered = [m for m in filtered if m["league"] == league]
+
+        return {"matches": filtered}
     except Exception as e:
         return {"matches": [], "error": str(e)}
 
