@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="13.6",
-    description="Moteur de prédiction LNH & Football avec effectifs réels et modale."
+    version="13.7",
+    description="Moteur de prédiction LNH & Football avec effectifs et modale."
 )
 
 app.add_middleware(
@@ -150,14 +150,14 @@ def fetch_football_key_players(team_id):
                 data = response.json()
                 squad = data.get("squad", [])
                 players = []
-                pos_map = {"Attacker": "ATT", "Midfielder": "MIL", "Defender": "DEF", "Goalkeeper": "GB"}
                 for p in squad[:3]:
-                    name = p.get("name", "Joueur")
+                    name = p.get("name", "Joueur Clé")
                     position = p.get("position", "Attacker")
+                    pos_short = "ATT" if "Attac" in position else ("MIL" if "Mid" in position else "DEF")
                     players.append({
                         "name": name,
-                        "pos": pos_map.get(position, "ATT"),
-                        "stats": "Effectif Pro",
+                        "pos": pos_short,
+                        "stats": "Buteur / Passeur",
                         "pct": 65
                     })
                 if players:
