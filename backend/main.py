@@ -8,11 +8,13 @@ import requests
 import os
 import json
 from datetime import datetime, timedelta
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="4.0",
-    description="API avec calcul prédictif basé sur l'historique des 3 dernières années et l'interrogation dynamique."
+    description="API avec synchronisation automatique et autonome de l'historique LNH."
 )
 
 app.add_middleware(
@@ -172,10 +174,6 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals, team_full_na
     return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
 
 def get_h2h_historical_factor(home_abbrev, away_abbrev):
-    """
-    Analyse l'historique des 3 dernières années pour calculer un facteur correctif 
-    basé sur les confrontations directes et la moyenne de buts historiques.
-    """
     history_db = load_three_year_history()
     if not history_db or home_abbrev not in history_db:
         return 1.0, 1.0
@@ -196,7 +194,6 @@ def get_h2h_historical_factor(home_abbrev, away_abbrev):
     if h2h_home_goals and h2h_away_goals:
         avg_h = sum(h2h_home_goals) / len(h2h_home_goals)
         avg_a = sum(h2h_away_goals) / len(h2h_away_goals)
-        # Ajustement modéré par rapport à une moyenne standard de 3.0 buts
         factor_home = max(0.85, min(1.15, avg_h / 3.0))
         factor_away = max(0.85, min(1.15, avg_a / 3.0))
         return factor_home, factor_away
@@ -210,6 +207,60 @@ def calculate_poisson_matrix(home_xg, away_xg):
         for a in range(max_goals):
             matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
     return matrix
+
+# --- FONCTION DE SYNCHRONISATION AUTOMATIQUE ---
+def background_sync_historical_data():
+    """
+    Télécharge et compile les matchs des 3 dernières saisons en arrière-plan.
+    """
+    seasons = ["20232024", "20242025", "20252026"]
+    teams = ["NYR", "NYI", "BOS", "TOR", "TBL", "FLA", "CAR", "NJD", "COL", "EDM", "VGK", "DAL"]
+    compiled_data = {}
+
+    for team in teams:
+        compiled_data[team] = []
+        for season in seasons:
+            url = f"https://api-web.nhle.com/v1/club-schedule/{team}/season/{season}"
+            try:
+                response = requests.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    games = data.get("games", [])
+                    for g in games:
+                        if g.get("gameState") in ["OFF", "FINAL"]:
+                            home_team = g.get("homeTeam", {}).get("abbrev")
+                            away_team = g.get("awayTeam", {}).get("abbrev")
+                            home_score = g.get("homeTeam", {}).get("score", 0)
+                            away_score = g.get("awayTeam", {}).get("score", 0)
+                            
+                            compiled_data[team].append({
+                                "date": g.get("gameDate"),
+                                "home": home_team,
+                                "away": away_team,
+                                "home_score": home_score,
+                                "away_score": away_score
+                            })
+            except Exception:
+                continue
+
+    try:
+        with open(NHL_HISTORY_DB, "w", encoding="utf-8") as f:
+            json.dump(compiled_data, f, ensure_ascii=False, indent=2)
+        print("[INFO] Synchronisation automatique de l'historique LNH réussie.")
+    except Exception as e:
+        print(f"[ERROR] Échec de la synchronisation automatique : {e}")
+
+# Configuration du planificateur pour exécuter la synchro au démarrage et tous les 7 jours
+scheduler = BackgroundScheduler()
+scheduler.add_job(background_sync_historical_data, 'interval', days=7)
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
+
+@app.on_event("startup")
+def startup_event():
+    # Lancement d'une synchro au démarrage si le fichier n'existe pas encore
+    if not os.path.exists(NHL_HISTORY_DB):
+        background_sync_historical_data()
 
 @app.get("/")
 def read_root():
@@ -249,7 +300,6 @@ def predict_match(match: MatchInput):
     home_goalie = fetch_goalie_stats(home_abbrev, match.home_team)
     away_goalie = fetch_goalie_stats(away_abbrev, match.away_team)
     
-    # Récupération du facteur d'historique Head-to-Head sur 3 ans
     h2h_factor_home, h2h_factor_away = get_h2h_historical_factor(home_abbrev, away_abbrev)
     
     h_xg2 = (home_st["offense"] * 1.08) * h2h_factor_home
@@ -340,45 +390,6 @@ def get_history():
         "stats": {"total": total, "won": won, "lost": lost, "win_rate": win_rate},
         "history": history
     }
-
-@app.get("/api/history/sync-3y")
-def sync_historical_data():
-    seasons = ["20232024", "20242025", "20252026"]
-    teams = ["NYR", "NYI", "BOS", "TOR", "TBL", "FLA", "CAR", "NJD", "COL", "EDM", "VGK", "DAL"]
-    compiled_data = {}
-
-    for team in teams:
-        compiled_data[team] = []
-        for season in seasons:
-            url = f"https://api-web.nhle.com/v1/club-schedule/{team}/season/{season}"
-            try:
-                response = requests.get(url)
-                if response.status_code == 200:
-                    data = response.json()
-                    games = data.get("games", [])
-                    for g in games:
-                        if g.get("gameState") in ["OFF", "FINAL"]:
-                            home_team = g.get("homeTeam", {}).get("abbrev")
-                            away_team = g.get("awayTeam", {}).get("abbrev")
-                            home_score = g.get("homeTeam", {}).get("score", 0)
-                            away_score = g.get("awayTeam", {}).get("score", 0)
-                            
-                            compiled_data[team].append({
-                                "date": g.get("gameDate"),
-                                "home": home_team,
-                                "away": away_team,
-                                "home_score": home_score,
-                                "away_score": away_score
-                            })
-            except Exception:
-                continue
-
-    try:
-        with open(NHL_HISTORY_DB, "w", encoding="utf-8") as f:
-            json.dump(compiled_data, f, ensure_ascii=False, indent=2)
-        return {"status": "success", "message": "Historique des 3 dernières années synchronisé avec succès !"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
