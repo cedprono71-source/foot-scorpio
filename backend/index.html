@@ -296,9 +296,7 @@
         const isFoot = currentSport === 'foot';
         const totalGoalText = isFoot ? 'Plus de 2.5 buts' : 'Plus de 5.5 buts';
         const totalGoalVal = isFoot ? `${data.over_under_2_5.over_prob}%` : `${data.over_under_5_5.over_prob}%`;
-        const totalGoalLabel = isFoot ? 'TOTAL BUTS (OVER / UNDER 2.5)' : 'TOTAL BUTS (OVER / UNDER 5.5)';
 
-        // Probabilités multi-ia
         let probHtml = `
             <div style="background: #1e293b; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
                 <div style="font-weight: bold; color: #94a3b8; font-size: 0.75rem; letter-spacing: 0.5px;">📊 PROBABILITÉS MULTI-IA</div>
@@ -317,7 +315,6 @@
             </div>
         `;
 
-        // Section gardiens pour le hockey
         let middleSection = '';
         if (!isFoot && data.goalies) {
             middleSection = `
