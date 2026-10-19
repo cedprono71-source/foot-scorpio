@@ -438,13 +438,20 @@
             const homeTeamName = res.match.split(' vs ')[0];
             const awayTeamName = res.match.split(' vs ')[1];
 
-            // Récupération dynamique des joueurs si fournis par l'API, sinon repli intelligent par équipe
-            const playersList = activeTeamTab === 'home' ? (res.home_players || getFallbackPlayers(homeTeamName)) : (res.away_players || getFallbackPlayers(awayTeamName));
+            const playersList = activeTeamTab === 'home' ? res.home_players : res.away_players;
 
             let playersHtml = '';
-            playersList.forEach(p => {
-                playersHtml += `<tr><td>${p.name} (${p.pos})</td><td>${p.stats}</td><td><strong>${p.pct}%</strong></td></tr>`;
-            });
+            if (playersList && playersList.length > 0) {
+                playersList.forEach(p => {
+                    playersHtml += `<tr><td>${p.name} (${p.pos})</td><td>${p.stats}</td><td><strong>${p.pct}%</strong></td></tr>`;
+                });
+            } else {
+                playersHtml = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted);">Aucune donnée joueur disponible</td></tr>`;
+            }
+
+            // Sélection dynamique du buteur et passeur favori (basé sur le premier et deuxième joueur de la liste)
+            const topScorer = playersList && playersList.length > 0 ? playersList[0] : { name: "N/A", pct: 0 };
+            const topAssister = playersList && playersList.length > 1 ? playersList[1] : topScorer;
 
             modalBody.innerHTML = `
                 <!-- Probabilités Multi-IA -->
@@ -500,6 +507,10 @@
                         <div class="team-tab ${activeTeamTab === 'home' ? 'active' : ''}" onclick="renderModalContent('home')">${homeTeamName}</div>
                         <div class="team-tab ${activeTeamTab === 'away' ? 'active' : ''}" onclick="renderModalContent('away')">${awayTeamName}</div>
                     </div>
+                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 10px;">
+                        🎯 <span style="color: var(--text-muted);">Buteur Favori IA :</span> <strong style="color: var(--accent-color);">${topScorer.name} (${topScorer.pct}%)</strong><br>
+                        🏒 <span style="color: var(--text-muted);">Passeur Favori IA :</span> <strong style="color: var(--blue-color);">${topAssister.name} (${topAssister.pct}%)</strong>
+                    </div>
                     <table class="player-table">
                         <thead>
                             <tr>
@@ -514,29 +525,6 @@
                     </table>
                 </div>
             `;
-        }
-
-        function getFallbackPlayers(teamName) {
-            const name = teamName.toLowerCase();
-            if (name.includes('rangers')) {
-                return [
-                    { name: 'Artemi Panarin', pos: 'LW', stats: '7B / 11P', pct: 64 },
-                    { name: 'Mika Zibanejad', pos: 'C', stats: '5B / 9P', pct: 58 },
-                    { name: 'Adam Fox', pos: 'D', stats: '2B / 10P', pct: 53 }
-                ];
-            } else if (name.includes('anaheim')) {
-                return [
-                    { name: 'Troy Terry', pos: 'RW', stats: '6B / 6P', pct: 55 },
-                    { name: 'Mason McTavish', pos: 'C', stats: '5B / 7P', pct: 51 },
-                    { name: 'Cam Fowler', pos: 'D', stats: '1B / 6P', pct: 44 }
-                ];
-            } else {
-                return [
-                    { name: 'Top Buteur Star', pos: 'C', stats: '6B / 5P', pct: 56 },
-                    { name: 'Ailier Offensif', pos: 'LW', stats: '4B / 6P', pct: 50 },
-                    { name: 'Défenseur Leader', pos: 'D', stats: '2B / 5P', pct: 42 }
-                ];
-            }
         }
 
         function closeModal() {
