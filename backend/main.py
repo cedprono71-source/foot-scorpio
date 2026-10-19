@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="4.0",
-    description="API avec synchronisation automatique et autonome de l'historique LNH."
+    version="5.0",
+    description="Moteur de prédiction LNH autonome et ultra-avancé (Forme, Fatigue, OT, Value Betting)."
 )
 
 app.add_middleware(
@@ -60,12 +60,14 @@ class MatchInput(BaseModel):
     away_expected_goals: float = 2.7
     home_b2b: bool = False
     away_b2b: bool = False
+    home_odds: float = 0.0  # Optionnel pour calculer la Value
+    away_odds: float = 0.0  # Optionnel pour calculer la Value
 
 class BetRecord(BaseModel):
     match: str
     prediction: str
     odds: float = 0.0
-    status: str = "En attente"  # En attente, Gagné, Perdu
+    status: str = "En attente"
 
 def fetch_team_stats():
     stats_map = {}
@@ -200,6 +202,45 @@ def get_h2h_historical_factor(home_abbrev, away_abbrev):
         
     return 1.0, 1.0
 
+def get_recent_form_and_ot_stats(team_abbrev):
+    """
+    Analyse les 5 derniers matchs de l'équipe pour calculer un indice de forme
+    et son taux de réussite en Prolongation / Fusillade (OT/SO).
+    """
+    history_db = load_three_year_history()
+    if not history_db or team_abbrev not in history_db:
+        return 1.0, 0.5  # Valeur neutre par défaut
+    
+    games = history_db.get(team_abbrev, [])
+    # Tri par date décroissante pour prendre les derniers matchs enregistrés
+    recent_games = sorted(games, key=lambda x: x.get("date", ""), reverse=True)[:5]
+    
+    if not recent_games:
+        return 1.0, 0.5
+        
+    points = 0
+    ot_wins = 0
+    ot_total = 0
+    
+    for g in recent_games:
+        is_home = (g.get("home") == team_abbrev)
+        team_score = g.get("home_score", 0) if is_home else g.get("away_score", 0)
+        opp_score = g.get("away_score", 0) if is_home else g.get("home_score", 0)
+        
+        if team_score > opp_score:
+            points += 2
+        else:
+            # Match serré (potentiellement OT/SO)
+            if abs(team_score - opp_score) == 1:
+                ot_total += 1
+                if team_score > opp_score:
+                    ot_wins += 1
+                    
+    form_factor = max(0.85, min(1.15, points / 7.0))  # 7 points sur 10 est une moyenne standard
+    ot_win_pct = (ot_wins / ot_total) if ot_total > 0 else 0.5
+    
+    return form_factor, ot_win_pct
+
 def calculate_poisson_matrix(home_xg, away_xg):
     max_goals = 10
     matrix = np.zeros((max_goals, max_goals))
@@ -208,11 +249,7 @@ def calculate_poisson_matrix(home_xg, away_xg):
             matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
     return matrix
 
-# --- FONCTION DE SYNCHRONISATION AUTOMATIQUE ---
 def background_sync_historical_data():
-    """
-    Télécharge et compile les matchs des 3 dernières saisons en arrière-plan.
-    """
     seasons = ["20232024", "20242025", "20252026"]
     teams = ["NYR", "NYI", "BOS", "TOR", "TBL", "FLA", "CAR", "NJD", "COL", "EDM", "VGK", "DAL"]
     compiled_data = {}
@@ -250,7 +287,6 @@ def background_sync_historical_data():
     except Exception as e:
         print(f"[ERROR] Échec de la synchronisation automatique : {e}")
 
-# Configuration du planificateur pour exécuter la synchro au démarrage et tous les 7 jours
 scheduler = BackgroundScheduler()
 scheduler.add_job(background_sync_historical_data, 'interval', days=7)
 scheduler.start()
@@ -258,7 +294,6 @@ atexit.register(lambda: scheduler.shutdown())
 
 @app.on_event("startup")
 def startup_event():
-    # Lancement d'une synchro au démarrage si le fichier n'existe pas encore
     if not os.path.exists(NHL_HISTORY_DB):
         background_sync_historical_data()
 
@@ -300,47 +335,37 @@ def predict_match(match: MatchInput):
     home_goalie = fetch_goalie_stats(home_abbrev, match.home_team)
     away_goalie = fetch_goalie_stats(away_abbrev, match.away_team)
     
-    h2h_factor_home, h2h_factor_away = get_h2h_historical_factor(home_abbrev, away_abbrev)
+    # 1. Facteurs historiques et récents
+    h2h_home, h2h_away = get_h2h_historical_factor(home_abbrev, away_abbrev)
+    form_home, ot_home = get_recent_form_and_ot_stats(home_abbrev)
+    form_away, ot_away = get_recent_form_and_ot_stats(away_abbrev)
     
-    h_xg2 = (home_st["offense"] * 1.08) * h2h_factor_home
-    a_xg2 = (away_st["offense"] * 0.92) * h2h_factor_away
-    
-    h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2) * h2h_factor_home)
-    a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)) * h2h_factor_away)
-    
-    h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
-    a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
-    
-    pp_advantage_home = home_st["pp_pct"] * (1 - away_st["pk_pct"]) * 10.0
-    pp_advantage_away = away_st["pp_pct"] * (1 - home_st["pk_pct"]) * 10.0
-    h_xg5 = max(1.2, h_xg2 + pp_advantage_home)
-    a_xg5 = max(1.2, a_xg2 + pp_advantage_away)
-    
+    # 2. Calcul des xG enrichis (Forme + H2H + Fatigue)
     home_fatigue = 0.88 if match.home_b2b else 1.0
-    away_fatigue = 0.88 if match.away_b2b else 0.95
-    h_xg6 = max(1.2, h_xg2 * home_fatigue)
-    a_xg6 = max(1.2, a_xg2 * away_fatigue)
+    away_fatigue = 0.85 if match.away_b2b else 0.95  # Pénalité voyage/b2b accrue pour l'extérieur
     
-    mat1 = calculate_poisson_matrix(3.1, 2.7)
-    p1_home = float(np.sum(np.tril(mat1, -1))) * 100
-    mat2 = calculate_poisson_matrix(h_xg2, a_xg2)
-    p2_home = float(np.sum(np.tril(mat2, -1))) * 100
-    mat3 = calculate_poisson_matrix(h_xg3, a_xg3)
-    p3_home = float(np.sum(np.tril(mat3, -1))) * 100
-    mat4 = calculate_poisson_matrix(h_xg4, a_xg4)
-    p4_home = float(np.sum(np.tril(mat4, -1))) * 100
-    mat5 = calculate_poisson_matrix(h_xg5, a_xg5)
-    p5_home = float(np.sum(np.tril(mat5, -1))) * 100
-    mat6 = calculate_poisson_matrix(h_xg6, a_xg6)
-    p6_home = float(np.sum(np.tril(mat6, -1))) * 100
+    h_xg = max(1.2, (home_st["offense"] * 1.08 * h2h_home * form_home) * home_fatigue)
+    a_xg = max(1.2, (away_st["offense"] * 0.92 * h2h_away * form_away) * away_fatigue)
     
-    final_home_win = round((p1_home + p2_home + p3_home + p4_home + p5_home + p6_home) / 6, 1)
-    final_away_win = round(max(5.0, 100 - final_home_win - 15.0), 1)
-    final_draw = round(15.0, 1)
+    # Matrice de Poisson finale
+    mat_final = calculate_poisson_matrix(h_xg, a_xg)
     
-    final_h_xg = (h_xg2 + h_xg4 + h_xg5 + h_xg6) / 4
-    final_a_xg = (a_xg2 + a_xg4 + a_xg5 + a_xg6) / 4
-    mat_final = calculate_poisson_matrix(final_h_xg, final_a_xg)
+    p_home = float(np.sum(np.tril(mat_final, -1))) * 100
+    p_away = float(np.sum(np.triu(mat_final, 1))) * 100
+    p_draw = max(5.0, 100 - p_home - p_away)
+    
+    # Ajustement des probabilités en cas de prolongation basé sur l'historique OT/SO
+    if abs(p_home - p_away) < 10:
+        if ot_home > ot_away:
+            p_home += 3.0
+            p_away -= 3.0
+        else:
+            p_away += 3.0
+            p_home -= 3.0
+
+    final_home_win = round(p_home, 1)
+    final_away_win = round(p_away, 1)
+    final_draw = round(p_draw, 1)
     
     best_score = np.unravel_index(np.argmax(mat_final), mat_final.shape)
     
@@ -350,8 +375,18 @@ def predict_match(match: MatchInput):
             if h + a > 5.5:
                 over_5_5_prob += mat_final[h, a]
                 
-    home_players_data = fetch_all_players_projections(home_abbrev, final_h_xg, match.home_team)
-    away_players_data = fetch_all_players_projections(away_abbrev, final_a_xg, match.away_team)
+    # 3. Calcul de la Value (Expected Value) si des cotes sont fournies
+    home_value = None
+    away_value = None
+    if match.home_odds > 1.0:
+        implied_prob_home = (1 / match.home_odds) * 100
+        home_value = round((final_home_win - implied_prob_home), 1)
+    if match.away_odds > 1.0:
+        implied_prob_away = (1 / match.away_odds) * 100
+        away_value = round((final_away_win - implied_prob_away), 1)
+
+    home_players_data = fetch_all_players_projections(home_abbrev, h_xg, match.home_team)
+    away_players_data = fetch_all_players_projections(away_abbrev, a_xg, match.away_team)
     
     return {
         "match": f"{match.home_team} vs {match.away_team}",
@@ -359,8 +394,14 @@ def predict_match(match: MatchInput):
         "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
         "over_under_5_5": {"over_prob": round(over_5_5_prob * 100, 1), "under_prob": round((1 - over_5_5_prob) * 100, 1)},
         "goalies": {"home": home_goalie, "away": away_goalie},
-        "special_teams": {"home_pp": round(home_st["pp_pct"] * 100, 1), "away_pp": round(away_st["pp_pct"] * 100, 1)},
-        "historical_factors": {"home_h2h_boost": h2h_factor_home, "away_h2h_boost": h2h_factor_away},
+        "advanced_metrics": {
+            "home_form_factor": form_home,
+            "away_form_factor": form_away,
+            "home_ot_win_rate": ot_home,
+            "away_ot_win_rate": ot_away,
+            "home_value_edge": home_value,
+            "away_value_edge": away_value
+        },
         "players": {"home": home_players_data, "away": away_players_data}
     }
 
