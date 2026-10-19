@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="2.3",
-    description="API complète avec effectifs officiels et gestion spécifique des New York Rangers."
+    version="2.4",
+    description="API complète avec effectifs officiels, projections joueurs et gestion des New York Rangers."
 )
 
 app.add_middleware(
@@ -49,9 +49,7 @@ class MatchInput(BaseModel):
     home_b2b: bool = False
     away_b2b: bool = False
 
-# ---------------------------------------------------------
-# EFFECTIFS ET STATS SPÉCIFIQUES (NEW YORK RANGERS & LNH)
-# ---------------------------------------------------------
+# EFFECTIF PERSONNALISÉ NEW YORK RANGERS
 RANGERS_CUSTOM_ROSTER = [
     {"name": "Alexis Lafrenière", "pos": "F", "goals": 7, "assists": 4, "points": 11, "goal_prob": 35.0, "assist_prob": 25.0, "point_prob": 55.0},
     {"name": "Mika Zibanejad", "pos": "C", "goals": 3, "assists": 6, "points": 9, "goal_prob": 28.0, "assist_prob": 40.0, "point_prob": 52.0},
@@ -96,7 +94,6 @@ def fetch_team_stats():
     except Exception:
         pass
     
-    # Valeurs par défaut blindées pour les New York Rangers si l'API externe décroche
     stats_map["new york rangers"] = {
         "abbrev": "NYR",
         "offense": 3.1,
@@ -108,7 +105,6 @@ def fetch_team_stats():
 
 def fetch_goalie_stats(team_abbrev):
     if team_abbrev == "NYR":
-        # Gestion précise des gardiens des Rangers (Dylan Garand / Spencer Martin suite aux blessures de Shesterkin/Korpisalo)
         return {"name": "Dylan Garand", "save_pct": 0.918, "gaa": 1.82}
         
     if not team_abbrev:
@@ -132,33 +128,6 @@ def fetch_goalie_stats(team_abbrev):
     except Exception:
         pass
     return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
-
-def fetch_team_roster_and_injuries(team_abbrev):
-    injuries = []
-    injury_malus = 1.0
-    if team_abbrev == "NYR":
-        injuries = ["Igor Shesterkin (LTIR)", "Joonas Korpisalo (IR)"]
-        injury_malus = 0.92
-        return {"injuries": injuries, "malus": injury_malus}
-        
-    if not team_abbrev:
-        return {"injuries": injuries, "malus": injury_malus}
-    
-    try:
-        url = f"https://api-web.nhle.com/v1/roster/{team_abbrev}/current"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            for group in ["forwards", "defensemen"]:
-                for player in data.get(group, []):
-                    if player.get("status") in ["IR", "LTIR", "OUT"]:
-                        p_name = f"{player.get('firstName', {}).get('default', '')} {player.get('lastName', {}).get('default', '')}"
-                        injuries.append(p_name)
-                        injury_malus -= 0.05
-    except Exception:
-        pass
-        
-    return {"injuries": injuries, "malus": max(0.75, round(injury_malus, 2))}
 
 def fetch_all_players_projections(team_abbrev, expected_team_goals, team_full_name=""):
     if team_abbrev == "NYR" or "rangers" in team_full_name.lower():
@@ -214,10 +183,6 @@ def calculate_poisson_matrix(home_xg, away_xg):
             matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
     return matrix
 
-# ---------------------------------------------------------
-# ROUTES API
-# ---------------------------------------------------------
-
 @app.get("/")
 def read_root():
     base_dir = os.path.dirname(__file__)
@@ -251,14 +216,11 @@ def predict_match(match: MatchInput):
     home_goalie = fetch_goalie_stats(home_abbrev)
     away_goalie = fetch_goalie_stats(away_abbrev)
     
-    home_injuries_data = fetch_team_roster_and_injuries(home_abbrev)
-    away_injuries_data = fetch_team_roster_and_injuries(away_abbrev)
+    h_xg2 = home_st["offense"] * 1.08
+    a_xg2 = away_st["offense"] * 0.92
     
-    h_xg2 = home_st["offense"] * 1.08 * home_injuries_data["malus"]
-    a_xg2 = away_st["offense"] * 0.92 * away_injuries_data["malus"]
-    
-    h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2) * home_injuries_data["malus"])
-    a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)) * away_injuries_data["malus"])
+    h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2))
+    a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)))
     
     h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
     a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
@@ -312,7 +274,6 @@ def predict_match(match: MatchInput):
         "over_under_5_5": {"over_prob": round(over_5_5_prob * 100, 1), "under_prob": round((1 - over_5_5_prob) * 100, 1)},
         "goalies": {"home": home_goalie, "away": away_goalie},
         "special_teams": {"home_pp": round(home_st["pp_pct"] * 100, 1), "away_pp": round(away_st["pp_pct"] * 100, 1)},
-        "injuries": {"home": home_injuries_data["injuries"], "away": away_injuries_data["injuries"]},
         "players": {"home": home_players_data, "away": away_players_data}
     }
 
