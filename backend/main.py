@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="6.2",
-    description="Moteur de prédiction LNH et calendrier avec gestion des fuseaux horaires."
+    version="6.3",
+    description="Moteur de prédiction LNH, calendrier avec gestion des fuseaux horaires et effectifs dynamiques."
 )
 
 app.add_middleware(
@@ -86,6 +86,48 @@ def fetch_goalie_stats(team_abbrev, team_full_name=""):
     if team_abbrev == "NYR" or "rangers" in full_lower or full_lower == "new york":
         return {"name": "Igor Shesterkin", "save_pct": 0.922, "gaa": 2.20}
     return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
+
+def fetch_team_roster_stats(team_abbrev):
+    if not team_abbrev:
+        return [
+            {"name": "Meilleur Buteur", "pos": "C", "stats": "5B / 6P", "pct": 52},
+            {"name": "Créateur Principal", "pos": "LW", "stats": "2B / 8P", "pct": 47},
+            {"name": "Défenseur Clé", "pos": "D", "stats": "1B / 5P", "pct": 40}
+        ]
+    try:
+        url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            skaters = data.get("skaters", [])
+            sorted_skaters = sorted(skaters, key=lambda x: x.get("points", 0), reverse=True)[:3]
+            
+            players = []
+            for s in sorted_skaters:
+                first_name = s.get("firstName", {}).get("default", "")
+                last_name = s.get("lastName", {}).get("default", "")
+                name = f"{first_name} {last_name}".strip()
+                goals = s.get("goals", 0)
+                assists = s.get("assists", 0)
+                games = max(1, s.get("gamesPlayed", 1))
+                pct = min(85, max(30, int((s.get("points", 0) / games) * 45)))
+                
+                players.append({
+                    "name": name,
+                    "pos": s.get("position", "F"),
+                    "stats": f"{goals}B / {assists}P",
+                    "pct": pct
+                })
+            if players:
+                return players
+    except Exception:
+        pass
+    
+    return [
+        {"name": "Meilleur Buteur", "pos": "C", "stats": "5B / 6P", "pct": 52},
+        {"name": "Créateur Principal", "pos": "LW", "stats": "2B / 8P", "pct": 47},
+        {"name": "Défenseur Clé", "pos": "D", "stats": "1B / 5P", "pct": 40}
+    ]
 
 def get_h2h_historical_factor(home_abbrev, away_abbrev):
     history_db = load_three_year_history()
@@ -240,6 +282,8 @@ def predict_match(match: MatchInput):
         "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
         "over_under_5_5": {"over_prob": round(over_5_5_prob * 100, 1)},
         "goalies": {"home": fetch_goalie_stats(home_abbrev, match.home_team), "away": fetch_goalie_stats(away_abbrev, match.away_team)},
+        "home_players": fetch_team_roster_stats(home_abbrev),
+        "away_players": fetch_team_roster_stats(away_abbrev),
         "advanced_metrics": {
             "home_form_factor": form_home, "away_form_factor": form_away,
             "home_ot_win_rate": ot_home, "away_ot_win_rate": ot_away,
@@ -269,7 +313,6 @@ def get_nhl_matches(date: str = "now"):
                     start_time_utc = g.get("startTimeUTC")
                     if start_time_utc:
                         dt_utc = datetime.strptime(start_time_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                        # Conversion en heure locale (fuseau Europe/Paris UTC+1 ou UTC+2)
                         dt_local = dt_utc + timedelta(hours=2)
                         game_date_local = dt_local.strftime("%Y-%m-%d")
                     else:
@@ -285,7 +328,7 @@ def get_nhl_matches(date: str = "now"):
                         if home_name.lower() == "new york":
                             home_name = "New York Islanders" if "nyi" in home_obj.get("logo", "").lower() else "New York Rangers"
                         if away_name.lower() == "new york":
-                            away_name = "New York Islanders" if "nyi" in home_obj.get("logo", "").lower() else "New York Rangers"
+                            away_name = "New York Islanders" if "nyi" in away_obj.get("logo", "").lower() else "New York Rangers"
 
                         game_state = g.get("gameState", "FUT")
                         matches.append({
