@@ -15,7 +15,7 @@ import atexit
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="15.0",
-    description="Moteur de prédiction LNH & Football avec calendrier simplifié."
+    description="Moteur de prédiction LNH & Football avec calendrier synchronisé."
 )
 
 app.add_middleware(
@@ -427,34 +427,52 @@ def get_football_matches(date: str = "now"):
         if api_token:
             try:
                 headers = {"X-Auth-Token": api_token}
-                url = f"https://api.football-data.org/v4/matches?dateFrom={target_date_str}&dateTo={target_date_str}"
+                target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
+                
+                # Fenêtre élargie de +/- 1 jour pour l'API afin de ne rater aucun match UTC
+                date_from = (target_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+                date_to = (target_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+                
+                url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
                 response = requests.get(url, headers=headers, timeout=5)
                 
                 if response.status_code == 200:
                     data = response.json()
                     for g in data.get("matches", []):
-                        home_team_obj = g.get("homeTeam", {})
-                        away_team_obj = g.get("awayTeam", {})
-                        
-                        home_team = home_team_obj.get("name", "Domicile")
-                        away_team = away_team_obj.get("name", "Extérieur")
-                        status = g.get("status", "SCHEDULED")
-                        score = g.get("score", {}).get("fullTime", {})
-                        
-                        matches.append({
-                            "id": g.get("id"),
-                            "date": target_date_str,
-                            "home_team": home_team,
-                            "away_team": away_team,
-                            "home_id": home_team_obj.get("id"),
-                            "away_id": away_team_obj.get("id"),
-                            "home_logo": home_team_obj.get("crest", ""),
-                            "away_logo": away_team_obj.get("crest", ""),
-                            "time": g.get("utcDate", ""),
-                            "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
-                            "home_score": score.get("home"),
-                            "away_score": score.get("away")
-                        })
+                        utc_date_str = g.get("utcDate", "")
+                        if utc_date_str:
+                            dt_utc = datetime.strptime(utc_date_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                            dt_local = dt_utc + timedelta(hours=2)
+                            game_date_local = dt_local.strftime("%Y-%m-%d")
+                        else:
+                            game_date_local = target_date_str
+
+                        # Filtrage strict basé sur la date locale réelle
+                        if game_date_local == target_date_str:
+                            home_team_obj = g.get("homeTeam", {})
+                            away_team_obj = g.get("awayTeam", {})
+                            
+                            home_team = home_team_obj.get("name", "Domicile")
+                            away_team = away_team_obj.get("name", "Extérieur")
+                            status = g.get("status", "SCHEDULED")
+                            score = g.get("score", {}).get("fullTime", {})
+                            
+                            match_id = g.get("id")
+                            if not any(m["id"] == match_id for m in matches):
+                                matches.append({
+                                    "id": match_id,
+                                    "date": target_date_str,
+                                    "home_team": home_team,
+                                    "away_team": away_team,
+                                    "home_id": home_team_obj.get("id"),
+                                    "away_id": away_team_obj.get("id"),
+                                    "home_logo": home_team_obj.get("crest", ""),
+                                    "away_logo": away_team_obj.get("crest", ""),
+                                    "time": utc_date_str,
+                                    "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
+                                    "home_score": score.get("home"),
+                                    "away_score": score.get("away")
+                                })
             except Exception:
                 pass
 
