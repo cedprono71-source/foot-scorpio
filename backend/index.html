@@ -401,6 +401,8 @@
                     let awayScore = match.away_score !== null && match.away_score !== undefined ? match.away_score : '-';
 
                     let btnThemeClass = currentSport === 'nhl' ? 'nhl-theme' : '';
+                    let homeId = match.home_id || null;
+                    let awayId = match.away_id || null;
 
                     card.innerHTML = `
                         <div class="match-header-info">
@@ -423,7 +425,7 @@
                                 <span class="team-score">${awayScore}</span>
                             </div>
                         </div>
-                        <button class="prono-btn ${btnThemeClass}" onclick="openProno('${match.home_team}', '${match.away_team}')">
+                        <button class="prono-btn ${btnThemeClass}" onclick="openProno('${match.home_team}', '${match.away_team}', ${homeId}, ${awayId})">
                             ⚡ PRONO
                         </button>
                     `;
@@ -435,7 +437,7 @@
             }
         }
 
-        async function openProno(home, away) {
+        async function openProno(home, away, homeId, awayId) {
             const modal = document.getElementById('prono-modal');
             const modalBody = document.getElementById('modal-body');
             
@@ -443,10 +445,30 @@
             modalBody.innerHTML = `<p style="text-align: center; color: var(--text-muted);">Calcul de l'analyse pour <b>${home} vs ${away}</b>...</p>`;
 
             try {
-                let response = await fetch(`/api/prono?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}&sport=${currentSport}`);
+                let endpoint = currentSport === 'nhl' ? '/predict/match' : '/predict/match/foot';
+                let bodyData = { 
+                    home_team: home, 
+                    away_team: away,
+                    home_id: homeId,
+                    away_id: awayId
+                };
+
+                let response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyData)
+                });
                 let data = await response.json();
 
-                let drawHtml = currentSport === 'foot' ? `<div style="display: flex; justify-content: space-between;"><span>Match nul :</span> <b>${data.draw_prob || '24'}%</b></div>` : '';
+                let probs = data.probabilities || {};
+                let homeWin = probs.home_win || 52;
+                let drawProb = probs.draw || 24;
+                let awayWin = probs.away_win || 24;
+
+                let drawHtml = currentSport === 'foot' ? `<div style="display: flex; justify-content: space-between;"><span>Match nul :</span> <b>${drawProb}%</b></div>` : '';
+
+                let homePlayersList = (data.home_players || []).map(p => `${p.name} (${p.stats})`).join(', ') || 'Non disponible';
+                let awayPlayersList = (data.away_players || []).map(p => `${p.name} (${p.stats})`).join(', ') || 'Non disponible';
 
                 modalBody.innerHTML = `
                     <div style="font-size: 0.9rem; display: flex; flex-direction: column; gap: 10px;">
@@ -456,9 +478,9 @@
                         <!-- % de Victoire -->
                         <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
                             <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Probabilités de victoire</span>
-                            <div style="display: flex; justify-content: space-between;"><span>${home} :</span> <b>${data.home_win_prob || '52'}%</b></div>
+                            <div style="display: flex; justify-content: space-between;"><span>${home} :</span> <b>${homeWin}%</b></div>
                             ${drawHtml}
-                            <div style="display: flex; justify-content: space-between;"><span>${away} :</span> <b>${data.away_win_prob || '24'}%</b></div>
+                            <div style="display: flex; justify-content: space-between;"><span>${away} :</span> <b>${awayWin}%</b></div>
                         </div>
 
                         <!-- Score Prédiction -->
@@ -467,47 +489,16 @@
                             <b style="font-size: 1.1rem; color: var(--foot-color);">${data.predicted_score || '2 - 1'}</b>
                         </div>
 
-                        <!-- But attendu -->
-                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Buts attendus (xG)</span>
-                            <span>${home} <b>(${data.home_xg || '1.6'})</b> - ${away} <b>(${data.away_xg || '1.1'})</b></span>
-                        </div>
-
                         <!-- Potentiel Buteurs / Passeurs -->
                         <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
                             <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Joueurs clés (Buteurs / Passeurs)</span>
-                            <div style="font-size: 0.85rem;">⚽ <b>${home} :</b> ${data.home_scorer || 'Joueur 1, Joueur 2'}</div>
-                            <div style="font-size: 0.85rem;">⚽ <b>${away} :</b> ${data.away_scorer || 'Joueur A'}</div>
+                            <div style="font-size: 0.85rem;">⚽ <b>${home} :</b> ${homePlayersList}</div>
+                            <div style="font-size: 0.85rem;">⚽ <b>${away} :</b> ${awayPlayersList}</div>
                         </div>
                     </div>
                 `;
             } catch (e) {
-                let drawHtml = currentSport === 'foot' ? `<div style="display: flex; justify-content: space-between;"><span>Match nul :</span> <b>24%</b></div>` : '';
-                modalBody.innerHTML = `
-                    <div style="font-size: 0.9rem; display: flex; flex-direction: column; gap: 10px;">
-                        <p style="margin: 0; font-weight: bold; text-align: center; font-size: 1rem;">${home} vs ${away}</p>
-                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 2px 0;">
-                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
-                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">PROBABILITÉS</span>
-                            <div style="display: flex; justify-content: space-between;"><span>${home} :</span> <b>52%</b></div>
-                            ${drawHtml}
-                            <div style="display: flex; justify-content: space-between;"><span>${away} :</span> <b>24%</b></div>
-                        </div>
-                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">SCORE PRÉDICTION</span>
-                            <b style="font-size: 1.1rem; color: var(--foot-color);">2 - 1</b>
-                        </div>
-                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">BUTS ATTENDUS (XG)</span>
-                            <span>${home} (1.6) - ${away} (1.1)</span>
-                        </div>
-                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
-                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">JOUEURS CLÉS</span>
-                            <div style="font-size: 0.85rem;">⚽ ${home} : En cours...</div>
-                            <div style="font-size: 0.85rem;">⚽ ${away} : En cours...</div>
-                        </div>
-                    </div>
-                `;
+                modalBody.innerHTML = `<p style="text-align: center; color: var(--foot-color);">Erreur lors du calcul des pronostics.</p>`;
             }
         }
 
