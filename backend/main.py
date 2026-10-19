@@ -401,6 +401,8 @@
                     let awayScore = match.away_score !== null && match.away_score !== undefined ? match.away_score : '-';
 
                     let btnThemeClass = currentSport === 'nhl' ? 'nhl-theme' : '';
+                    let homeId = match.home_id || null;
+                    let awayId = match.away_id || null;
 
                     card.innerHTML = `
                         <div class="match-header-info">
@@ -423,7 +425,7 @@
                                 <span class="team-score">${awayScore}</span>
                             </div>
                         </div>
-                        <button class="prono-btn ${btnThemeClass}" onclick="openProno('${match.home_team}', '${match.away_team}')">
+                        <button class="prono-btn ${btnThemeClass}" onclick="openProno('${match.home_team}', '${match.away_team}', ${homeId}, ${awayId})">
                             ⚡ PRONO
                         </button>
                     `;
@@ -435,7 +437,7 @@
             }
         }
 
-        async function openProno(home, away) {
+        async function openProno(home, away, homeId, awayId) {
             const modal = document.getElementById('prono-modal');
             const modalBody = document.getElementById('modal-body');
             
@@ -444,7 +446,12 @@
 
             try {
                 let endpoint = currentSport === 'nhl' ? '/predict/match' : '/predict/match/foot';
-                let bodyData = { home_team: home, away_team: away };
+                let bodyData = { 
+                    home_team: home, 
+                    away_team: away,
+                    home_id: homeId,
+                    away_id: awayId
+                };
 
                 let response = await fetch(endpoint, {
                     method: 'POST',
