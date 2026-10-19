@@ -5,450 +5,387 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multi-IA Pronostics</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        :root {
+            --bg-color: #0d1117;
+            --card-bg: #161b22;
+            --border-color: #30363d;
+            --text-main: #f0f6fc;
+            --text-muted: #8b949e;
+            --nhl-color: #1f6feb;
+            --foot-color: #f85149;
         }
+
         body {
-            background-color: #0b0f19;
-            color: #ffffff;
-            padding: 16px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 15px;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
-        .container {
-            width: 100%;
-            max-width: 480px;
-        }
-        h1 {
+
+        header {
             text-align: center;
-            font-size: 1.4rem;
             margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin: 0;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
         }
+
+        /* Sélecteur de Sport */
         .sport-selector {
             display: flex;
             gap: 10px;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 500px;
         }
+
         .sport-btn {
             flex: 1;
             padding: 12px;
-            border: none;
             border-radius: 12px;
-            font-weight: bold;
+            border: 2px solid var(--border-color);
+            background-color: var(--card-bg);
+            color: var(--text-muted);
             font-size: 1rem;
+            font-weight: bold;
             cursor: pointer;
-            background-color: #1e293b;
-            color: #94a3b8;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        .sport-btn.active-nhl {
-            background-color: #3b82f6;
-            color: white;
+
+        .sport-btn.active[data-sport="nhl"] {
+            background-color: rgba(31, 111, 235, 0.15);
+            border-color: var(--nhl-color);
+            color: var(--text-main);
         }
-        .sport-btn.active-foot {
-            background-color: #ef4444;
-            color: white;
+
+        .sport-btn.active[data-sport="foot"] {
+            background-color: rgba(248, 81, 73, 0.15);
+            border-color: var(--foot-color);
+            color: var(--text-main);
         }
-        .date-strip {
+
+        /* Barre de dates horizontale */
+        .date-bar {
             display: flex;
             gap: 8px;
             overflow-x: auto;
-            padding-bottom: 8px;
+            width: 100%;
+            max-width: 500px;
+            padding-bottom: 10px;
             margin-bottom: 20px;
             scrollbar-width: none;
         }
-        .date-strip::-webkit-scrollbar {
+        .date-bar::-webkit-scrollbar {
             display: none;
         }
+
         .date-btn {
-            background-color: #1e293b;
-            color: #94a3b8;
-            border: none;
-            border-radius: 12px;
-            padding: 10px 14px;
-            min-width: 70px;
-            text-align: center;
+            flex: 0 0 auto;
+            min-width: 65px;
+            padding: 10px 6px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background-color: var(--card-bg);
+            color: var(--text-muted);
             cursor: pointer;
+            text-align: center;
             display: flex;
             flex-direction: column;
             gap: 4px;
-            font-size: 0.85rem;
+            transition: all 0.2s;
         }
-        .date-btn.active {
-            background-color: #334155;
-            color: white;
-            border: 1px solid #ef4444;
-        }
-        .date-btn.active-nhl-date {
-            border: 1px solid #3b82f6;
-        }
-        .date-btn span.day {
+
+        .date-btn .day-name {
+            font-size: 0.75rem;
             font-weight: bold;
             text-transform: uppercase;
-            font-size: 0.75rem;
         }
-        .section-title {
-            font-size: 0.9rem;
-            color: #64748b;
-            margin-bottom: 12px;
-            letter-spacing: 0.5px;
+
+        .date-btn .day-date {
+            font-size: 0.85rem;
         }
-        .matches-list {
+
+        .date-btn.active {
+            background-color: var(--foot-color);
+            border-color: var(--foot-color);
+            color: white;
+        }
+        
+        .date-btn.active.nhl-active {
+            background-color: var(--nhl-color);
+            border-color: var(--nhl-color);
+            color: white;
+        }
+
+        /* Liste des Matchs */
+        .matches-container {
+            width: 100%;
+            max-width: 500px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 15px;
         }
+
         .match-card {
-            background-color: #1e293b;
-            border-radius: 14px;
-            padding: 16px;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 15px;
             display: flex;
             flex-direction: column;
             gap: 12px;
         }
-        .match-header {
+
+        .match-header-info {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            font-size: 0.8rem;
-            color: #94a3b8;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: bold;
         }
-        .match-teams {
+
+        .teams-container {
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
+
         .team-row {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            font-weight: 600;
+            justify-content: space-between;
             font-size: 1rem;
+            font-weight: 500;
         }
+
         .team-info {
             display: flex;
             align-items: center;
             gap: 10px;
         }
+
         .team-logo {
             width: 24px;
             height: 24px;
             object-fit: contain;
         }
-        .match-footer {
-            display: flex;
-            justify-content: flex-end;
-            border-top: 1px solid #334155;
-            padding-top: 10px;
+
+        .team-score {
+            font-weight: bold;
+            font-size: 1.1rem;
         }
+
         .prono-btn {
-            background-color: #ef4444;
+            background-color: var(--foot-color);
             color: white;
             border: none;
-            padding: 8px 16px;
             border-radius: 8px;
+            padding: 10px;
             font-weight: bold;
-            font-size: 0.85rem;
             cursor: pointer;
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 6px;
+            transition: opacity 0.2s;
         }
-        .prono-btn.nhl-prono {
-            background-color: #3b82f6;
+        
+        .prono-btn.nhl-theme {
+            background-color: var(--nhl-color);
         }
+
+        .prono-btn:active {
+            opacity: 0.8;
+        }
+
         .no-matches {
             text-align: center;
-            color: #64748b;
-            padding: 40px 0;
+            color: var(--text-muted);
+            padding: 30px;
             font-size: 0.95rem;
         }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>⚡ Multi-IA Pronostics</h1>
+    <header>
+        <h1>⚡ Multi-IA Pronostics</h1>
+    </header>
 
-    <!-- Sélecteur de Sport -->
+    <!-- Boutons de sélection de sport -->
     <div class="sport-selector">
-        <button id="btn-nhl" class="sport-btn" onclick="switchSport('nhl')">🏒 NHL</button>
-        <button id="btn-foot" class="sport-btn active-foot" onclick="switchSport('foot')">⚽ Football</button>
+        <button class="sport-btn" data-sport="nhl" onclick="switchSport('nhl')">
+            🏒 NHL
+        </button>
+        <button class="sport-btn active" data-sport="foot" onclick="switchSport('foot')">
+            ⚽ Football
+        </button>
     </div>
 
-    <!-- Sélecteur de Date -->
-    <div class="date-strip" id="date-strip">
-        <!-- Généré dynamiquement en JS -->
-    </div>
+    <!-- Barre de dates dynamique -->
+    <div class="date-bar" id="date-bar-container"></div>
 
-    <div class="section-title" id="section-title">MATCHS FOOTBALL</div>
-
-    <!-- Liste des Matchs -->
-    <div class="matches-list" id="matches-list">
+    <!-- Conteneur des matchs -->
+    <div class="matches-container" id="matches-container">
         <div class="no-matches">Chargement des matchs...</div>
     </div>
-</div>
 
-<!-- Fenêtre Modale de Pronostic Graphique -->
-<div id="prono-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 16px;">
-    <div style="background-color: #131b2e; width: 100%; max-width: 440px; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 14px; max-height: 90vh; overflow-y: auto; border: 1px solid #1e293b;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 10px;">
-            <h3 id="modal-title" style="font-size: 1rem; color: #f8fafc; font-weight: bold;">Match</h3>
-            <button onclick="closeModal()" style="background: none; border: none; color: #94a3b8; font-size: 1.3rem; cursor: pointer;">&times;</button>
-        </div>
-        <div id="modal-body" style="display: flex; flex-direction: column; gap: 12px; font-size: 0.85rem; color: #cbd5e1;">
-            <!-- Contenu dynamique -->
-        </div>
-        <button onclick="closeModal()" style="background-color: #3b82f6; color: white; border: none; padding: 10px; border-radius: 10px; font-weight: bold; cursor: pointer; text-align: center;">Fermer</button>
-    </div>
-</div>
+    <script>
+        let currentSport = 'foot';
+        let currentDate = '';
 
-<script>
-    let currentSport = 'foot';
-    let selectedDate = new Date().toISOString().split('T')[0];
-    let currentPredictionData = null;
-
-    function initDates() {
-        const strip = document.getElementById('date-strip');
-        strip.innerHTML = '';
-        
-        for (let i = -7; i <= 30; i++) {
-            const d = new Date();
-            d.setDate(d.getDate() + i);
-            const dateStr = d.toISOString().split('T')[0];
+        window.onload = () => {
+            const today = new Date();
+            currentDate = today.toISOString().split('T')[0];
             
-            const options = { weekday: 'short', day: 'numeric', month: 'numeric' };
-            const formatted = d.toLocaleDateString('fr-FR', options);
-            const parts = formatted.split(' ');
+            initDateBar();
+            loadMatches();
+        };
 
-            const btn = document.createElement('button');
-            let activeClass = dateStr === selectedDate ? 'active' : '';
-            if (dateStr === selectedDate && currentSport === 'nhl') {
-                activeClass += ' active-nhl-date';
+        function switchSport(sport) {
+            currentSport = sport;
+            
+            document.querySelectorAll('.sport-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if(btn.getAttribute('data-sport') === sport) {
+                    btn.classList.add('active');
+                }
+            });
+
+            updateDateBarStyles();
+            loadMatches();
+        }
+
+        function initDateBar() {
+            const container = document.getElementById('date-bar-container');
+            container.innerHTML = '';
+
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            for (let i = -3; i <= 3; i++) {
+                let d = new Date();
+                d.setDate(d.getDate() + i);
+                let dateStr = d.toISOString().split('T')[0];
+
+                let dayNameOptions = { weekday: 'short' };
+                let dayName = d.toLocaleDateString('fr-FR', dayNameOptions).toUpperCase().replace('.', '');
+                let dayMonth = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+                let btn = document.createElement('button');
+                btn.className = 'date-btn';
+                if (dateStr === currentDate) {
+                    btn.classList.add('active');
+                    if (currentSport === 'nhl') btn.classList.add('nhl-active');
+                }
+
+                if (dateStr === todayStr) {
+                    btn.innerHTML = `<span class="day-name">AJD</span><span class="day-date">${dayMonth}</span>`;
+                } else {
+                    btn.innerHTML = `<span class="day-name">${dayName}</span><span class="day-date">${dayMonth}</span>`;
+                }
+
+                btn.onclick = () => {
+                    currentDate = dateStr;
+                    document.querySelectorAll('.date-btn').forEach(b => {
+                        b.classList.remove('active', 'nhl-active');
+                    });
+                    btn.classList.add('active');
+                    if (currentSport === 'nhl') btn.classList.add('nhl-active');
+                    
+                    loadMatches();
+                };
+
+                container.appendChild(btn);
             }
-            btn.className = `date-btn ${activeClass}`;
-            btn.innerHTML = `<span class="day">${parts[0] || ''}</span><span>${parts[1] || dateStr}</span>`;
-            btn.onclick = () => {
-                selectedDate = dateStr;
-                initDates();
-                loadMatches();
-            };
-            strip.appendChild(btn);
-        }
-    }
-
-    function switchSport(sport) {
-        currentSport = sport;
-        const btnNhl = document.getElementById('btn-nhl');
-        const btnFoot = document.getElementById('btn-foot');
-        const title = document.getElementById('section-title');
-
-        if (sport === 'nhl') {
-            btnNhl.className = 'sport-btn active-nhl';
-            btnFoot.className = 'sport-btn';
-            title.innerText = 'MATCHS NHL DU ' + selectedDate;
-        } else {
-            btnNhl.className = 'sport-btn';
-            btnFoot.className = 'sport-btn active-foot';
-            title.innerText = 'MATCHS FOOTBALL DU ' + selectedDate;
-        }
-        initDates();
-        loadMatches();
-    }
-
-    function openPrediction(home, away, homeId, awayId) {
-        const endpoint = currentSport === 'foot' ? '/predict/match/foot' : '/predict/match';
-        const bodyData = currentSport === 'foot' 
-            ? { home_team: home, away_team: away, home_id: homeId, away_id: awayId }
-            : { home_team: home, away_team: away };
-        
-        document.getElementById('modal-title').innerText = `${home} vs ${away}`;
-        document.getElementById('modal-body').innerHTML = `<div style="text-align: center; padding: 20px; color: #94a3b8;">Analyse IA en cours...</div>`;
-        document.getElementById('prono-modal').style.display = 'flex';
-
-        fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyData)
-        })
-        .then(res => res.json())
-        .then(data => {
-            currentPredictionData = { data, home, away };
-            renderModalContent('home');
-        })
-        .catch(() => {
-            document.getElementById('modal-body').innerHTML = `<div style="color: #ef4444; text-align: center; padding: 20px;">Erreur lors du chargement des prédictions.</div>`;
-        });
-    }
-
-    function renderModalContent(activeTeamTab) {
-        if (!currentPredictionData) return;
-        const { data, home, away } = currentPredictionData;
-        
-        const isFoot = currentSport === 'foot';
-        const totalGoalText = isFoot ? 'Plus de 2.5 buts' : 'Plus de 5.5 buts';
-        const totalGoalVal = isFoot ? `${data.over_under_2_5.over_prob}%` : `${data.over_under_5_5.over_prob}%`;
-
-        let probHtml = `
-            <div style="background: #1e293b; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-                <div style="font-weight: bold; color: #94a3b8; font-size: 0.75rem; letter-spacing: 0.5px;">📊 PROBABILITÉS MULTI-IA</div>
-                <div>
-                    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.85rem; margin-bottom: 3px;"><span>Victoire ${home}</span> <span>${data.probabilities.home_win}%</span></div>
-                    <div style="background: #334155; height: 6px; border-radius: 3px; overflow: hidden;"><div style="background: #3b82f6; width: ${data.probabilities.home_win}%; height: 100%;"></div></div>
-                </div>
-                <div>
-                    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.85rem; margin-bottom: 3px;"><span>${isFoot ? 'Match Nul' : 'Match Nul / Prolongations'}</span> <span>${data.probabilities.draw}%</span></div>
-                    <div style="background: #334155; height: 6px; border-radius: 3px; overflow: hidden;"><div style="background: #64748b; width: ${data.probabilities.draw}%; height: 100%;"></div></div>
-                </div>
-                <div>
-                    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.85rem; margin-bottom: 3px;"><span>Victoire ${away}</span> <span>${data.probabilities.away_win}%</span></div>
-                    <div style="background: #334155; height: 6px; border-radius: 3px; overflow: hidden;"><div style="background: #ef4444; width: ${data.probabilities.away_win}%; height: 100%;"></div></div>
-                </div>
-            </div>
-        `;
-
-        let middleSection = '';
-        if (!isFoot && data.goalies) {
-            middleSection = `
-                <div style="background: #1e293b; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-weight: bold; color: #94a3b8; font-size: 0.75rem; letter-spacing: 0.5px;">🥅 GARDIENS & POWER PLAY</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                        <div style="background: #0f172a; padding: 8px; border-radius: 8px;">
-                            <div style="font-weight: bold; color: #f8fafc; font-size: 0.8rem;">${data.goalies.home.name}</div>
-                            <div style="color: #94a3b8; font-size: 0.75rem;">SV%: ${(data.goalies.home.save_pct * 100).toFixed(1)}%</div>
-                        </div>
-                        <div style="background: #0f172a; padding: 8px; border-radius: 8px;">
-                            <div style="font-weight: bold; color: #f8fafc; font-size: 0.8rem;">${data.goalies.away.name}</div>
-                            <div style="color: #94a3b8; font-size: 0.75rem;">SV%: ${(data.goalies.away.save_pct * 100).toFixed(1)}%</div>
-                        </div>
-                    </div>
-                </div>
-            `;
         }
 
-        const activePlayers = activeTeamTab === 'home' ? data.home_players : data.away_players;
-        const playerSectionTitle = isFoot ? '⚽ POTENTIELS BUTEURS & PASSEURS' : '🏒 BUTEURS & PASSEURS CLÉS';
-        const statsLabel = 'Stats (B / P)';
+        function updateDateBarStyles() {
+            document.querySelectorAll('.date-btn').forEach(btn => {
+                btn.classList.remove('nhl-active');
+                if (btn.classList.contains('active') && currentSport === 'nhl') {
+                    btn.classList.add('nhl-active');
+                }
+            });
+        }
 
-        let playersHtml = `
-            <div style="background: #1e293b; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
-                <div style="font-weight: bold; color: #94a3b8; font-size: 0.75rem; letter-spacing: 0.5px;">${playerSectionTitle}</div>
-                <div style="display: flex; background: #0f172a; border-radius: 8px; padding: 3px; gap: 3px;">
-                    <button onclick="renderModalContent('home')" style="flex: 1; padding: 6px; border: none; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; background: ${activeTeamTab === 'home' ? '#ef4444' : 'transparent'}; color: ${activeTeamTab === 'home' ? 'white' : '#94a3b8'};">${home}</button>
-                    <button onclick="renderModalContent('away')" style="flex: 1; padding: 6px; border: none; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; background: ${activeTeamTab === 'away' ? '#ef4444' : 'transparent'}; color: ${activeTeamTab === 'away' ? 'white' : '#94a3b8'};">${away}</button>
-                </div>
-                <div style="display: flex; justify-content: space-between; color: #64748b; font-size: 0.75rem; padding: 0 4px; font-weight: bold;">
-                    <span>Joueur</span>
-                    <span>${statsLabel}</span>
-                    <span>Probabilité %</span>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 6px;">
-                    ${(activePlayers || []).map(p => `
-                        <div style="display: flex; justify-content: space-between; align-items: center; background: #0f172a; padding: 8px 10px; border-radius: 8px; font-size: 0.8rem;">
-                            <span style="font-weight: 600; color: #f8fafc;">${p.name} <span style="color:#64748b; font-weight:normal;">(${p.pos})</span></span>
-                            <span style="color: #cbd5e1;">${p.stats}</span>
-                            <span style="font-weight: bold; color: #10b981;">${p.pct}%</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `;
+        async function loadMatches() {
+            const container = document.getElementById('matches-container');
+            container.innerHTML = `<div class="no-matches">Chargement des matchs pour le ${currentDate}...</div>`;
 
-        const html = `
-            <div style="background: #1e293b; border-radius: 12px; padding: 12px; display: flex; justify-content: space-around; align-items: center; text-align: center;">
-                <div>
-                    <div style="font-size:0.7rem; color:#94a3b8; font-weight:bold;">SCORE ESTIMÉ</div>
-                    <div style="font-size:1.2rem; font-weight:bold; color:#f59e0b; margin-top:2px;">${data.predicted_score}</div>
-                </div>
-                <div style="border-left: 1px solid #334155; height: 30px;"></div>
-                <div>
-                    <div style="font-size:0.7rem; color:#94a3b8; font-weight:bold;">${totalGoalText.toUpperCase()}</div>
-                    <div style="font-size:1.2rem; font-weight:bold; color:#38bdf8; margin-top:2px;">${totalGoalVal}</div>
-                </div>
-            </div>
-            ${probHtml}
-            ${middleSection}
-            ${playersHtml}
-        `;
+            let endpoint = currentSport === 'nhl' ? `/api/matches/nhl?date=${currentDate}` : `/api/matches/foot?date=${currentDate}`;
 
-        document.getElementById('modal-body').innerHTML = html;
-    }
-
-    function closeModal() {
-        document.getElementById('prono-modal').style.display = 'none';
-    }
-
-    function loadMatches() {
-        const list = document.getElementById('matches-list');
-        list.innerHTML = '<div class="no-matches">Chargement en cours...</div>';
-
-        const endpoint = currentSport === 'nhl' 
-            ? `/api/matches/nhl?date=${selectedDate}` 
-            : `/api/matches/foot?date=${selectedDate}`;
-
-        fetch(endpoint)
-            .then(res => res.json())
-            .then(data => {
-                list.innerHTML = '';
-                const matches = data.matches || [];
+            try {
+                let response = await fetch(endpoint);
+                let data = await response.json();
+                let matches = data.matches || [];
 
                 if (matches.length === 0) {
-                    list.innerHTML = '<div class="no-matches">Aucun match officiel programmé ce jour.</div>';
+                    container.innerHTML = `<div class="no-matches">Aucun match trouvé pour cette date.</div>`;
                     return;
                 }
 
-                matches.forEach(m => {
-                    const timeStr = m.time ? new Date(m.time).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'}) : '--:--';
-                    
-                    const card = document.createElement('div');
+                container.innerHTML = '';
+                matches.forEach(match => {
+                    let card = document.createElement('div');
                     card.className = 'match-card';
+
+                    let stateText = match.game_state === 'OFF' || match.game_state === 'FINAL' ? 'Terminé' : (match.game_state === 'LIVE' ? 'En direct' : 'À venir');
+                    let homeScore = match.home_score !== null && match.home_score !== undefined ? match.home_score : '-';
+                    let awayScore = match.away_score !== null && match.away_score !== undefined ? match.away_score : '-';
+
+                    let btnThemeClass = currentSport === 'nhl' ? 'nhl-theme' : '';
+
                     card.innerHTML = `
-                        <div class="match-header">
+                        <div class="match-header-info">
                             <span>${currentSport.toUpperCase()}</span>
-                            <span>${m.game_state === 'OFF' ? 'TERMINÉ' : timeStr}</span>
+                            <span>${stateText}</span>
                         </div>
-                        <div class="match-teams">
+                        <div class="teams-container">
                             <div class="team-row">
                                 <div class="team-info">
-                                    ${m.home_logo ? `<img src="${m.home_logo}" class="team-logo">` : ''}
-                                    <span>${m.home_team}</span>
+                                    ${match.home_logo ? `<img src="${match.home_logo}" class="team-logo" alt="">` : ''}
+                                    <span>${match.home_team}</span>
                                 </div>
-                                <span>${m.home_score !== null && m.home_score !== undefined ? m.home_score : ''}</span>
+                                <span class="team-score">${homeScore}</span>
                             </div>
                             <div class="team-row">
                                 <div class="team-info">
-                                    ${m.away_logo ? `<img src="${m.away_logo}" class="team-logo">` : ''}
-                                    <span>${m.away_team}</span>
+                                    ${match.away_logo ? `<img src="${match.away_logo}" class="team-logo" alt="">` : ''}
+                                    <span>${match.away_team}</span>
                                 </div>
-                                <span>${m.away_score !== null && m.away_score !== undefined ? m.away_score : ''}</span>
+                                <span class="team-score">${awayScore}</span>
                             </div>
                         </div>
-                        <div class="match-footer">
-                            <button class="prono-btn ${currentSport === 'nhl' ? 'nhl-prono' : ''}">⚡ PRONO</button>
-                        </div>
+                        <button class="prono-btn ${btnThemeClass}" onclick="openProno('${match.home_team}', '${match.away_team}')">
+                            ⚡ PRONO
+                        </button>
                     `;
-                    
-                    card.querySelector('.prono-btn').onclick = () => openPrediction(m.home_team, m.away_team, m.home_id, m.away_id);
-                    list.appendChild(card);
+                    container.appendChild(card);
                 });
-            })
-            .catch(() => {
-                list.innerHTML = '<div class="no-matches">Erreur de chargement des données.</div>';
-            });
-    }
 
-    // Initialisation au chargement
-    initDates();
-    loadMatches();
-</script>
+            } catch (e) {
+                container.innerHTML = `<div class="no-matches">Erreur de chargement des matchs.</div>`;
+            }
+        }
 
+        function openProno(home, away) {
+            alert(`Affichage des pronostics pour : ${home} vs ${away}`);
+        }
+    </script>
 </body>
 </html>
