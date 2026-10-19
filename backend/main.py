@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="13.2",
-    description="Moteur de prédiction LNH & Football avec calendrier unifié par date."
+    version="13.3",
+    description="Moteur de prédiction LNH & Football avec calendrier unifié et pronostics dédiés."
 )
 
 app.add_middleware(
@@ -45,6 +45,15 @@ class MatchInput(BaseModel):
     away_b2b: bool = False
     home_odds: float = 0.0
     away_odds: float = 0.0
+
+class FootballMatchInput(BaseModel):
+    home_team: str
+    away_team: str
+    home_expected_goals: float = 1.4
+    away_expected_goals: float = 1.1
+    home_odds: float = 0.0
+    away_odds: float = 0.0
+    draw_odds: float = 0.0
 
 def fetch_team_stats():
     stats_map = {}
@@ -287,6 +296,41 @@ def predict_match(match: MatchInput):
             "home_form_factor": form_home, "away_form_factor": form_away,
             "home_ot_win_rate": ot_home, "away_ot_win_rate": ot_away,
             "home_value_edge": h_value, "away_value_edge": a_value
+        }
+    }
+
+@app.post("/predict/match/foot")
+def predict_football_match(match: FootballMatchInput):
+    max_goals = 6
+    matrix = np.zeros((max_goals, max_goals))
+    for h in range(max_goals):
+        for a in range(max_goals):
+            matrix[h, a] = poisson.pmf(h, match.home_expected_goals) * poisson.pmf(a, match.away_expected_goals)
+            
+    p_home = float(np.sum(np.tril(matrix, -1))) * 100
+    p_away = float(np.sum(np.triu(matrix, 1))) * 100
+    p_draw = float(np.sum(np.diag(matrix))) * 100
+    
+    total = p_home + p_draw + p_away
+    if total > 0:
+        p_home = (p_home / total) * 100
+        p_draw = (p_draw / total) * 100
+        p_away = (p_away / total) * 100
+
+    best_score = np.unravel_index(np.argmax(matrix), matrix.shape)
+    over_2_5_prob = sum(matrix[h, a] for h in range(max_goals) for a in range(max_goals) if h + a > 2.5) * 100
+
+    return {
+        "match": f"{match.home_team} vs {match.away_team}",
+        "probabilities": {
+            "home_win": round(p_home, 1),
+            "draw": round(p_draw, 1),
+            "away_win": round(p_away, 1)
+        },
+        "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
+        "over_under_2_5": {
+            "over_prob": round(over_2_5_prob, 1),
+            "under_prob": round(100 - over_2_5_prob, 1)
         }
     }
 
