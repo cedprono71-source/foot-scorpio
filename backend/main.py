@@ -7,14 +7,14 @@ from scipy.stats import poisson
 import requests
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="6.1",
-    description="Moteur de prédiction LNH et calendrier avec historique des scores."
+    version="6.2",
+    description="Moteur de prédiction LNH et calendrier avec gestion des fuseaux horaires."
 )
 
 app.add_middleware(
@@ -256,7 +256,7 @@ def get_nhl_matches(date: str = "now"):
             target_date_str = date
 
         target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
-        start_date_str = (target_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        start_date_str = (target_dt - timedelta(days=2)).strftime("%Y-%m-%d")
         
         url = f"https://api-web.nhle.com/v1/schedule/{start_date_str}"
         response = requests.get(url)
@@ -265,9 +265,17 @@ def get_nhl_matches(date: str = "now"):
             data = response.json()
             matches = []
             for day in data.get("gameWeek", []):
-                game_date = day.get("date")
-                if game_date == target_date_str:
-                    for g in day.get("games", []):
+                for g in day.get("games", []):
+                    start_time_utc = g.get("startTimeUTC")
+                    if start_time_utc:
+                        dt_utc = datetime.strptime(start_time_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                        # Conversion en heure locale (fuseau Europe/Paris UTC+1 ou UTC+2)
+                        dt_local = dt_utc + timedelta(hours=2)
+                        game_date_local = dt_local.strftime("%Y-%m-%d")
+                    else:
+                        game_date_local = day.get("date")
+
+                    if game_date_local == target_date_str:
                         home_obj = g.get("homeTeam", {})
                         away_obj = g.get("awayTeam", {})
                         
@@ -277,17 +285,17 @@ def get_nhl_matches(date: str = "now"):
                         if home_name.lower() == "new york":
                             home_name = "New York Islanders" if "nyi" in home_obj.get("logo", "").lower() else "New York Rangers"
                         if away_name.lower() == "new york":
-                            away_name = "New York Islanders" if "nyi" in away_obj.get("logo", "").lower() else "New York Rangers"
+                            away_name = "New York Islanders" if "nyi" in home_obj.get("logo", "").lower() else "New York Rangers"
 
                         game_state = g.get("gameState", "FUT")
                         matches.append({
                             "id": g.get("id"),
-                            "date": game_date,
+                            "date": game_date_local,
                             "home_team": home_name,
                             "away_team": away_name,
                             "home_logo": home_obj.get("logo", ""),
                             "away_logo": away_obj.get("logo", ""),
-                            "time": g.get("startTimeUTC"),
+                            "time": start_time_utc,
                             "game_state": game_state,
                             "home_score": home_obj.get("score") if game_state in ["OFF", "FINAL", "LIVE"] else None,
                             "away_score": away_obj.get("score") if game_state in ["OFF", "FINAL", "LIVE"] else None
