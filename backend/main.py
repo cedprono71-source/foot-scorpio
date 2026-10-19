@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="4.0",
-    description="API avec interrogation dynamique des effectifs LNH, historique des paris et synchronisation pluriannuelle."
+    description="API avec calcul prédictif basé sur l'historique des 3 dernières années et l'interrogation dynamique."
 )
 
 app.add_middleware(
@@ -171,6 +171,38 @@ def fetch_all_players_projections(team_abbrev, expected_team_goals, team_full_na
         pass
     return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
 
+def get_h2h_historical_factor(home_abbrev, away_abbrev):
+    """
+    Analyse l'historique des 3 dernières années pour calculer un facteur correctif 
+    basé sur les confrontations directes et la moyenne de buts historiques.
+    """
+    history_db = load_three_year_history()
+    if not history_db or home_abbrev not in history_db:
+        return 1.0, 1.0
+    
+    home_games = history_db.get(home_abbrev, [])
+    h2h_home_goals = []
+    h2h_away_goals = []
+    
+    for g in home_games:
+        if g.get("away") == away_abbrev:
+            if g.get("home") == home_abbrev:
+                h2h_home_goals.append(g.get("home_score", 0))
+                h2h_away_goals.append(g.get("away_score", 0))
+            else:
+                h2h_home_goals.append(g.get("away_score", 0))
+                h2h_away_goals.append(g.get("home_score", 0))
+                
+    if h2h_home_goals and h2h_away_goals:
+        avg_h = sum(h2h_home_goals) / len(h2h_home_goals)
+        avg_a = sum(h2h_away_goals) / len(h2h_away_goals)
+        # Ajustement modéré par rapport à une moyenne standard de 3.0 buts
+        factor_home = max(0.85, min(1.15, avg_h / 3.0))
+        factor_away = max(0.85, min(1.15, avg_a / 3.0))
+        return factor_home, factor_away
+        
+    return 1.0, 1.0
+
 def calculate_poisson_matrix(home_xg, away_xg):
     max_goals = 10
     matrix = np.zeros((max_goals, max_goals))
@@ -217,11 +249,14 @@ def predict_match(match: MatchInput):
     home_goalie = fetch_goalie_stats(home_abbrev, match.home_team)
     away_goalie = fetch_goalie_stats(away_abbrev, match.away_team)
     
-    h_xg2 = home_st["offense"] * 1.08
-    a_xg2 = away_st["offense"] * 0.92
+    # Récupération du facteur d'historique Head-to-Head sur 3 ans
+    h2h_factor_home, h2h_factor_away = get_h2h_historical_factor(home_abbrev, away_abbrev)
     
-    h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2))
-    a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)))
+    h_xg2 = (home_st["offense"] * 1.08) * h2h_factor_home
+    a_xg2 = (away_st["offense"] * 0.92) * h2h_factor_away
+    
+    h_xg3 = max(1.5, (home_st["offense"] - (away_st["defense"] * 0.1) + 0.2) * h2h_factor_home)
+    a_xg3 = max(1.5, (away_st["offense"] - (home_st["defense"] * 0.1)) * h2h_factor_away)
     
     h_xg4 = max(1.2, home_st["offense"] * (1 - (away_goalie["save_pct"] - 0.900) * 2))
     a_xg4 = max(1.2, away_st["offense"] * (1 - (home_goalie["save_pct"] - 0.900) * 2))
@@ -275,6 +310,7 @@ def predict_match(match: MatchInput):
         "over_under_5_5": {"over_prob": round(over_5_5_prob * 100, 1), "under_prob": round((1 - over_5_5_prob) * 100, 1)},
         "goalies": {"home": home_goalie, "away": away_goalie},
         "special_teams": {"home_pp": round(home_st["pp_pct"] * 100, 1), "away_pp": round(away_st["pp_pct"] * 100, 1)},
+        "historical_factors": {"home_h2h_boost": h2h_factor_home, "away_h2h_boost": h2h_factor_away},
         "players": {"home": home_players_data, "away": away_players_data}
     }
 
