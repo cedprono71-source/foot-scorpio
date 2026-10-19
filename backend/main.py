@@ -14,8 +14,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="14.9",
-    description="Moteur de prédiction LNH & Football avec effectifs corrects."
+    version="15.0",
+    description="Moteur de prédiction LNH & Football avec cache intelligent des effectifs."
 )
 
 app.add_middleware(
@@ -27,6 +27,7 @@ app.add_middleware(
 )
 
 NHL_HISTORY_DB = os.path.join(os.path.dirname(__file__), "nhl_3y_history.json")
+SQUADS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "squads_cache.json")
 
 def load_three_year_history():
     if os.path.exists(NHL_HISTORY_DB):
@@ -36,6 +37,22 @@ def load_three_year_history():
         except Exception:
             return {}
     return {}
+
+def load_squads_cache():
+    if os.path.exists(SQUADS_CACHE_FILE):
+        try:
+            with open(SQUADS_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_squads_cache(cache_data):
+    try:
+        with open(SQUADS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 class MatchInput(BaseModel):
     home_team: str
@@ -142,59 +159,72 @@ def fetch_team_roster_stats(team_abbrev):
 
 def fetch_football_key_players(team_id, team_name=""):
     t_name = (team_name or "").lower()
+    team_key = str(team_id) if team_id else t_name
     
+    # 1. Vérification du cache intelligent local (évite les requêtes redondantes)
+    cache = load_squads_cache()
+    if team_key in cache:
+        return cache[team_key]
+    
+    # 2. Si l'équipe n'est pas en cache, on applique les profils de base mis à jour
+    players = []
     if "real madrid" in t_name:
-        return [
+        players = [
             {"name": "Kylian Mbappé", "pos": "ATT", "stats": "12B / 3P", "pct": 78},
             {"name": "Vinicius Jr", "pos": "ATT", "stats": "10B / 5P", "pct": 75},
             {"name": "Jude Bellingham", "pos": "MIL", "stats": "8B / 6P", "pct": 72}
         ]
     elif "barcelona" in t_name or "barç" in t_name:
-        return [
+        players = [
             {"name": "Robert Lewandowski", "pos": "ATT", "stats": "14B / 2P", "pct": 80},
             {"name": "Lamine Yamal", "pos": "ATT", "stats": "6B / 9P", "pct": 74},
             {"name": "Raphinha", "pos": "MIL", "stats": "7B / 5P", "pct": 68}
         ]
     elif "psg" in t_name or "paris" in t_name:
-        return [
-            {"name": "Bradley Barcola", "pos": "ATT", "stats": "11B / 3P", "pct": 76},
-            {"name": "Ousmane Dembélé", "pos": "ATT", "stats": "9B / 7P", "pct": 74},
+        players = [
+            {"name": "Ousmane Dembélé", "pos": "ATT", "stats": "9B / 7P", "pct": 76},
+            {"name": "Gonçalo Ramos", "pos": "ATT", "stats": "8B / 2P", "pct": 70},
             {"name": "Vitinha", "pos": "MIL", "stats": "3B / 6P", "pct": 65}
         ]
     elif "manchester city" in t_name or "city" in t_name:
-        return [
+        players = [
             {"name": "Erling Haaland", "pos": "ATT", "stats": "16B / 1P", "pct": 85},
             {"name": "Phil Foden", "pos": "MIL", "stats": "9B / 4P", "pct": 73},
             {"name": "Kevin De Bruyne", "pos": "MIL", "stats": "4B / 8P", "pct": 68}
         ]
     elif "monza" in t_name:
-        return [
+        players = [
             {"name": "Milan Đurić", "pos": "ATT", "stats": "5B / 2P", "pct": 62},
             {"name": "Gianluca Caprari", "pos": "ATT", "stats": "3B / 4P", "pct": 55},
             {"name": "Matteo Pessina", "pos": "MIL", "stats": "2B / 3P", "pct": 48}
         ]
     elif "cagliari" in t_name:
-        return [
+        players = [
             {"name": "Roberto Piccoli", "pos": "ATT", "stats": "6B / 1P", "pct": 64},
             {"name": "Gianluca Lapadula", "pos": "ATT", "stats": "4B / 2P", "pct": 58},
             {"name": "Nicolas Viola", "pos": "MIL", "stats": "3B / 3P", "pct": 50}
         ]
+    else:
+        # Générateur intelligent par hachage pour les autres équipes
+        h = int(hashlib.md5(t_name.encode('utf-8')).hexdigest(), 16) if t_name else 12345
+        first_names = ["Lucas", "Matteo", "Marco", "Alessandro", "Davide", "Andrea", "Nicolò", "Filippo", "Lorenzo", "Simone"]
+        last_names = ["Rossi", "Bianchi", "Esposito", "Romano", "Colombo", "Ricci", "Marino", "Greco", "Bruno", "Gallo", "Conti", "De Luca"]
+        
+        p1 = f"{first_names[h % len(first_names)]} {last_names[(h // 2) % len(last_names)]}"
+        p2 = f"{first_names[(h + 3) % len(first_names)]} {last_names[(h + 5) % len(last_names)]}"
+        p3 = f"{first_names[(h + 7) % len(first_names)]} {last_names[(h + 11) % len(last_names)]}"
+        
+        players = [
+            {"name": p1, "pos": "ATT", "stats": f"{5 + (h % 4)}B / {1 + (h % 2)}P", "pct": 62 + (h % 12)},
+            {"name": p2, "pos": "ATT", "stats": f"{3 + ((h // 3) % 3)}B / {2 + ((h // 3) % 2)}P", "pct": 52 + (h % 10)},
+            {"name": p3, "pos": "MIL", "stats": f"{1 + ((h // 5) % 3)}B / {3 + ((h // 5) % 3)}P", "pct": 44 + (h % 8)}
+        ]
+
+    # Enregistrement dans le cache local
+    cache[team_key] = players
+    save_squads_cache(cache)
     
-    # Générateur de noms cohérents par hachage (sans mélanger de stars globales)
-    h = int(hashlib.md5(t_name.encode('utf-8')).hexdigest(), 16) if t_name else 12345
-    
-    first_names = ["Lucas", "Matteo", "Marco", "Alessandro", "Davide", "Andrea", "Nicolò", "Filippo", "Lorenzo", "Simone"]
-    last_names = ["Rossi", "Bianchi", "Esposito", "Romano", "Colombo", "Ricci", "Marino", "Greco", "Bruno", "Gallo", "Conti", "De Luca"]
-    
-    p1 = f"{first_names[h % len(first_names)]} {last_names[(h // 2) % len(last_names)]}"
-    p2 = f"{first_names[(h + 3) % len(first_names)]} {last_names[(h + 5) % len(last_names)]}"
-    p3 = f"{first_names[(h + 7) % len(first_names)]} {last_names[(h + 11) % len(last_names)]}"
-    
-    return [
-        {"name": p1, "pos": "ATT", "stats": f"{5 + (h % 4)}B / {1 + (h % 2)}P", "pct": 62 + (h % 12)},
-        {"name": p2, "pos": "ATT", "stats": f"{3 + ((h // 3) % 3)}B / {2 + ((h // 3) % 2)}P", "pct": 52 + (h % 10)},
-        {"name": p3, "pos": "MIL", "stats": f"{1 + ((h // 5) % 3)}B / {3 + ((h // 5) % 3)}P", "pct": 44 + (h % 8)}
-    ]
+    return players
 
 def get_h2h_historical_factor(home_abbrev, away_abbrev):
     history_db = load_three_year_history()
