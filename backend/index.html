@@ -437,28 +437,14 @@
 
             const homeTeamName = res.match.split(' vs ')[0];
             const awayTeamName = res.match.split(' vs ')[1];
-            const selectedTeamName = activeTeamTab === 'home' ? homeTeamName : awayTeamName;
+
+            // Récupération dynamique des joueurs si fournis par l'API, sinon repli intelligent par équipe
+            const playersList = activeTeamTab === 'home' ? (res.home_players || getFallbackPlayers(homeTeamName)) : (res.away_players || getFallbackPlayers(awayTeamName));
 
             let playersHtml = '';
-            if (selectedTeamName.toLowerCase().includes('rangers')) {
-                playersHtml = `
-                    <tr><td>Artemi Panarin (LW)</td><td>7B / 11P</td><td><strong>64%</strong></td></tr>
-                    <tr><td>Mika Zibanejad (C)</td><td>5B / 9P</td><td><strong>58%</strong></td></tr>
-                    <tr><td>Adam Fox (D)</td><td>2B / 10P</td><td><strong>53%</strong></td></tr>
-                `;
-            } else if (selectedTeamName.toLowerCase().includes('anaheim')) {
-                playersHtml = `
-                    <tr><td>Troy Terry (RW)</td><td>6B / 6P</td><td><strong>55%</strong></td></tr>
-                    <tr><td>Mason McTavish (C)</td><td>5B / 7P</td><td><strong>51%</strong></td></tr>
-                    <tr><td>Cam Fowler (D)</td><td>1B / 6P</td><td><strong>44%</strong></td></tr>
-                `;
-            } else {
-                playersHtml = `
-                    <tr><td>Attaquant Star (C)</td><td>6B / 5P</td><td><strong>56%</strong></td></tr>
-                    <tr><td>Ailier Offensif (LW)</td><td>4B / 6P</td><td><strong>50%</strong></td></tr>
-                    <tr><td>Défenseur Leader (D)</td><td>2B / 5P</td><td><strong>42%</strong></td></tr>
-                `;
-            }
+            playersList.forEach(p => {
+                playersHtml += `<tr><td>${p.name} (${p.pos})</td><td>${p.stats}</td><td><strong>${p.pct}%</strong></td></tr>`;
+            });
 
             modalBody.innerHTML = `
                 <!-- Probabilités Multi-IA -->
@@ -514,10 +500,6 @@
                         <div class="team-tab ${activeTeamTab === 'home' ? 'active' : ''}" onclick="renderModalContent('home')">${homeTeamName}</div>
                         <div class="team-tab ${activeTeamTab === 'away' ? 'active' : ''}" onclick="renderModalContent('away')">${awayTeamName}</div>
                     </div>
-                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 10px;">
-                        🎯 <span style="color: var(--text-muted);">Buteur Favori IA :</span> <strong style="color: var(--accent-color);">${activeTeamTab === 'home' ? 'Artemi Panarin (41%)' : 'Troy Terry (38%)'}</strong><br>
-                        🏒 <span style="color: var(--text-muted);">Passeur Favori IA :</span> <strong style="color: var(--blue-color);">${activeTeamTab === 'home' ? 'Adam Fox (49%)' : 'Mason McTavish (43%)'}</strong>
-                    </div>
                     <table class="player-table">
                         <thead>
                             <tr>
@@ -532,6 +514,29 @@
                     </table>
                 </div>
             `;
+        }
+
+        function getFallbackPlayers(teamName) {
+            const name = teamName.toLowerCase();
+            if (name.includes('rangers')) {
+                return [
+                    { name: 'Artemi Panarin', pos: 'LW', stats: '7B / 11P', pct: 64 },
+                    { name: 'Mika Zibanejad', pos: 'C', stats: '5B / 9P', pct: 58 },
+                    { name: 'Adam Fox', pos: 'D', stats: '2B / 10P', pct: 53 }
+                ];
+            } else if (name.includes('anaheim')) {
+                return [
+                    { name: 'Troy Terry', pos: 'RW', stats: '6B / 6P', pct: 55 },
+                    { name: 'Mason McTavish', pos: 'C', stats: '5B / 7P', pct: 51 },
+                    { name: 'Cam Fowler', pos: 'D', stats: '1B / 6P', pct: 44 }
+                ];
+            } else {
+                return [
+                    { name: 'Top Buteur Star', pos: 'C', stats: '6B / 5P', pct: 56 },
+                    { name: 'Ailier Offensif', pos: 'LW', stats: '4B / 6P', pct: 50 },
+                    { name: 'Défenseur Leader', pos: 'D', stats: '2B / 5P', pct: 42 }
+                ];
+            }
         }
 
         function closeModal() {
