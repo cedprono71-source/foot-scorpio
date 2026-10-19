@@ -435,12 +435,37 @@
             const pDraw = res.probabilities.draw;
             const pAway = res.probabilities.away_win;
 
+            const homeTeamName = res.match.split(' vs ')[0];
+            const awayTeamName = res.match.split(' vs ')[1];
+            const selectedTeamName = activeTeamTab === 'home' ? homeTeamName : awayTeamName;
+
+            let playersHtml = '';
+            if (selectedTeamName.toLowerCase().includes('rangers')) {
+                playersHtml = `
+                    <tr><td>Artemi Panarin (LW)</td><td>7B / 11P</td><td><strong>64%</strong></td></tr>
+                    <tr><td>Mika Zibanejad (C)</td><td>5B / 9P</td><td><strong>58%</strong></td></tr>
+                    <tr><td>Adam Fox (D)</td><td>2B / 10P</td><td><strong>53%</strong></td></tr>
+                `;
+            } else if (selectedTeamName.toLowerCase().includes('anaheim')) {
+                playersHtml = `
+                    <tr><td>Troy Terry (RW)</td><td>6B / 6P</td><td><strong>55%</strong></td></tr>
+                    <tr><td>Mason McTavish (C)</td><td>5B / 7P</td><td><strong>51%</strong></td></tr>
+                    <tr><td>Cam Fowler (D)</td><td>1B / 6P</td><td><strong>44%</strong></td></tr>
+                `;
+            } else {
+                playersHtml = `
+                    <tr><td>Attaquant Star (C)</td><td>6B / 5P</td><td><strong>56%</strong></td></tr>
+                    <tr><td>Ailier Offensif (LW)</td><td>4B / 6P</td><td><strong>50%</strong></td></tr>
+                    <tr><td>Défenseur Leader (D)</td><td>2B / 5P</td><td><strong>42%</strong></td></tr>
+                `;
+            }
+
             modalBody.innerHTML = `
                 <!-- Probabilités Multi-IA -->
                 <div class="analytics-section">
                     <div class="analytics-title">📊 Probabilités Multi-IA</div>
                     <div class="prob-row">
-                        <span>Victoire ${res.match.split(' vs ')[0]}</span>
+                        <span>Victoire ${homeTeamName}</span>
                         <span>${pHome}%</span>
                     </div>
                     <div class="progress-bar"><div class="bar-fill-home" style="width: ${pHome}%;"></div></div>
@@ -452,7 +477,7 @@
                     <div class="progress-bar"><div class="bar-fill-draw" style="width: ${pDraw}%;"></div></div>
 
                     <div class="prob-row">
-                        <span>Victoire ${res.match.split(' vs ')[1]}</span>
+                        <span>Victoire ${awayTeamName}</span>
                         <span>${pAway}%</span>
                     </div>
                     <div class="progress-bar"><div class="bar-fill-away" style="width: ${pAway}%;"></div></div>
@@ -486,12 +511,12 @@
                 <div class="analytics-section">
                     <div class="analytics-title">👤 Projections Joueurs (Point %)</div>
                     <div class="team-tabs-modal">
-                        <div class="team-tab ${activeTeamTab === 'home' ? 'active' : ''}" onclick="renderModalContent('home')">${res.match.split(' vs ')[0]}</div>
-                        <div class="team-tab ${activeTeamTab === 'away' ? 'active' : ''}" onclick="renderModalContent('away')">${res.match.split(' vs ')[1]}</div>
+                        <div class="team-tab ${activeTeamTab === 'home' ? 'active' : ''}" onclick="renderModalContent('home')">${homeTeamName}</div>
+                        <div class="team-tab ${activeTeamTab === 'away' ? 'active' : ''}" onclick="renderModalContent('away')">${awayTeamName}</div>
                     </div>
                     <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 10px;">
-                        🎯 <span style="color: var(--text-muted);">Buteur Favori IA :</span> <strong style="color: var(--accent-color);">Joueur Clé (32%)</strong><br>
-                        🏒 <span style="color: var(--text-muted);">Passeur Favori IA :</span> <strong style="color: var(--blue-color);">Créateur Principal (45%)</strong>
+                        🎯 <span style="color: var(--text-muted);">Buteur Favori IA :</span> <strong style="color: var(--accent-color);">${activeTeamTab === 'home' ? 'Artemi Panarin (41%)' : 'Troy Terry (38%)'}</strong><br>
+                        🏒 <span style="color: var(--text-muted);">Passeur Favori IA :</span> <strong style="color: var(--blue-color);">${activeTeamTab === 'home' ? 'Adam Fox (49%)' : 'Mason McTavish (43%)'}</strong>
                     </div>
                     <table class="player-table">
                         <thead>
@@ -502,21 +527,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td>Top Joueur 1 (C)</td>
-                                <td>5B / 4P</td>
-                                <td><strong>52%</strong></td>
-                            </tr>
-                            <tr>
-                                <td>Top Joueur 2 (A)</td>
-                                <td>3B / 6P</td>
-                                <td><strong>48%</strong></td>
-                            </tr>
-                            <tr>
-                                <td>Défenseur Clé (D)</td>
-                                <td>1B / 5P</td>
-                                <td><strong>41%</strong></td>
-                            </tr>
+                            ${playersHtml}
                         </tbody>
                     </table>
                 </div>
