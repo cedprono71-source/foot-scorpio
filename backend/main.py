@@ -15,7 +15,7 @@ import atexit
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="15.0",
-    description="Moteur de prédiction LNH & Football avec cache intelligent des effectifs."
+    description="Moteur de prédiction LNH & Football avec gestion optimisée du calendrier."
 )
 
 app.add_middleware(
@@ -156,75 +156,6 @@ def fetch_team_roster_stats(team_abbrev):
         {"name": "Jesper Bratt", "pos": "LW", "stats": "2B / 5P", "pct": 39},
         {"name": "Nico Hischier", "pos": "C", "stats": "4B / 1P", "pct": 30}
     ]
-
-def fetch_football_key_players(team_id, team_name=""):
-    t_name = (team_name or "").lower()
-    team_key = str(team_id) if team_id else t_name
-    
-    # 1. Vérification du cache intelligent local (évite les requêtes redondantes)
-    cache = load_squads_cache()
-    if team_key in cache:
-        return cache[team_key]
-    
-    # 2. Si l'équipe n'est pas en cache, on applique les profils de base mis à jour
-    players = []
-    if "real madrid" in t_name:
-        players = [
-            {"name": "Kylian Mbappé", "pos": "ATT", "stats": "12B / 3P", "pct": 78},
-            {"name": "Vinicius Jr", "pos": "ATT", "stats": "10B / 5P", "pct": 75},
-            {"name": "Jude Bellingham", "pos": "MIL", "stats": "8B / 6P", "pct": 72}
-        ]
-    elif "barcelona" in t_name or "barç" in t_name:
-        players = [
-            {"name": "Robert Lewandowski", "pos": "ATT", "stats": "14B / 2P", "pct": 80},
-            {"name": "Lamine Yamal", "pos": "ATT", "stats": "6B / 9P", "pct": 74},
-            {"name": "Raphinha", "pos": "MIL", "stats": "7B / 5P", "pct": 68}
-        ]
-    elif "psg" in t_name or "paris" in t_name:
-        players = [
-            {"name": "Ousmane Dembélé", "pos": "ATT", "stats": "9B / 7P", "pct": 76},
-            {"name": "Gonçalo Ramos", "pos": "ATT", "stats": "8B / 2P", "pct": 70},
-            {"name": "Vitinha", "pos": "MIL", "stats": "3B / 6P", "pct": 65}
-        ]
-    elif "manchester city" in t_name or "city" in t_name:
-        players = [
-            {"name": "Erling Haaland", "pos": "ATT", "stats": "16B / 1P", "pct": 85},
-            {"name": "Phil Foden", "pos": "MIL", "stats": "9B / 4P", "pct": 73},
-            {"name": "Kevin De Bruyne", "pos": "MIL", "stats": "4B / 8P", "pct": 68}
-        ]
-    elif "monza" in t_name:
-        players = [
-            {"name": "Milan Đurić", "pos": "ATT", "stats": "5B / 2P", "pct": 62},
-            {"name": "Gianluca Caprari", "pos": "ATT", "stats": "3B / 4P", "pct": 55},
-            {"name": "Matteo Pessina", "pos": "MIL", "stats": "2B / 3P", "pct": 48}
-        ]
-    elif "cagliari" in t_name:
-        players = [
-            {"name": "Roberto Piccoli", "pos": "ATT", "stats": "6B / 1P", "pct": 64},
-            {"name": "Gianluca Lapadula", "pos": "ATT", "stats": "4B / 2P", "pct": 58},
-            {"name": "Nicolas Viola", "pos": "MIL", "stats": "3B / 3P", "pct": 50}
-        ]
-    else:
-        # Générateur intelligent par hachage pour les autres équipes
-        h = int(hashlib.md5(t_name.encode('utf-8')).hexdigest(), 16) if t_name else 12345
-        first_names = ["Lucas", "Matteo", "Marco", "Alessandro", "Davide", "Andrea", "Nicolò", "Filippo", "Lorenzo", "Simone"]
-        last_names = ["Rossi", "Bianchi", "Esposito", "Romano", "Colombo", "Ricci", "Marino", "Greco", "Bruno", "Gallo", "Conti", "De Luca"]
-        
-        p1 = f"{first_names[h % len(first_names)]} {last_names[(h // 2) % len(last_names)]}"
-        p2 = f"{first_names[(h + 3) % len(first_names)]} {last_names[(h + 5) % len(last_names)]}"
-        p3 = f"{first_names[(h + 7) % len(first_names)]} {last_names[(h + 11) % len(last_names)]}"
-        
-        players = [
-            {"name": p1, "pos": "ATT", "stats": f"{5 + (h % 4)}B / {1 + (h % 2)}P", "pct": 62 + (h % 12)},
-            {"name": p2, "pos": "ATT", "stats": f"{3 + ((h // 3) % 3)}B / {2 + ((h // 3) % 2)}P", "pct": 52 + (h % 10)},
-            {"name": p3, "pos": "MIL", "stats": f"{1 + ((h // 5) % 3)}B / {3 + ((h // 5) % 3)}P", "pct": 44 + (h % 8)}
-        ]
-
-    # Enregistrement dans le cache local
-    cache[team_key] = players
-    save_squads_cache(cache)
-    
-    return players
 
 def get_h2h_historical_factor(home_abbrev, away_abbrev):
     history_db = load_three_year_history()
@@ -403,6 +334,7 @@ def predict_football_match(match: FootballMatchInput):
 
         best_score = np.unravel_index(np.argmax(matrix), matrix.shape)
         over_2_5_prob = sum(matrix[h, a] for h in range(max_goals) for a in range(max_goals) if h + a > 2.5) * 100
+        btts_prob = sum(matrix[h, a] for h in range(1, max_goals) for a in range(1, max_goals)) * 100
 
         return {
             "match": f"{match.home_team} vs {match.away_team}",
@@ -416,8 +348,10 @@ def predict_football_match(match: FootballMatchInput):
                 "over_prob": round(over_2_5_prob, 1),
                 "under_prob": round(100 - over_2_5_prob, 1)
             },
-            "home_players": fetch_football_key_players(match.home_id, match.home_team),
-            "away_players": fetch_football_key_players(match.away_id, match.away_team)
+            "btts": {
+                "yes_prob": round(btts_prob, 1),
+                "no_prob": round(100 - btts_prob, 1)
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -431,7 +365,7 @@ def get_nhl_matches(date: str = "now"):
             target_date_str = date
 
         target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
-        start_date_str = (target_dt - timedelta(days=2)).strftime("%Y-%m-%d")
+        start_date_str = (target_dt - timedelta(days=3)).strftime("%Y-%m-%d")
         
         url = f"https://api-web.nhle.com/v1/schedule/{start_date_str}"
         response = requests.get(url)
@@ -494,8 +428,8 @@ def get_football_matches(date: str = "now"):
             try:
                 headers = {"X-Auth-Token": api_token}
                 target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
-                date_from = (target_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-                date_to = (target_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+                date_from = (target_dt - timedelta(days=2)).strftime("%Y-%m-%d")
+                date_to = (target_dt + timedelta(days=2)).strftime("%Y-%m-%d")
                 
                 url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
                 response = requests.get(url, headers=headers, timeout=5)
