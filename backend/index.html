@@ -184,7 +184,7 @@
         <button id="btn-foot" class="sport-btn active-foot" onclick="switchSport('foot')">⚽ Football</button>
     </div>
 
-    <!-- Sélecteur de Date (Élargi : 7 jours en arrière, 30 jours en avant) -->
+    <!-- Sélecteur de Date -->
     <div class="date-strip" id="date-strip">
         <!-- Généré dynamiquement en JS -->
     </div>
@@ -219,7 +219,6 @@
         const strip = document.getElementById('date-strip');
         strip.innerHTML = '';
         
-        // Plage élargie : de -7 jours à +30 jours
         for (let i = -7; i <= 30; i++) {
             const d = new Date();
             d.setDate(d.getDate() + i);
@@ -264,17 +263,20 @@
         loadMatches();
     }
 
-    function openPrediction(home, away) {
+    function openPrediction(home, away, homeId, awayId) {
         const endpoint = currentSport === 'foot' ? '/predict/match/foot' : '/predict/match';
+        const bodyData = currentSport === 'foot' 
+            ? { home_team: home, away_team: away, home_id: homeId, away_id: awayId }
+            : { home_team: home, away_team: away };
         
         document.getElementById('modal-title').innerText = `Analyse IA en cours...`;
-        document.getElementById('modal-body').innerHTML = `<div style="text-align: center; padding: 20px; color: #94a3b8;">Calcul des probabilités et des statistiques...</div>`;
+        document.getElementById('modal-body').innerHTML = `<div style="text-align: center; padding: 20px; color: #94a3b8;">Calcul des probabilités et des effectifs...</div>`;
         document.getElementById('prono-modal').style.display = 'flex';
 
         fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ home_team: home, away_team: away })
+            body: JSON.stringify(bodyData)
         })
         .then(res => res.json())
         .then(data => {
@@ -393,7 +395,7 @@
                         </div>
                     `;
                     
-                    card.querySelector('.prono-btn').onclick = () => openPrediction(m.home_team, m.away_team);
+                    card.querySelector('.prono-btn').onclick = () => openPrediction(m.home_team, m.away_team, m.home_id, m.away_id);
                     list.appendChild(card);
                 });
             })
