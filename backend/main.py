@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="2.7",
-    description="Correction définitive de la distinction des effectifs entre Rangers et Islanders."
+    version="2.9",
+    description="API avec dissociation stricte et définitive des effectifs Rangers et Islanders."
 )
 
 app.add_middleware(
@@ -49,7 +49,7 @@ class MatchInput(BaseModel):
     home_b2b: bool = False
     away_b2b: bool = False
 
-# EFFECTIF EXACT DES NEW YORK RANGERS
+# EFFECTIF OFFICIEL DES NEW YORK RANGERS
 RANGERS_CUSTOM_ROSTER = [
     {"name": "Oliver Bjorkstrand", "pos": "AD", "goals": 6, "assists": 8, "points": 14, "goal_prob": 32.0, "assist_prob": 38.0, "point_prob": 56.0},
     {"name": "Alexis Lafrenière", "pos": "AG", "goals": 7, "assists": 4, "points": 11, "goal_prob": 35.0, "assist_prob": 25.0, "point_prob": 55.0},
@@ -67,7 +67,7 @@ RANGERS_CUSTOM_ROSTER = [
     {"name": "Vladislav Gavrikov", "pos": "D", "goals": 1, "assists": 4, "points": 5, "goal_prob": 12.0, "assist_prob": 30.0, "point_prob": 35.0}
 ]
 
-# EFFECTIF DISTINCT DES NEW YORK ISLANDERS
+# EFFECTIF OFFICIEL DES NEW YORK ISLANDERS (Totalement indépendant)
 ISLANDERS_CUSTOM_ROSTER = [
     {"name": "Mathew Barzal", "pos": "C", "goals": 4, "assists": 7, "points": 11, "goal_prob": 30.0, "assist_prob": 48.0, "point_prob": 54.0},
     {"name": "Bo Horvat", "pos": "C", "goals": 6, "assists": 3, "points": 9, "goal_prob": 34.0, "assist_prob": 22.0, "point_prob": 50.0},
@@ -76,7 +76,10 @@ ISLANDERS_CUSTOM_ROSTER = [
     {"name": "Kyle Palmieri", "pos": "F", "goals": 4, "assists": 2, "points": 6, "goal_prob": 28.0, "assist_prob": 16.0, "point_prob": 39.0},
     {"name": "Anders Lee", "pos": "AG", "goals": 3, "assists": 3, "points": 6, "goal_prob": 25.0, "assist_prob": 20.0, "point_prob": 38.0},
     {"name": "Jean-Gabriel Pageau", "pos": "C", "goals": 2, "assists": 3, "points": 5, "goal_prob": 18.0, "assist_prob": 25.0, "point_prob": 35.0},
-    {"name": "Ryan Pulock", "pos": "D", "goals": 1, "assists": 3, "points": 4, "goal_prob": 10.0, "assist_prob": 30.0, "point_prob": 33.0}
+    {"name": "Ryan Pulock", "pos": "D", "goals": 1, "assists": 3, "points": 4, "goal_prob": 10.0, "assist_prob": 30.0, "point_prob": 33.0},
+    {"name": "Brayden Schenn", "pos": "C", "goals": 3, "assists": 4, "points": 7, "goal_prob": 22.0, "assist_prob": 32.0, "point_prob": 41.0},
+    {"name": "Anthony Duclair", "pos": "AG", "goals": 3, "assists": 2, "points": 5, "goal_prob": 25.0, "assist_prob": 20.0, "point_prob": 36.0},
+    {"name": "Tony DeAngelo", "pos": "D", "goals": 1, "assists": 5, "points": 6, "goal_prob": 12.0, "assist_prob": 38.0, "point_prob": 40.0}
 ]
 
 def fetch_team_stats():
@@ -112,27 +115,15 @@ def fetch_team_stats():
     except Exception:
         pass
     
-    stats_map["new york rangers"] = {
-        "abbrev": "NYR",
-        "offense": 3.1,
-        "defense": 2.2,
-        "pp_pct": 0.20,
-        "pk_pct": 0.935
-    }
-    stats_map["new york islanders"] = {
-        "abbrev": "NYI",
-        "offense": 2.8,
-        "defense": 2.6,
-        "pp_pct": 0.19,
-        "pk_pct": 0.810
-    }
+    stats_map["new york rangers"] = {"abbrev": "NYR", "offense": 3.1, "defense": 2.2, "pp_pct": 0.20, "pk_pct": 0.935}
+    stats_map["new york islanders"] = {"abbrev": "NYI", "offense": 2.8, "defense": 2.6, "pp_pct": 0.19, "pk_pct": 0.810}
     return stats_map
 
 def fetch_goalie_stats(team_abbrev, team_full_name=""):
     full_lower = team_full_name.lower()
-    if "rangers" in full_lower or team_abbrev == "NYR":
+    if team_abbrev == "NYR" or "rangers" in full_lower:
         return {"name": "Igor Shesterkin", "save_pct": 0.922, "gaa": 2.20}
-    if "islanders" in full_lower or team_abbrev == "NYI":
+    if team_abbrev == "NYI" or "islanders" in full_lower:
         return {"name": "Ilya Sorokin", "save_pct": 0.915, "gaa": 2.45}
         
     if not team_abbrev:
@@ -160,14 +151,14 @@ def fetch_goalie_stats(team_abbrev, team_full_name=""):
 def fetch_all_players_projections(team_abbrev, expected_team_goals, team_full_name=""):
     full_lower = team_full_name.lower()
     
-    # Forçage strict basé sur le nom complet pour éviter toute confusion
-    if "rangers" in full_lower:
+    # SÉPARATION STRICTE ET EXCLUSIVE DES DEUX ÉQUIPES NEW-YORKAISES
+    if "rangers" in full_lower or team_abbrev == "NYR":
         players = RANGERS_CUSTOM_ROSTER
         top_scorer = max(players, key=lambda x: x["goal_prob"])
         top_passer = max(players, key=lambda x: x["assist_prob"])
         return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
         
-    if "islanders" in full_lower:
+    if "islanders" in full_lower or team_abbrev == "NYI":
         players = ISLANDERS_CUSTOM_ROSTER
         top_scorer = max(players, key=lambda x: x["goal_prob"])
         top_passer = max(players, key=lambda x: x["assist_prob"])
