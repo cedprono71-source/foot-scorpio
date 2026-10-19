@@ -131,11 +131,6 @@
 
         .ia-badge-tag { display: inline-block; background: rgba(210, 153, 34, 0.15); color: #d29922; border: 1px solid rgba(210, 153, 34, 0.3); border-radius: 6px; padding: 3px 8px; font-size: 0.7rem; font-weight: bold; margin-bottom: 10px; }
 
-        .ia-picks-box { background: rgba(22, 27, 34, 0.8); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px; margin-top: 10px; margin-bottom: 12px; }
-        .ia-pick-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; padding: 4px 0; }
-        .ia-pick-label { font-weight: bold; color: #f0f6fc; display: flex; align-items: center; gap: 4px; }
-        .ia-pick-val { font-weight: 700; color: #ff5269; }
-
         .team-tabs-players { display: flex; gap: 6px; margin-top: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 2px; }
         .team-tab-btn { flex: 1; padding: 8px; text-align: center; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #8fa3b3; background: rgba(255,255,255,0.04); border-radius: 8px 8px 0 0; transition: all 0.2s; }
         .team-tab-btn.active { background: #21262d; color: #f0f6fc; border-top: 2px solid #e11238; }
@@ -218,17 +213,14 @@
         function generateDateStrip(centerDateStr) {
             const strip = document.getElementById('date-strip');
             strip.innerHTML = '';
-            
             let parts = (centerDateStr || todayStr).split('-');
             let baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
-
             let todayObj = new Date();
             todayObj.setHours(0,0,0,0);
 
             for (let i = 0; i <= 14; i++) {
                 let d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + i);
                 let dateStr = formatDateLocal(d);
-                
                 let dCompare = new Date(d.getFullYear(), d.getMonth(), d.getDate());
                 if (dCompare < todayObj) continue;
 
@@ -249,7 +241,6 @@
             selectedDateStr = dateStr;
             document.querySelectorAll('.date-item').forEach(el => el.classList.remove('active'));
             if (element) { element.classList.add('active'); }
-            
             document.getElementById('section-title').innerText = `MATCHS DU ${dateStr.split('-').reverse().join('/')}`;
             chargerMatchs(dateStr);
         }
@@ -260,7 +251,6 @@
 
             try {
                 await fetch(`/api/predict/auto-sync?date=${dateStr}`);
-
                 const response = await fetch(`/api/matches/nhl?date=${dateStr}`);
                 const data = await response.json();
                 container.innerHTML = '';
@@ -430,24 +420,11 @@
 
             const teamData = currentMatchPlayers[side] || { all: [], top_scorer: null, top_passer: null };
             const list = teamData.all || [];
-            const topScorer = teamData.top_scorer;
-            const topPasser = teamData.top_passer;
-            
             const box = document.getElementById('players-list-box');
 
             if (list.length === 0) {
                 box.innerHTML = '<div class="no-match" style="padding:15px;">Aucune donnée disponible.</div>';
                 return;
-            }
-
-            let picksHtml = '';
-            if (topScorer || topPasser) {
-                picksHtml = `
-                    <div class="ia-picks-box">
-                        ${topScorer ? `<div class="ia-pick-item"><span class="ia-pick-label">🎯 Buteur Favori IA :</span><span class="ia-pick-val">${topScorer.name} (${topScorer.goal_prob}%)</span></div>` : ''}
-                        ${topPasser ? `<div class="ia-pick-item"><span class="ia-pick-label">🏒 Passeur Favori IA :</span><span class="ia-pick-val">${topPasser.name} (${topPasser.assist_prob}%)</span></div>` : ''}
-                    </div>
-                `;
             }
 
             let rows = list.map(p => `
@@ -459,7 +436,6 @@
             `).join('');
 
             box.innerHTML = `
-                ${picksHtml}
                 <div class="players-table-container">
                     <table class="players-table">
                         <thead>
