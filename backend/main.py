@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="2.1",
-    description="API complète combinant prédictions Poisson, données NHL en direct, historique, synchronisation automatique et module IA Pépites."
+    version="2.2",
+    description="API complète combinant prédictions Poisson, données NHL en direct et synchronisation automatique."
 )
 
 # Configuration CORS pour le front-end
@@ -49,64 +49,6 @@ class MatchInput(BaseModel):
     away_expected_goals: float = 2.7
     home_b2b: bool = False
     away_b2b: bool = False
-
-# ---------------------------------------------------------
-# MOTEUR AVANCÉ : IA PÉPITES & VALEUR CACHÉE
-# ---------------------------------------------------------
-def find_value_goalscorers(home_players, away_players, home_def_rating, away_def_rating):
-    all_candidates = []
-
-    for player in home_players:
-        goals = player.get("goals", 0)
-        shots = player.get("shots_per_game", 1.8)
-        is_pp2 = player.get("pp_unit", 2) == 2
-        toi = player.get("toi_minutes", 16.0)
-        
-        if goals > 8:
-            continue
-            
-        score = (shots * 1.4) + (toi * 0.05)
-        if is_pp2:
-            score *= 1.40
-            
-        if score > 2.8 and away_def_rating > 2.8:
-            all_candidates.append({
-                "player_name": player.get("name", "Inconnu"),
-                "team": "Domicile",
-                "confidence": "Spéculative",
-                "reason": f"Value pur (PP2 / profondeur) avec {shots} tirs/m face à une défense perméable."
-            })
-
-    for player in away_players:
-        goals = player.get("goals", 0)
-        shots = player.get("shots_per_game", 1.8)
-        is_pp2 = player.get("pp_unit", 2) == 2
-        toi = player.get("toi_minutes", 16.0)
-        
-        if goals > 8:
-            continue
-            
-        score = (shots * 1.4) + (toi * 0.05)
-        if is_pp2:
-            score *= 1.40
-            
-        if score > 2.8 and home_def_rating > 2.8:
-            all_candidates.append({
-                "player_name": player.get("name", "Inconnu"),
-                "team": "Extérieur",
-                "confidence": "Spéculative",
-                "reason": f"Coup à tenter sur un joueur secondaire (PP2) face à la défense locale."
-            })
-
-    if all_candidates:
-        return all_candidates[0]
-    
-    return {
-        "player_name": "Aucun value bet majeur",
-        "team": "N/A",
-        "confidence": "Faible",
-        "reason": "Pas de pépite de profondeur identifiée pour cette rencontre."
-    }
 
 # ---------------------------------------------------------
 # FONCTIONS DE RÉCUPÉRATION DES STATS NHL (OFFICIEL)
@@ -358,13 +300,6 @@ def predict_match(match: MatchInput):
                 
     home_players_data = fetch_all_players_projections(home_abbrev, final_h_xg)
     away_players_data = fetch_all_players_projections(away_abbrev, final_a_xg)
-
-    ia_pepite = find_value_goalscorers(
-        home_players_data.get("all", []),
-        away_players_data.get("all", []),
-        home_st["defense"],
-        away_st["defense"]
-    )
     
     predicted_winner = match.home_team if final_home_win >= final_away_win else match.away_team
     
@@ -413,8 +348,7 @@ def predict_match(match: MatchInput):
         "players": {
             "home": home_players_data,
             "away": away_players_data
-        },
-        "ia_pepite": ia_pepite
+        }
     }
 
 @app.get("/api/predict/auto-sync")
@@ -443,7 +377,6 @@ def auto_sync_today_matches(date: str = "now"):
                     
                     match_key = f"{home_name}vs{away_name}_{start_date}"
                     if match_key not in history:
-                        # Simulation rapide du pronostic pour alimenter l'historique automatiquement
                         history[match_key] = {
                             "date": start_date,
                             "match": f"{home_name} vs {away_name}",
@@ -464,78 +397,6 @@ def auto_sync_today_matches(date: str = "now"):
         return {"status": "success", "synced_matches": count}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-@app.get("/api/history")
-def get_prediction_history():
-    history = load_history()
-    updated = False
-    for key, item in history.items():
-        if item.get("status") == "PENDING":
-            try:
-                m_date = item.get("date")
-                dt_obj = datetime.strptime(m_date, "%Y-%m-%d")
-                dates_to_check = [m_date, (dt_obj - timedelta(days=1)).strftime("%Y-%m-%d")]
-                
-                found = False
-                for check_date in dates_to_check:
-                    if found:
-                        break
-                    url = f"https://api-web.nhle.com/v1/schedule/{check_date}"
-                    res = requests.get(url)
-                    if res.status_code == 200:
-                        data = res.json()
-                        for day in data.get("gameWeek", []):
-                            if day.get("date") == check_date:
-                                for g in day.get("games", []):
-                                    h_name = g.get("homeTeam", {}).get("placeName", {}).get("default") or g.get("homeTeam", {}).get("commonName", {}).get("default", "")
-                                    a_name = g.get("awayTeam", {}).get("placeName", {}).get("default") or g.get("awayTeam", {}).get("commonName", {}).get("default", "")
-                                    
-                                    if (h_name.lower() in item["home_team"].lower() or item["home_team"].lower() in h_name.lower()) and \
-                                       (a_name.lower() in item["away_team"].lower() or item["away_team"].lower() in a_name.lower()):
-                                        
-                                        gameState = g.get("gameState")
-                                        if gameState in ["OFF", "FINAL"]:
-                                            h_score = g.get("homeTeam", {}).get("score", 0)
-                                            a_score = g.get("awayTeam", {}).get("score", 0)
-                                            actual_winner = item["home_team"] if h_score > a_score else item["away_team"]
-                                            actual_over = (h_score + a_score) > 5.5
-                                            
-                                            item["actual_score"] = f"{h_score} - {a_score}"
-                                            item["winner_correct"] = (actual_winner == item["predicted_winner"])
-                                            item["over_correct"] = (actual_over == item["predicted_over"])
-                                            item["status"] = "FINISHED"
-                                            updated = True
-                                            found = True
-            except Exception:
-                pass
-                
-    if updated:
-        save_history(history)
-        
-    total = 0
-    winner_wins = 0
-    over_wins = 0
-    
-    items_list = list(history.values())
-    for item in items_list:
-        if item.get("status") == "FINISHED":
-            total += 1
-            if item.get("winner_correct"):
-                winner_wins += 1
-            if item.get("over_correct"):
-                over_wins += 1
-                
-    winrate_winner = round((winner_wins / total * 100), 1) if total > 0 else 0.0
-    winrate_over = round((over_wins / total * 100), 1) if total > 0 else 0.0
-    
-    return {
-        "stats": {
-            "total_matches": total,
-            "winrate_winner": winrate_winner,
-            "winrate_over": winrate_over
-        },
-        "history": sorted(items_list, key=lambda x: x["date"], reverse=True)
-    }
 
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
