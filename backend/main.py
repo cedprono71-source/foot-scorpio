@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="5.0",
-    description="Moteur de prédiction LNH autonome et ultra-avancé (Forme, Fatigue, OT, Value Betting)."
+    version="6.0",
+    description="Moteur de prédiction LNH avec historique des matchs joués et scores en direct."
 )
 
 app.add_middleware(
@@ -27,22 +27,6 @@ app.add_middleware(
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
 NHL_HISTORY_DB = os.path.join(os.path.dirname(__file__), "nhl_3y_history.json")
-
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def save_history(history):
-    try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
 
 def load_three_year_history():
     if os.path.exists(NHL_HISTORY_DB):
@@ -60,14 +44,8 @@ class MatchInput(BaseModel):
     away_expected_goals: float = 2.7
     home_b2b: bool = False
     away_b2b: bool = False
-    home_odds: float = 0.0  # Optionnel pour calculer la Value
-    away_odds: float = 0.0  # Optionnel pour calculer la Value
-
-class BetRecord(BaseModel):
-    match: str
-    prediction: str
-    odds: float = 0.0
-    status: str = "En attente"
+    home_odds: float = 0.0
+    away_odds: float = 0.0
 
 def fetch_team_stats():
     stats_map = {}
@@ -89,21 +67,16 @@ def fetch_team_stats():
                 offense = round(goals_for / games_played, 2)
                 defense = round(goals_against / games_played, 2)
                 
-                pp_pct = round(min(0.30, max(0.12, (offense / 3.0) * 0.20)), 3)
-                pk_pct = round(min(0.88, max(0.70, 0.80 + (2.8 - defense) * 0.05)), 3)
-                
                 stats_map[full_name.lower()] = {
                     "abbrev": abbrev,
                     "offense": max(2.0, offense),
-                    "defense": max(2.0, defense),
-                    "pp_pct": pp_pct,
-                    "pk_pct": pk_pct
+                    "defense": max(2.0, defense)
                 }
     except Exception:
         pass
     
-    stats_map["new york rangers"] = {"abbrev": "NYR", "offense": 3.1, "defense": 2.2, "pp_pct": 0.20, "pk_pct": 0.935}
-    stats_map["new york islanders"] = {"abbrev": "NYI", "offense": 2.8, "defense": 2.6, "pp_pct": 0.19, "pk_pct": 0.810}
+    stats_map["new york rangers"] = {"abbrev": "NYR", "offense": 3.1, "defense": 2.2}
+    stats_map["new york islanders"] = {"abbrev": "NYI", "offense": 2.8, "defense": 2.6}
     return stats_map
 
 def fetch_goalie_stats(team_abbrev, team_full_name=""):
@@ -112,68 +85,7 @@ def fetch_goalie_stats(team_abbrev, team_full_name=""):
         return {"name": "Ilya Sorokin", "save_pct": 0.915, "gaa": 2.45}
     if team_abbrev == "NYR" or "rangers" in full_lower or full_lower == "new york":
         return {"name": "Igor Shesterkin", "save_pct": 0.922, "gaa": 2.20}
-        
-    if not team_abbrev:
-        return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
-    try:
-        url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            goalies = data.get("goalies", [])
-            if goalies:
-                top_goalie = max(goalies, key=lambda x: x.get("gamesPlayed", 0))
-                name = f"{top_goalie.get('firstName', {}).get('default', '')} {top_goalie.get('lastName', {}).get('default', '')}"
-                sv_pct = top_goalie.get("savePercentage", 0.905)
-                gaa = top_goalie.get("goalsAgainstAverage", 2.80)
-                return {
-                    "name": name,
-                    "save_pct": round(sv_pct, 3) if sv_pct else 0.905,
-                    "gaa": round(gaa, 2) if gaa else 2.80
-                }
-    except Exception:
-        pass
     return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
-
-def fetch_all_players_projections(team_abbrev, expected_team_goals, team_full_name=""):
-    players = []
-    top_scorer, top_passer = None, None
-    if not team_abbrev:
-        return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
-        
-    try:
-        url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            skaters = data.get("skaters", [])
-            for p in skaters:
-                name = f"{p.get('firstName', {}).get('default', '')} {p.get('lastName', {}).get('default', '')}"
-                gp = max(1, p.get("gamesPlayed", 1))
-                goals = p.get("goals", 0)
-                assists = p.get("assists", 0)
-                points = goals + assists
-                
-                g_pg = goals / gp
-                a_pg = assists / gp
-                pts_pg = points / gp
-                
-                goal_prob = min(90, round((1 - np.exp(-g_pg * (expected_team_goals / 3.0))) * 100, 1))
-                assist_prob = min(90, round((1 - np.exp(-a_pg * (expected_team_goals / 3.0))) * 100, 1))
-                point_prob = min(95, round((1 - np.exp(-pts_pg * (expected_team_goals / 3.0))) * 100, 1))
-                
-                position = p.get("positionCode", "F")
-                players.append({
-                    "name": name, "pos": position, "goals": goals, "assists": assists,
-                    "points": points, "goal_prob": goal_prob, "assist_prob": assist_prob, "point_prob": point_prob
-                })
-            players = sorted(players, key=lambda x: x["point_prob"], reverse=True)
-            if players:
-                top_scorer = max(players, key=lambda x: x["goal_prob"])
-                top_passer = max(players, key=lambda x: x["assist_prob"])
-    except Exception:
-        pass
-    return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
 
 def get_h2h_historical_factor(home_abbrev, away_abbrev):
     history_db = load_three_year_history()
@@ -181,8 +93,7 @@ def get_h2h_historical_factor(home_abbrev, away_abbrev):
         return 1.0, 1.0
     
     home_games = history_db.get(home_abbrev, [])
-    h2h_home_goals = []
-    h2h_away_goals = []
+    h2h_home_goals, h2h_away_goals = [], []
     
     for g in home_games:
         if g.get("away") == away_abbrev:
@@ -196,32 +107,21 @@ def get_h2h_historical_factor(home_abbrev, away_abbrev):
     if h2h_home_goals and h2h_away_goals:
         avg_h = sum(h2h_home_goals) / len(h2h_home_goals)
         avg_a = sum(h2h_away_goals) / len(h2h_away_goals)
-        factor_home = max(0.85, min(1.15, avg_h / 3.0))
-        factor_away = max(0.85, min(1.15, avg_a / 3.0))
-        return factor_home, factor_away
+        return max(0.85, min(1.15, avg_h / 3.0)), max(0.85, min(1.15, avg_a / 3.0))
         
     return 1.0, 1.0
 
 def get_recent_form_and_ot_stats(team_abbrev):
-    """
-    Analyse les 5 derniers matchs de l'équipe pour calculer un indice de forme
-    et son taux de réussite en Prolongation / Fusillade (OT/SO).
-    """
     history_db = load_three_year_history()
     if not history_db or team_abbrev not in history_db:
-        return 1.0, 0.5  # Valeur neutre par défaut
+        return 1.0, 0.5
     
     games = history_db.get(team_abbrev, [])
-    # Tri par date décroissante pour prendre les derniers matchs enregistrés
     recent_games = sorted(games, key=lambda x: x.get("date", ""), reverse=True)[:5]
-    
     if not recent_games:
         return 1.0, 0.5
         
-    points = 0
-    ot_wins = 0
-    ot_total = 0
-    
+    points, ot_wins, ot_total = 0, 0, 0
     for g in recent_games:
         is_home = (g.get("home") == team_abbrev)
         team_score = g.get("home_score", 0) if is_home else g.get("away_score", 0)
@@ -230,16 +130,12 @@ def get_recent_form_and_ot_stats(team_abbrev):
         if team_score > opp_score:
             points += 2
         else:
-            # Match serré (potentiellement OT/SO)
             if abs(team_score - opp_score) == 1:
                 ot_total += 1
                 if team_score > opp_score:
                     ot_wins += 1
                     
-    form_factor = max(0.85, min(1.15, points / 7.0))  # 7 points sur 10 est une moyenne standard
-    ot_win_pct = (ot_wins / ot_total) if ot_total > 0 else 0.5
-    
-    return form_factor, ot_win_pct
+    return max(0.85, min(1.15, points / 7.0)), (ot_wins / ot_total) if ot_total > 0 else 0.5
 
 def calculate_poisson_matrix(home_xg, away_xg):
     max_goals = 10
@@ -262,20 +158,14 @@ def background_sync_historical_data():
                 response = requests.get(url)
                 if response.status_code == 200:
                     data = response.json()
-                    games = data.get("games", [])
-                    for g in games:
+                    for g in data.get("games", []):
                         if g.get("gameState") in ["OFF", "FINAL"]:
-                            home_team = g.get("homeTeam", {}).get("abbrev")
-                            away_team = g.get("awayTeam", {}).get("abbrev")
-                            home_score = g.get("homeTeam", {}).get("score", 0)
-                            away_score = g.get("awayTeam", {}).get("score", 0)
-                            
                             compiled_data[team].append({
                                 "date": g.get("gameDate"),
-                                "home": home_team,
-                                "away": away_team,
-                                "home_score": home_score,
-                                "away_score": away_score
+                                "home": g.get("homeTeam", {}).get("abbrev"),
+                                "away": g.get("awayTeam", {}).get("abbrev"),
+                                "home_score": g.get("homeTeam", {}).get("score", 0),
+                                "away_score": g.get("awayTeam", {}).get("score", 0)
                             })
             except Exception:
                 continue
@@ -283,9 +173,8 @@ def background_sync_historical_data():
     try:
         with open(NHL_HISTORY_DB, "w", encoding="utf-8") as f:
             json.dump(compiled_data, f, ensure_ascii=False, indent=2)
-        print("[INFO] Synchronisation automatique de l'historique LNH réussie.")
-    except Exception as e:
-        print(f"[ERROR] Échec de la synchronisation automatique : {e}")
+    except Exception:
+        pass
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(background_sync_historical_data, 'interval', days=7)
@@ -304,180 +193,106 @@ def read_root():
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-    return {"status": "online", "message": "API opérationnelle."}
+    return {"status": "online"}
 
 @app.post("/predict/match")
 def predict_match(match: MatchInput):
     team_stats = fetch_team_stats()
-    
     home_abbrev, away_abbrev = "", ""
-    home_st = {"offense": 3.1, "defense": 2.7, "pp_pct": 0.20, "pk_pct": 0.80}
-    away_st = {"offense": 2.9, "defense": 2.9, "pp_pct": 0.18, "pk_pct": 0.78}
+    home_st, away_st = {"offense": 3.1, "defense": 2.7}, {"offense": 2.9, "defense": 2.9}
     
     for name, st in team_stats.items():
         if name in match.home_team.lower() or match.home_team.lower() in name:
-            home_st = st
-            home_abbrev = st.get("abbrev", "")
+            home_st, home_abbrev = st, st.get("abbrev", "")
         if name in match.away_team.lower() or match.away_team.lower() in name:
-            away_st = st
-            away_abbrev = st.get("abbrev", "")
+            away_st, away_abbrev = st, st.get("abbrev", "")
 
-    if "islanders" in match.home_team.lower():
-        home_abbrev = "NYI"
-    elif "rangers" in match.home_team.lower() or match.home_team.lower() == "new york":
-        home_abbrev = "NYR"
+    if "islanders" in match.home_team.lower(): home_abbrev = "NYI"
+    elif "rangers" in match.home_team.lower(): home_abbrev = "NYR"
+    if "islanders" in match.away_team.lower(): away_abbrev = "NYI"
+    elif "rangers" in match.away_team.lower(): away_abbrev = "NYR"
 
-    if "islanders" in match.away_team.lower():
-        away_abbrev = "NYI"
-    elif "rangers" in match.away_team.lower() or match.away_team.lower() == "new york":
-        away_abbrev = "NYR"
-
-    home_goalie = fetch_goalie_stats(home_abbrev, match.home_team)
-    away_goalie = fetch_goalie_stats(away_abbrev, match.away_team)
-    
-    # 1. Facteurs historiques et récents
     h2h_home, h2h_away = get_h2h_historical_factor(home_abbrev, away_abbrev)
     form_home, ot_home = get_recent_form_and_ot_stats(home_abbrev)
     form_away, ot_away = get_recent_form_and_ot_stats(away_abbrev)
     
-    # 2. Calcul des xG enrichis (Forme + H2H + Fatigue)
-    home_fatigue = 0.88 if match.home_b2b else 1.0
-    away_fatigue = 0.85 if match.away_b2b else 0.95  # Pénalité voyage/b2b accrue pour l'extérieur
+    h_xg = max(1.2, (home_st["offense"] * 1.08 * h2h_home * form_home) * (0.88 if match.home_b2b else 1.0))
+    a_xg = max(1.2, (away_st["offense"] * 0.92 * h2h_away * form_away) * (0.85 if match.away_b2b else 0.95))
     
-    h_xg = max(1.2, (home_st["offense"] * 1.08 * h2h_home * form_home) * home_fatigue)
-    a_xg = max(1.2, (away_st["offense"] * 0.92 * h2h_away * form_away) * away_fatigue)
-    
-    # Matrice de Poisson finale
     mat_final = calculate_poisson_matrix(h_xg, a_xg)
-    
     p_home = float(np.sum(np.tril(mat_final, -1))) * 100
     p_away = float(np.sum(np.triu(mat_final, 1))) * 100
     p_draw = max(5.0, 100 - p_home - p_away)
     
-    # Ajustement des probabilités en cas de prolongation basé sur l'historique OT/SO
     if abs(p_home - p_away) < 10:
-        if ot_home > ot_away:
-            p_home += 3.0
-            p_away -= 3.0
-        else:
-            p_away += 3.0
-            p_home -= 3.0
+        if ot_home > ot_away: p_home += 3.0; p_away -= 3.0
+        else: p_away += 3.0; p_home -= 3.0
 
-    final_home_win = round(p_home, 1)
-    final_away_win = round(p_away, 1)
-    final_draw = round(p_draw, 1)
-    
     best_score = np.unravel_index(np.argmax(mat_final), mat_final.shape)
+    over_5_5_prob = sum(mat_final[h, a] for h in range(10) for a in range(10) if h + a > 5.5)
     
-    over_5_5_prob = 0.0
-    for h in range(10):
-        for a in range(10):
-            if h + a > 5.5:
-                over_5_5_prob += mat_final[h, a]
-                
-    # 3. Calcul de la Value (Expected Value) si des cotes sont fournies
-    home_value = None
-    away_value = None
-    if match.home_odds > 1.0:
-        implied_prob_home = (1 / match.home_odds) * 100
-        home_value = round((final_home_win - implied_prob_home), 1)
-    if match.away_odds > 1.0:
-        implied_prob_away = (1 / match.away_odds) * 100
-        away_value = round((final_away_win - implied_prob_away), 1)
+    h_value = round((p_home - (1 / match.home_odds * 100)), 1) if match.home_odds > 1.0 else None
+    a_value = round((p_away - (1 / match.away_odds * 100)), 1) if match.away_odds > 1.0 else None
 
-    home_players_data = fetch_all_players_projections(home_abbrev, h_xg, match.home_team)
-    away_players_data = fetch_all_players_projections(away_abbrev, a_xg, match.away_team)
-    
     return {
         "match": f"{match.home_team} vs {match.away_team}",
-        "probabilities": {"home_win": final_home_win, "draw": final_draw, "away_win": final_away_win},
+        "probabilities": {"home_win": round(p_home, 1), "draw": round(p_draw, 1), "away_win": round(p_away, 1)},
         "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
-        "over_under_5_5": {"over_prob": round(over_5_5_prob * 100, 1), "under_prob": round((1 - over_5_5_prob) * 100, 1)},
-        "goalies": {"home": home_goalie, "away": away_goalie},
+        "over_under_5_5": {"over_prob": round(over_5_5_prob * 100, 1)},
+        "goalies": {"home": fetch_goalie_stats(home_abbrev, match.home_team), "away": fetch_goalie_stats(away_abbrev, match.away_team)},
         "advanced_metrics": {
-            "home_form_factor": form_home,
-            "away_form_factor": form_away,
-            "home_ot_win_rate": ot_home,
-            "away_ot_win_rate": ot_away,
-            "home_value_edge": home_value,
-            "away_value_edge": away_value
-        },
-        "players": {"home": home_players_data, "away": away_players_data}
-    }
-
-@app.post("/api/history/add")
-def add_bet_to_history(bet: BetRecord):
-    history = load_history()
-    entry_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    history[entry_id] = {
-        "match": bet.match,
-        "prediction": bet.prediction,
-        "odds": bet.odds,
-        "status": bet.status,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
-    }
-    save_history(history)
-    return {"status": "success", "message": "Pari enregistré avec succès dans l'historique."}
-
-@app.get("/api/history/list")
-def get_history():
-    history = load_history()
-    total = len(history)
-    won = sum(1 for v in history.values() if v.get("status") == "Gagné")
-    lost = sum(1 for v in history.values() if v.get("status") == "Perdu")
-    win_rate = round((won / max(1, (won + lost))) * 100, 1)
-    
-    return {
-        "stats": {"total": total, "won": won, "lost": lost, "win_rate": win_rate},
-        "history": history
+            "home_form_factor": form_home, "away_form_factor": form_away,
+            "home_ot_win_rate": ot_home, "away_ot_win_rate": ot_away,
+            "home_value_edge": h_value, "away_value_edge": a_value
+        }
     }
 
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
+    """
+    Récupère le calendrier et les scores des matchs pour une date spécifique.
+    Supporte aussi bien les dates futures que passées grâce à l'API LNH.
+    """
     try:
         target_date = datetime.strptime(date, "%Y-%m-%d") if date != "now" else datetime.now()
-        start_date = (target_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        date_str = target_date.strftime("%Y-%m-%d")
         
-        url = f"https://api-web.nhle.com/v1/schedule/{start_date}"
+        url = f"https://api-web.nhle.com/v1/schedule/{date_str}"
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
             matches = []
             for day in data.get("gameWeek", []):
-                game_date = day.get("date")
-                for g in day.get("games", []):
-                    home_obj = g.get("homeTeam", {})
-                    away_obj = g.get("awayTeam", {})
-                    
-                    home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
-                    away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
-                    
-                    if home_name.lower() == "new york":
-                        logo_url = home_obj.get("logo", "").lower()
-                        if "nyi" in logo_url or "islanders" in logo_url:
-                            home_name = "New York Islanders"
-                        else:
-                            home_name = "New York Rangers"
-                            
-                    if away_name.lower() == "new york":
-                        logo_url = away_obj.get("logo", "").lower()
-                        if "nyi" in logo_url or "islanders" in logo_url:
-                            away_name = "New York Islanders"
-                        else:
-                            away_name = "New York Rangers"
+                if day.get("date") == date_str:
+                    for g in day.get("games", []):
+                        home_obj = g.get("homeTeam", {})
+                        away_obj = g.get("awayTeam", {})
+                        
+                        home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
+                        away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
+                        
+                        if home_name.lower() == "new york":
+                            home_name = "New York Islanders" if "nyi" in home_obj.get("logo", "").lower() else "New York Rangers"
+                        if away_name.lower() == "new york":
+                            away_name = "New York Islanders" if "nyi" in away_obj.get("logo", "").lower() else "New York Rangers"
 
-                    matches.append({
-                        "id": g.get("id"), "date": game_date, "home_team": home_name, "away_team": away_name,
-                        "home_logo": home_obj.get("logo", ""), "away_logo": away_obj.get("logo", ""), "time": g.get("startTimeUTC")
-                    })
+                        game_state = g.get("gameState", "FUT")
+                        matches.append({
+                            "id": g.get("id"),
+                            "date": date_str,
+                            "home_team": home_name,
+                            "away_team": away_name,
+                            "home_logo": home_obj.get("logo", ""),
+                            "away_logo": away_obj.get("logo", ""),
+                            "time": g.get("startTimeUTC"),
+                            "game_state": game_state,
+                            "home_score": home_obj.get("score", 0) if game_state in ["OFF", "FINAL", "LIVE"] else None,
+                            "away_score": away_obj.get("score", 0) if game_state in ["OFF", "FINAL", "LIVE"] else None
+                        })
             return {"matches": matches}
         return {"matches": []}
     except Exception as e:
         return {"error": str(e)}
-
-@app.get("/api/football/matches")
-def get_football_matches():
-    return {"sport": "Football", "matches": []}
 
 if __name__ == "__main__":
     import uvicorn
