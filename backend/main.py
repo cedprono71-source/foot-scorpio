@@ -15,7 +15,7 @@ import atexit
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="15.0",
-    description="Moteur de prédiction LNH & Football avec calendrier synchronisé."
+    description="Moteur de prédiction LNH & Football avec calendrier robuste."
 )
 
 app.add_middleware(
@@ -427,9 +427,12 @@ def get_football_matches(date: str = "now"):
         if api_token:
             try:
                 headers = {"X-Auth-Token": api_token}
-                # Ciblage strict de la date exacte demandée pour éviter le mélange avec la veille
-                date_from = target_date_str
-                date_to = target_date_str
+                target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
+                
+                # Fenêtre élargie de +/- 1 jour pour l'appel API afin de rattraper les décalages UTC, 
+                # tout en filtrant strictement sur le jour cible.
+                date_from = (target_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+                date_to = (target_dt + timedelta(days=1)).strftime("%Y-%m-%d")
                 
                 url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
                 response = requests.get(url, headers=headers, timeout=5)
@@ -445,6 +448,7 @@ def get_football_matches(date: str = "now"):
                         else:
                             game_date_local = target_date_str
 
+                        # Filtrage strict de la date locale exacte
                         if game_date_local == target_date_str:
                             home_team_obj = g.get("homeTeam", {})
                             away_team_obj = g.get("awayTeam", {})
