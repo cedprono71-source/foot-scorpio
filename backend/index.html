@@ -87,6 +87,9 @@
             color: white;
             border: 1px solid #ef4444;
         }
+        .date-btn.active-nhl-date {
+            border: 1px solid #3b82f6;
+        }
         .date-btn span.day {
             font-weight: bold;
             text-transform: uppercase;
@@ -159,6 +162,9 @@
             align-items: center;
             gap: 6px;
         }
+        .prono-btn.nhl-prono {
+            background-color: #3b82f6;
+        }
         .no-matches {
             text-align: center;
             color: #64748b;
@@ -209,7 +215,11 @@
             const parts = formatted.split(' ');
 
             const btn = document.createElement('button');
-            btn.className = `date-btn ${dateStr === selectedDate ? 'active' : ''}`;
+            let activeClass = dateStr === selectedDate ? 'active' : '';
+            if (dateStr === selectedDate && currentSport === 'nhl') {
+                activeClass += ' active-nhl-date';
+            }
+            btn.className = `date-btn ${activeClass}`;
             btn.innerHTML = `<span class="day">${parts[0] || ''}</span><span>${parts[1] || dateStr}</span>`;
             btn.onclick = () => {
                 selectedDate = dateStr;
@@ -235,7 +245,48 @@
             btnFoot.className = 'sport-btn active-foot';
             title.innerText = 'MATCHS FOOTBALL DU ' + selectedDate;
         }
+        initDates();
         loadMatches();
+    }
+
+    function openPrediction(home, away) {
+        const endpoint = currentSport === 'foot' ? '/predict/match/foot' : '/predict/match';
+        
+        fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ home_team: home, away_team: away })
+        })
+        .then(res => res.json())
+        .then(data => {
+            let playersHtml = '';
+            if (data.home_players && data.away_players) {
+                playersHtml = `\n\n⭐ JOUEURS CLÉS (${home}) :\n` +
+                              data.home_players.map(p => `- ${p.name} (${p.pos}) : ${p.stats} [Impact: ${p.pct}%]`).join('\n') +
+                              `\n\n⭐ JOUEURS CLÉS (${away}) :\n` +
+                              data.away_players.map(p => `- ${p.name} (${p.pos}) : ${p.stats} [Impact: ${p.pct}%]`).join('\n');
+            }
+
+            if (currentSport === 'foot') {
+                alert(`⚽ PRONOSTIC FOOTBALL\n\n` +
+                      `Match : ${data.match}\n` +
+                      `Score exact estimé : ${data.predicted_score}\n\n` +
+                      `📊 Probabilités 1N2 :\n` +
+                      `- Victoire ${home} : ${data.probabilities.home_win}%\n` +
+                      `- Nul : ${data.probabilities.draw}%\n` +
+                      `- Victoire ${away} : ${data.probabilities.away_win}%\n\n` +
+                      `⚡ Over 2.5 buts : ${data.over_under_2_5.over_prob}%` +
+                      playersHtml);
+            } else {
+                alert(`🏒 PRONOSTIC NHL\n\n` +
+                      `Match : ${data.match}\n` +
+                      `Score estimé : ${data.predicted_score}\n` +
+                      `Victoire Domicile : ${data.probabilities.home_win}%\n` +
+                      `Victoire Extérieur : ${data.probabilities.away_win}%` +
+                      playersHtml);
+            }
+        })
+        .catch(() => alert("Erreur lors du calcul du pronostic."));
     }
 
     function loadMatches() {
@@ -264,7 +315,7 @@
                     card.className = 'match-card';
                     card.innerHTML = `
                         <div class="match-header">
-                            <span>${m.league ? m.league.toUpperCase() : currentSport.toUpperCase()}</span>
+                            <span>${currentSport.toUpperCase()}</span>
                             <span>${m.game_state === 'OFF' ? 'TERMINÉ' : timeStr}</span>
                         </div>
                         <div class="match-teams">
@@ -284,13 +335,15 @@
                             </div>
                         </div>
                         <div class="match-footer">
-                            <button class="prono-btn">⚡ PRONO</button>
+                            <button class="prono-btn ${currentSport === 'nhl' ? 'nhl-prono' : ''}">⚡ PRONO</button>
                         </div>
                     `;
+                    
+                    card.querySelector('.prono-btn').onclick = () => openPrediction(m.home_team, m.away_team);
                     list.appendChild(card);
                 });
             })
-            .catch(err => {
+            .catch(() => {
                 list.innerHTML = '<div class="no-matches">Erreur de chargement des données.</div>';
             });
     }
