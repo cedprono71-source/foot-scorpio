@@ -14,8 +14,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="14.1",
-    description="Moteur de prédiction LNH & Football avec effectifs football personnalisés."
+    version="14.2",
+    description="Moteur de prédiction LNH & Football unifié et sécurisé."
 )
 
 app.add_middleware(
@@ -141,7 +141,7 @@ def fetch_team_roster_stats(team_abbrev):
     ]
 
 def fetch_football_key_players(team_id, team_name=""):
-    t_name = team_name.lower()
+    t_name = (team_name or "").lower()
     
     if "real madrid" in t_name:
         return [
@@ -162,8 +162,7 @@ def fetch_football_key_players(team_id, team_name=""):
             {"name": "Vitinha", "pos": "MIL", "stats": "3B / 7P", "pct": 65}
         ]
     
-    # Générateur unique et dynamique pour les autres équipes
-    h = int(hashlib.md5(team_name.encode('utf-8')).hexdigest(), 16) if team_name else 12345
+    h = int(hashlib.md5(t_name.encode('utf-8')).hexdigest(), 16) if t_name else 12345
     
     buteurs = ["Buteur Étoile", "Attaquant de Pointe", "Renard des Surfaces", "Ailier Percutant"]
     passeurs = ["Milieu Créateur", "Maître à Jouer", "Récupérateur Relanceur", "Capitaine Moteur"]
@@ -177,7 +176,7 @@ def fetch_football_key_players(team_id, team_name=""):
     p_assists = 5 + ((h // 4) % 5)
     
     return [
-        {"name": buteur_name, "pos": "ATT", "stats": f"{b_goals}B / {b_assists}P", "pct": 65 + (h % 15)},
+        {"name": buteuse_name, "pos": "ATT", "stats": f"{b_goals}B / {b_assists}P", "pct": 65 + (h % 15)},
         {"name": passeur_name, "pos": "MIL", "stats": f"{p_goals}B / {p_assists}P", "pct": 58 + (h % 12)},
         {"name": "Pilier Défensif", "pos": "DEF", "stats": "1B / 1P", "pct": 50 + (h % 10)}
     ]
@@ -338,40 +337,43 @@ def predict_match(match: MatchInput):
 
 @app.post("/predict/match/foot")
 def predict_football_match(match: FootballMatchInput):
-    max_goals = 6
-    matrix = np.zeros((max_goals, max_goals))
-    for h in range(max_goals):
-        for a in range(max_goals):
-            matrix[h, a] = poisson.pmf(h, match.home_expected_goals) * poisson.pmf(a, match.away_expected_goals)
-            
-    p_home = float(np.sum(np.tril(matrix, -1))) * 100
-    p_away = float(np.sum(np.triu(matrix, 1))) * 100
-    p_draw = float(np.sum(np.diag(matrix))) * 100
-    
-    total = p_home + p_draw + p_away
-    if total > 0:
-        p_home = (p_home / total) * 100
-        p_draw = (p_draw / total) * 100
-        p_away = (p_away / total) * 100
+    try:
+        max_goals = 6
+        matrix = np.zeros((max_goals, max_goals))
+        for h in range(max_goals):
+            for a in range(max_goals):
+                matrix[h, a] = poisson.pmf(h, match.home_expected_goals) * poisson.pmf(a, match.away_expected_goals)
+                
+        p_home = float(np.sum(np.tril(matrix, -1))) * 100
+        p_away = float(np.sum(np.triu(matrix, 1))) * 100
+        p_draw = float(np.sum(np.diag(matrix))) * 100
+        
+        total = p_home + p_draw + p_away
+        if total > 0:
+            p_home = (p_home / total) * 100
+            p_draw = (p_draw / total) * 100
+            p_away = (p_away / total) * 100
 
-    best_score = np.unravel_index(np.argmax(matrix), matrix.shape)
-    over_2_5_prob = sum(matrix[h, a] for h in range(max_goals) for a in range(max_goals) if h + a > 2.5) * 100
+        best_score = np.unravel_index(np.argmax(matrix), matrix.shape)
+        over_2_5_prob = sum(matrix[h, a] for h in range(max_goals) for a in range(max_goals) if h + a > 2.5) * 100
 
-    return {
-        "match": f"{match.home_team} vs {match.away_team}",
-        "probabilities": {
-            "home_win": round(p_home, 1),
-            "draw": round(p_draw, 1),
-            "away_win": round(p_away, 1)
-        },
-        "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
-        "over_under_2_5": {
-            "over_prob": round(over_2_5_prob, 1),
-            "under_prob": round(100 - over_2_5_prob, 1)
-        },
-        "home_players": fetch_football_key_players(match.home_id, match.home_team),
-        "away_players": fetch_football_key_players(match.away_id, match.away_team)
-    }
+        return {
+            "match": f"{match.home_team} vs {match.away_team}",
+            "probabilities": {
+                "home_win": round(p_home, 1),
+                "draw": round(p_draw, 1),
+                "away_win": round(p_away, 1)
+            },
+            "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
+            "over_under_2_5": {
+                "over_prob": round(over_2_5_prob, 1),
+                "under_prob": round(100 - over_2_5_prob, 1)
+            },
+            "home_players": fetch_football_key_players(match.home_id, match.home_team),
+            "away_players": fetch_football_key_players(match.away_id, match.away_team)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
