@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="13.3",
-    description="Moteur de prédiction LNH & Football avec calendrier unifié et pronostics dédiés."
+    version="13.4",
+    description="Moteur de prédiction LNH & Football avec statistiques de joueurs unifiées."
 )
 
 app.add_middleware(
@@ -135,6 +135,13 @@ def fetch_team_roster_stats(team_abbrev):
         {"name": "Meilleur Buteur", "pos": "C", "stats": "5B / 6P", "pct": 52},
         {"name": "Créateur Principal", "pos": "LW", "stats": "2B / 8P", "pct": 47},
         {"name": "Défenseur Clé", "pos": "D", "stats": "1B / 5P", "pct": 40}
+    ]
+
+def fetch_football_key_players(team_name):
+    return [
+        {"name": "Buteur Principal", "pos": "ATT", "stats": "8 Buts / 2 Passes", "pct": 68},
+        {"name": "Maître à Jouer", "pos": "MIL", "stats": "3 Buts / 7 Passes", "pct": 61},
+        {"name": "Pilier Défensif", "pos": "DEF", "stats": "Clean Sheets clés", "pct": 54}
     ]
 
 def get_h2h_historical_factor(home_abbrev, away_abbrev):
@@ -331,7 +338,9 @@ def predict_football_match(match: FootballMatchInput):
         "over_under_2_5": {
             "over_prob": round(over_2_5_prob, 1),
             "under_prob": round(100 - over_2_5_prob, 1)
-        }
+        },
+        "home_players": fetch_football_key_players(match.home_team),
+        "away_players": fetch_football_key_players(match.away_team)
     }
 
 @app.get("/api/matches/nhl")
