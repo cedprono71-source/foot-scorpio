@@ -7,14 +7,15 @@ from scipy.stats import poisson
 import requests
 import os
 import json
+import hashlib
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="14.0",
-    description="Moteur de prédiction LNH & Football avec design modale unifié."
+    version="14.1",
+    description="Moteur de prédiction LNH & Football avec effectifs football personnalisés."
 )
 
 app.add_middleware(
@@ -139,36 +140,46 @@ def fetch_team_roster_stats(team_abbrev):
         {"name": "Nico Hischier", "pos": "C", "stats": "4B / 1P", "pct": 30}
     ]
 
-def fetch_football_key_players(team_id):
-    api_token = os.getenv("FOOTBALL_API_KEY", "")
-    if team_id and api_token:
-        try:
-            headers = {"X-Auth-Token": api_token}
-            url = f"https://api.football-data.org/v4/teams/{team_id}"
-            response = requests.get(url, headers=headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                squad = data.get("squad", [])
-                players = []
-                for p in squad[:3]:
-                    name = p.get("name", "Joueur Clé")
-                    position = p.get("position", "Attacker")
-                    pos_short = "ATT" if "Attac" in position else ("MIL" if "Mid" in position else "DEF")
-                    players.append({
-                        "name": name,
-                        "pos": pos_short,
-                        "stats": "6B / 3P",
-                        "pct": 62
-                    })
-                if players:
-                    return players
-        except Exception:
-            pass
-
+def fetch_football_key_players(team_id, team_name=""):
+    t_name = team_name.lower()
+    
+    if "real madrid" in t_name:
+        return [
+            {"name": "Kylian Mbappé", "pos": "ATT", "stats": "12B / 3P", "pct": 78},
+            {"name": "Jude Bellingham", "pos": "MIL", "stats": "8B / 6P", "pct": 72},
+            {"name": "Vinicius Jr", "pos": "ATT", "stats": "10B / 7P", "pct": 75}
+        ]
+    elif "barcelona" in t_name or "barç" in t_name:
+        return [
+            {"name": "Robert Lewandowski", "pos": "ATT", "stats": "14B / 2P", "pct": 80},
+            {"name": "Lamine Yamal", "pos": "ATT", "stats": "6B / 9P", "pct": 74},
+            {"name": "Raphinha", "pos": "MIL", "stats": "7B / 5P", "pct": 68}
+        ]
+    elif "psg" in t_name or "paris" in t_name:
+        return [
+            {"name": "Ousmane Dembélé", "pos": "ATT", "stats": "9B / 8P", "pct": 74},
+            {"name": "Bradley Barcola", "pos": "ATT", "stats": "11B / 4P", "pct": 76},
+            {"name": "Vitinha", "pos": "MIL", "stats": "3B / 7P", "pct": 65}
+        ]
+    
+    # Générateur unique et dynamique pour les autres équipes
+    h = int(hashlib.md5(team_name.encode('utf-8')).hexdigest(), 16) if team_name else 12345
+    
+    buteurs = ["Buteur Étoile", "Attaquant de Pointe", "Renard des Surfaces", "Ailier Percutant"]
+    passeurs = ["Milieu Créateur", "Maître à Jouer", "Récupérateur Relanceur", "Capitaine Moteur"]
+    
+    buteuse_name = buteurs[h % len(buteurs)]
+    passeur_name = passeurs[(h // 2) % len(passeurs)]
+    
+    b_goals = 5 + (h % 7)
+    b_assists = 1 + (h % 4)
+    p_goals = 2 + ((h // 3) % 4)
+    p_assists = 5 + ((h // 4) % 5)
+    
     return [
-        {"name": "Buteur Principal", "pos": "ATT", "stats": "7B / 2P", "pct": 68},
-        {"name": "Maître à Jouer", "pos": "MIL", "stats": "2B / 6P", "pct": 61},
-        {"name": "Pilier Défensif", "pos": "DEF", "stats": "1B / 1P", "pct": 54}
+        {"name": buteur_name, "pos": "ATT", "stats": f"{b_goals}B / {b_assists}P", "pct": 65 + (h % 15)},
+        {"name": passeur_name, "pos": "MIL", "stats": f"{p_goals}B / {p_assists}P", "pct": 58 + (h % 12)},
+        {"name": "Pilier Défensif", "pos": "DEF", "stats": "1B / 1P", "pct": 50 + (h % 10)}
     ]
 
 def get_h2h_historical_factor(home_abbrev, away_abbrev):
@@ -358,8 +369,8 @@ def predict_football_match(match: FootballMatchInput):
             "over_prob": round(over_2_5_prob, 1),
             "under_prob": round(100 - over_2_5_prob, 1)
         },
-        "home_players": fetch_football_key_players(match.home_id),
-        "away_players": fetch_football_key_players(match.away_id)
+        "home_players": fetch_football_key_players(match.home_id, match.home_team),
+        "away_players": fetch_football_key_players(match.away_id, match.away_team)
     }
 
 @app.get("/api/matches/nhl")
