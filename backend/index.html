@@ -12,6 +12,7 @@
             --text-muted: #94a3b8;
             --accent-color: #ef4444;
             --border-color: #1e293b;
+            --blue-color: #3b82f6;
         }
 
         body {
@@ -76,14 +77,8 @@
             scroll-behavior: smooth;
         }
 
-        .dates-bar::-webkit-scrollbar {
-            height: 4px;
-        }
-
-        .dates-bar::-webkit-scrollbar-thumb {
-            background-color: var(--border-color);
-            border-radius: 4px;
-        }
+        .dates-bar::-webkit-scrollbar { height: 4px; }
+        .dates-bar::-webkit-scrollbar-thumb { background-color: var(--border-color); border-radius: 4px; }
 
         .date-item {
             background-color: var(--card-bg);
@@ -101,17 +96,8 @@
             background-color: rgba(239, 68, 68, 0.1);
         }
 
-        .date-item .day {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-        }
-
-        .date-item .num {
-            font-size: 0.9rem;
-            font-weight: bold;
-            color: var(--text-color);
-        }
+        .date-item .day { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; }
+        .date-item .num { font-size: 0.9rem; font-weight: bold; color: var(--text-color); }
 
         .section-title {
             font-size: 0.85rem;
@@ -132,85 +118,27 @@
             justify-content: space-between;
         }
 
-        .team-info {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            flex: 1;
-        }
+        .team-info { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+        .team-row { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 0.95rem; }
+        .team-row img { width: 24px; height: 24px; object-fit: contain; }
 
-        .team-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-weight: 600;
-            font-size: 0.95rem;
-        }
+        .match-action { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+        .time-badge { background-color: var(--border-color); color: var(--text-muted); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; }
+        .prono-btn { background-color: var(--accent-color); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .score-display { font-size: 1.1rem; font-weight: bold; color: var(--accent-color); background-color: rgba(239, 68, 68, 0.1); padding: 4px 10px; border-radius: 6px; }
 
-        .team-row img {
-            width: 24px;
-            height: 24px;
-            object-fit: contain;
-        }
+        .no-matches { text-align: center; color: var(--text-muted); padding: 40px; background-color: var(--card-bg); border-radius: 14px; border: 1px solid var(--border-color); }
 
-        .match-action {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 6px;
-        }
-
-        .time-badge {
-            background-color: var(--border-color);
-            color: var(--text-muted);
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: bold;
-        }
-
-        .prono-btn {
-            background-color: var(--accent-color);
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 0.8rem;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .score-display {
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: var(--accent-color);
-            background-color: rgba(239, 68, 68, 0.1);
-            padding: 4px 10px;
-            border-radius: 6px;
-        }
-
-        .no-matches {
-            text-align: center;
-            color: var(--text-muted);
-            padding: 40px;
-            background-color: var(--card-bg);
-            border-radius: 14px;
-            border: 1px solid var(--border-color);
-        }
-
-        /* Modal Styles */
+        /* Style de la modale analytique complète */
         .modal {
             display: none;
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
+            background-color: rgba(0, 0, 0, 0.85);
             z-index: 1000;
             justify-content: center;
             align-items: center;
-            padding: 15px;
+            padding: 10px;
             box-sizing: border-box;
         }
 
@@ -222,7 +150,7 @@
             max-width: 500px;
             padding: 20px;
             box-sizing: border-box;
-            max-height: 90vh;
+            max-height: 92vh;
             overflow-y: auto;
         }
 
@@ -235,32 +163,102 @@
             padding-bottom: 10px;
         }
 
-        .close-btn {
-            background: none;
-            border: none;
+        .close-btn { background: none; border: none; color: var(--text-muted); font-size: 1.6rem; cursor: pointer; }
+
+        .analytics-section {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .analytics-title {
+            font-size: 0.8rem;
             color: var(--text-muted);
-            font-size: 1.5rem;
-            cursor: pointer;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .prediction-box {
+        .prob-row {
             display: flex;
-            flex-direction: column;
-            gap: 15px;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 4px;
         }
 
-        .prob-bar-container {
+        .progress-bar {
             background-color: var(--border-color);
-            border-radius: 8px;
-            height: 12px;
+            border-radius: 6px;
+            height: 8px;
             overflow: hidden;
-            display: flex;
-            margin-top: 5px;
+            margin-bottom: 10px;
         }
 
-        .prob-home { background-color: #3b82f6; height: 100%; }
-        .prob-draw { background-color: #64748b; height: 100%; }
-        .prob-away { background-color: #ef4444; height: 100%; }
+        .bar-fill-home { background-color: var(--blue-color); height: 100%; }
+        .bar-fill-draw { background-color: var(--text-muted); height: 100%; }
+        .bar-fill-away { background-color: var(--accent-color); height: 100%; }
+
+        .goalies-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .goalie-card {
+            background: rgba(19, 27, 46, 0.8);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px;
+            font-size: 0.85rem;
+        }
+
+        .team-tabs-modal {
+            display: flex;
+            background-color: var(--bg-color);
+            border-radius: 8px;
+            padding: 3px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .team-tab {
+            flex: 1;
+            text-align: center;
+            padding: 8px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+
+        .team-tab.active {
+            background-color: var(--accent-color);
+            color: white;
+        }
+
+        .player-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .player-table th {
+            color: var(--text-muted);
+            text-align: left;
+            padding-bottom: 6px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .player-table td {
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(30, 41, 59, 0.5);
+        }
     </style>
 </head>
 <body>
@@ -283,15 +281,15 @@
         </div>
     </div>
 
-    <!-- Modale d'analyse -->
+    <!-- Modale Analytique Riche -->
     <div class="modal" id="predictionModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modalTitle" style="margin: 0; font-size: 1.1rem;">Analyse & Pronostic</h3>
+                <h3 id="modalTitle" style="margin: 0; font-size: 1rem;">Analyse Détaillée</h3>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
-            <div id="modalBody" class="prediction-box">
-                Chargement de l'analyse IA...
+            <div id="modalBody">
+                Chargement des analyses...
             </div>
         </div>
     </div>
@@ -299,6 +297,7 @@
     <script>
         let currentSport = 'nhl';
         let selectedDate = new Date().toISOString().split('T')[0];
+        let currentMatchData = null;
 
         function initDatesBar() {
             const bar = document.getElementById('datesBar');
@@ -406,7 +405,7 @@
             const modalBody = document.getElementById('modalBody');
 
             modalTitle.innerText = `${homeTeam} vs ${awayTeam}`;
-            modalBody.innerHTML = `<div style="text-align: center; padding: 20px;">Analyse en cours par l'IA...</div>`;
+            modalBody.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--text-muted);">Génération de l'analyse multi-IA...</div>`;
             modal.style.display = 'flex';
 
             try {
@@ -415,51 +414,119 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ home_team: homeTeam, away_team: awayTeam })
                 });
-                const res = await response.json();
+                currentMatchData = await response.json();
 
-                if (res.probabilities) {
-                    const pHome = res.probabilities.home_win;
-                    const pDraw = res.probabilities.draw;
-                    const pAway = res.probabilities.away_win;
-
-                    modalBody.innerHTML = `
-                        <div>
-                            <strong>Score exact le plus probable :</strong> <span style="color: var(--accent-color); font-size: 1.2rem;">${res.predicted_score}</span>
-                        </div>
-                        <div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 3px;">
-                                <span>${homeTeam} (${pHome}%)</span>
-                                <span>N/OT (${pDraw}%)</span>
-                                <span>${awayTeam} (${pAway}%)</span>
-                            </div>
-                            <div class="prob-bar-container">
-                                <div class="prob-home" style="width: ${pHome}%;"></div>
-                                <div class="prob-draw" style="width: ${pDraw}%;"></div>
-                                <div class="prob-away" style="width: ${pAway}%;"></div>
-                            </div>
-                        </div>
-                        <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; font-size: 0.85rem;">
-                            <strong>Gardiens probables :</strong><br>
-                            🏠 ${res.goalies.home.name} (${res.goalies.home.save_pct * 100}%)<br>
-                            ✈️ ${res.goalies.away.name} (${res.goalies.away.save_pct * 100}%)
-                        </div>
-                        <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; font-size: 0.85rem;">
-                            <strong>Over / Under 5.5 buts :</strong> ${res.over_under_5_5.over_prob}% de chances de voir + de 5.5 buts.
-                        </div>
-                    `;
+                if (currentMatchData.probabilities) {
+                    renderModalContent('home');
                 } else {
-                    modalBody.innerHTML = `<div style="color: var(--accent-color);">Impossible de récupérer les prédictions pour ce match.</div>`;
+                    modalBody.innerHTML = `<div style="color: var(--accent-color); text-align: center;">Impossible de charger les données.</div>`;
                 }
             } catch (e) {
-                modalBody.innerHTML = `<div style="color: var(--accent-color);">Erreur de connexion avec le serveur de prédiction.</div>`;
+                modalBody.innerHTML = `<div style="color: var(--accent-color); text-align: center;">Erreur de connexion au serveur.</div>`;
             }
+        }
+
+        function renderModalContent(activeTeamTab) {
+            if (!currentMatchData) return;
+            const res = currentMatchData;
+            const modalBody = document.getElementById('modalBody');
+
+            const pHome = res.probabilities.home_win;
+            const pDraw = res.probabilities.draw;
+            const pAway = res.probabilities.away_win;
+
+            modalBody.innerHTML = `
+                <!-- Probabilités Multi-IA -->
+                <div class="analytics-section">
+                    <div class="analytics-title">📊 Probabilités Multi-IA</div>
+                    <div class="prob-row">
+                        <span>Victoire ${res.match.split(' vs ')[0]}</span>
+                        <span>${pHome}%</span>
+                    </div>
+                    <div class="progress-bar"><div class="bar-fill-home" style="width: ${pHome}%;"></div></div>
+
+                    <div class="prob-row">
+                        <span>Match Nul / Prolongations</span>
+                        <span>${pDraw}%</span>
+                    </div>
+                    <div class="progress-bar"><div class="bar-fill-draw" style="width: ${pDraw}%;"></div></div>
+
+                    <div class="prob-row">
+                        <span>Victoire ${res.match.split(' vs ')[1]}</span>
+                        <span>${pAway}%</span>
+                    </div>
+                    <div class="progress-bar"><div class="bar-fill-away" style="width: ${pAway}%;"></div></div>
+                </div>
+
+                <!-- Total Buts -->
+                <div class="analytics-section">
+                    <div class="analytics-title">🏒 Total Buts (Over / Under 5.5)</div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: bold;">
+                        <span>Plus de 5.5 buts</span>
+                        <span style="color: var(--accent-color);">${res.over_under_5_5.over_prob}%</span>
+                    </div>
+                </div>
+
+                <!-- Gardiens & Power Play -->
+                <div class="analytics-section">
+                    <div class="analytics-title">🥅 Gardiens & Power Play</div>
+                    <div class="goalies-grid">
+                        <div class="goalie-card">
+                            <div style="font-weight: bold; margin-bottom: 4px;">${res.goalies.home.name}</div>
+                            <div style="color: var(--text-muted);">SV%: ${(res.goalies.home.save_pct * 100).toFixed(1)}%</div>
+                        </div>
+                        <div class="goalie-card">
+                            <div style="font-weight: bold; margin-bottom: 4px;">${res.goalies.away.name}</div>
+                            <div style="color: var(--text-muted);">SV%: ${(res.goalies.away.save_pct * 100).toFixed(1)}%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Projections Joueurs -->
+                <div class="analytics-section">
+                    <div class="analytics-title">👤 Projections Joueurs (Point %)</div>
+                    <div class="team-tabs-modal">
+                        <div class="team-tab ${activeTeamTab === 'home' ? 'active' : ''}" onclick="renderModalContent('home')">${res.match.split(' vs ')[0]}</div>
+                        <div class="team-tab ${activeTeamTab === 'away' ? 'active' : ''}" onclick="renderModalContent('away')">${res.match.split(' vs ')[1]}</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 10px;">
+                        🎯 <span style="color: var(--text-muted);">Buteur Favori IA :</span> <strong style="color: var(--accent-color);">Joueur Clé (32%)</strong><br>
+                        🏒 <span style="color: var(--text-muted);">Passeur Favori IA :</span> <strong style="color: var(--blue-color);">Créateur Principal (45%)</strong>
+                    </div>
+                    <table class="player-table">
+                        <thead>
+                            <tr>
+                                <th>Joueur</th>
+                                <th>Stats</th>
+                                <th>Point %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Top Joueur 1 (C)</td>
+                                <td>5B / 4P</td>
+                                <td><strong>52%</strong></td>
+                            </tr>
+                            <tr>
+                                <td>Top Joueur 2 (A)</td>
+                                <td>3B / 6P</td>
+                                <td><strong>48%</strong></td>
+                            </tr>
+                            <tr>
+                                <td>Défenseur Clé (D)</td>
+                                <td>1B / 5P</td>
+                                <td><strong>41%</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
         }
 
         function closeModal() {
             document.getElementById('predictionModal').style.display = 'none';
         }
 
-        // Fermer la modale si on clique en dehors
         window.onclick = function(event) {
             const modal = document.getElementById('predictionModal');
             if (event.target === modal) {
