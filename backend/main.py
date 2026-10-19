@@ -15,7 +15,7 @@ import atexit
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="15.0",
-    description="Moteur de prédiction LNH & Football sans décalage de date."
+    description="Moteur de prédiction LNH & Football avec calendrier synchronisé."
 )
 
 app.add_middleware(
@@ -286,7 +286,7 @@ def predict_match(match: MatchInput):
     form_away, ot_away = get_recent_form_and_ot_stats(away_abbrev)
     
     h_xg = max(1.2, (home_st["offense"] * 1.08 * h2h_home * form_home) * (0.88 if match.home_b2b else 1.0))
-    a_xg = max(1.2, (away_st["offense"] * 0.92 * h2h_away * form_away) * (0.85 if match.home_b2b else 0.95))
+    a_xg = max(1.2, (away_st["offense"] * 0.92 * h2h_away * form_away) * (0.85 if match.away_b2b else 0.95))
     
     mat_final = calculate_poisson_matrix(h_xg, a_xg, max_goals=10)
     p_home = float(np.sum(np.tril(mat_final, -1))) * 100
@@ -427,7 +427,6 @@ def get_football_matches(date: str = "now"):
         if api_token:
             try:
                 headers = {"X-Auth-Token": api_token}
-                # Interrogation directe et stricte de l'API pour la date demandée
                 url = f"https://api.football-data.org/v4/matches?dateFrom={target_date_str}&dateTo={target_date_str}"
                 response = requests.get(url, headers=headers, timeout=5)
                 
@@ -435,7 +434,6 @@ def get_football_matches(date: str = "now"):
                     data = response.json()
                     for g in data.get("matches", []):
                         utc_date_str = g.get("utcDate", "")
-                        # Utilisation directe de la date renvoyée par l'API sans décalage d'heures
                         if utc_date_str and "T" in utc_date_str:
                             api_date = utc_date_str.split("T")[0]
                         else:
