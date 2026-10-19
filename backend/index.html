@@ -350,8 +350,8 @@
         }
 
         const activePlayers = activeTeamTab === 'home' ? data.home_players : data.away_players;
-        const playerSectionTitle = isFoot ? '⚽ POTENTIELS BUTEURS' : '🏒 BUTEURS & PASSEURS CLÉS';
-        const statsLabel = isFoot ? 'Buts / Passes' : 'Stats (B/P)';
+        const playerSectionTitle = isFoot ? '⚽ POTENTIELS BUTEURS & PASSEURS' : '🏒 BUTEURS & PASSEURS CLÉS';
+        const statsLabel = 'Stats (B / P)';
 
         let playersHtml = `
             <div style="background: #1e293b; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
