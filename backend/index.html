@@ -467,7 +467,6 @@
 
                 let drawHtml = currentSport === 'foot' ? `<div style="display: flex; justify-content: space-between;"><span>Match nul :</span> <b>${drawProb}%</b></div>` : '';
 
-                // Blocs spécifiques Over / Under et BTTS pour le foot
                 let extraStatsHtml = '';
                 if (currentSport === 'foot') {
                     let overProb = data.over_under_2_5 ? data.over_under_2_5.over_prob : 50;
@@ -484,6 +483,18 @@
                         <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                             <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Les 2 équipes marquent (BTTS)</span>
                             <b>Oui : ${bttsYes}%</b>
+                        </div>
+                    `;
+                } else if (currentSport === 'nhl') {
+                    let homePlayersList = (data.home_players || []).map(p => `${p.name} (${p.stats})`).join(', ') || 'Non disponible';
+                    let awayPlayersList = (data.away_players || []).map(p => `${p.name} (${p.stats})`).join(', ') || 'Non disponible';
+
+                    extraStatsHtml = `
+                        <!-- Joueurs clés NHL -->
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Joueurs clés / Forme</span>
+                            <div style="font-size: 0.85rem;">🏒 <b>${home} :</b> ${homePlayersList}</div>
+                            <div style="font-size: 0.85rem;">🏒 <b>${away} :</b> ${awayPlayersList}</div>
                         </div>
                     `;
                 }
