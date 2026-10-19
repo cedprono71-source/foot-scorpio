@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="13.5",
-    description="Moteur de prédiction LNH & Football avec calendrier unifié et modale de pronostics."
+    version="13.6",
+    description="Moteur de prédiction LNH & Football avec effectifs réels et modale."
 )
 
 app.add_middleware(
@@ -49,6 +49,8 @@ class MatchInput(BaseModel):
 class FootballMatchInput(BaseModel):
     home_team: str
     away_team: str
+    home_id: int = None
+    away_id: int = None
     home_expected_goals: float = 1.4
     away_expected_goals: float = 1.1
     home_odds: float = 0.0
@@ -137,7 +139,32 @@ def fetch_team_roster_stats(team_abbrev):
         {"name": "Défenseur Clé", "pos": "D", "stats": "1B / 5P", "pct": 40}
     ]
 
-def fetch_football_key_players(team_name):
+def fetch_football_key_players(team_id):
+    api_token = os.getenv("FOOTBALL_API_KEY", "")
+    if team_id and api_token:
+        try:
+            headers = {"X-Auth-Token": api_token}
+            url = f"https://api.football-data.org/v4/teams/{team_id}"
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                squad = data.get("squad", [])
+                players = []
+                pos_map = {"Attacker": "ATT", "Midfielder": "MIL", "Defender": "DEF", "Goalkeeper": "GB"}
+                for p in squad[:3]:
+                    name = p.get("name", "Joueur")
+                    position = p.get("position", "Attacker")
+                    players.append({
+                        "name": name,
+                        "pos": pos_map.get(position, "ATT"),
+                        "stats": "Effectif Pro",
+                        "pct": 65
+                    })
+                if players:
+                    return players
+        except Exception:
+            pass
+
     return [
         {"name": "Buteur Principal", "pos": "ATT", "stats": "8 Buts / 2 Passes", "pct": 68},
         {"name": "Maître à Jouer", "pos": "MIL", "stats": "3 Buts / 7 Passes", "pct": 61},
@@ -339,8 +366,8 @@ def predict_football_match(match: FootballMatchInput):
             "over_prob": round(over_2_5_prob, 1),
             "under_prob": round(100 - over_2_5_prob, 1)
         },
-        "home_players": fetch_football_key_players(match.home_team),
-        "away_players": fetch_football_key_players(match.away_team)
+        "home_players": fetch_football_key_players(match.home_id),
+        "away_players": fetch_football_key_players(match.away_id)
     }
 
 @app.get("/api/matches/nhl")
@@ -433,8 +460,11 @@ def get_football_matches(date: str = "now"):
                             game_date_local = target_date_str
 
                         if game_date_local == target_date_str:
-                            home_team = g.get("homeTeam", {}).get("name", "Domicile")
-                            away_team = g.get("awayTeam", {}).get("name", "Extérieur")
+                            home_team_obj = g.get("homeTeam", {})
+                            away_team_obj = g.get("awayTeam", {})
+                            
+                            home_team = home_team_obj.get("name", "Domicile")
+                            away_team = away_team_obj.get("name", "Extérieur")
                             status = g.get("status", "SCHEDULED")
                             score = g.get("score", {}).get("fullTime", {})
                             
@@ -443,8 +473,10 @@ def get_football_matches(date: str = "now"):
                                 "date": game_date_local,
                                 "home_team": home_team,
                                 "away_team": away_team,
-                                "home_logo": g.get("homeTeam", {}).get("crest", ""),
-                                "away_logo": g.get("awayTeam", {}).get("crest", ""),
+                                "home_id": home_team_obj.get("id"),
+                                "away_id": away_team_obj.get("id"),
+                                "home_logo": home_team_obj.get("crest", ""),
+                                "away_logo": away_team_obj.get("crest", ""),
                                 "time": utc_date_str,
                                 "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
                                 "home_score": score.get("home"),
