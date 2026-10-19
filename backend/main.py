@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="4.0",
-    description="API avec interrogation dynamique et automatique des effectifs LNH."
+    description="API avec interrogation dynamique des effectifs LNH, historique des paris et synchronisation pluriannuelle."
 )
 
 app.add_middleware(
@@ -24,6 +24,7 @@ app.add_middleware(
 )
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
+NHL_HISTORY_DB = os.path.join(os.path.dirname(__file__), "nhl_3y_history.json")
 
 def load_history():
     if os.path.exists(HISTORY_FILE):
@@ -41,6 +42,15 @@ def save_history(history):
     except Exception:
         pass
 
+def load_three_year_history():
+    if os.path.exists(NHL_HISTORY_DB):
+        try:
+            with open(NHL_HISTORY_DB, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
 class MatchInput(BaseModel):
     home_team: str
     away_team: str
@@ -48,6 +58,12 @@ class MatchInput(BaseModel):
     away_expected_goals: float = 2.7
     home_b2b: bool = False
     away_b2b: bool = False
+
+class BetRecord(BaseModel):
+    match: str
+    prediction: str
+    odds: float = 0.0
+    status: str = "En attente"  # En attente, Gagné, Perdu
 
 def fetch_team_stats():
     stats_map = {}
@@ -262,9 +278,71 @@ def predict_match(match: MatchInput):
         "players": {"home": home_players_data, "away": away_players_data}
     }
 
-@app.get("/api/predict/auto-sync")
-def auto_sync_today_matches(date: str = "now"):
-    return {"status": "success"}
+@app.post("/api/history/add")
+def add_bet_to_history(bet: BetRecord):
+    history = load_history()
+    entry_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    history[entry_id] = {
+        "match": bet.match,
+        "prediction": bet.prediction,
+        "odds": bet.odds,
+        "status": bet.status,
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+    }
+    save_history(history)
+    return {"status": "success", "message": "Pari enregistré avec succès dans l'historique."}
+
+@app.get("/api/history/list")
+def get_history():
+    history = load_history()
+    total = len(history)
+    won = sum(1 for v in history.values() if v.get("status") == "Gagné")
+    lost = sum(1 for v in history.values() if v.get("status") == "Perdu")
+    win_rate = round((won / max(1, (won + lost))) * 100, 1)
+    
+    return {
+        "stats": {"total": total, "won": won, "lost": lost, "win_rate": win_rate},
+        "history": history
+    }
+
+@app.get("/api/history/sync-3y")
+def sync_historical_data():
+    seasons = ["20232024", "20242025", "20252026"]
+    teams = ["NYR", "NYI", "BOS", "TOR", "TBL", "FLA", "CAR", "NJD", "COL", "EDM", "VGK", "DAL"]
+    compiled_data = {}
+
+    for team in teams:
+        compiled_data[team] = []
+        for season in seasons:
+            url = f"https://api-web.nhle.com/v1/club-schedule/{team}/season/{season}"
+            try:
+                response = requests.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    games = data.get("games", [])
+                    for g in games:
+                        if g.get("gameState") in ["OFF", "FINAL"]:
+                            home_team = g.get("homeTeam", {}).get("abbrev")
+                            away_team = g.get("awayTeam", {}).get("abbrev")
+                            home_score = g.get("homeTeam", {}).get("score", 0)
+                            away_score = g.get("awayTeam", {}).get("score", 0)
+                            
+                            compiled_data[team].append({
+                                "date": g.get("gameDate"),
+                                "home": home_team,
+                                "away": away_team,
+                                "home_score": home_score,
+                                "away_score": away_score
+                            })
+            except Exception:
+                continue
+
+    try:
+        with open(NHL_HISTORY_DB, "w", encoding="utf-8") as f:
+            json.dump(compiled_data, f, ensure_ascii=False, indent=2)
+        return {"status": "success", "message": "Historique des 3 dernières années synchronisé avec succès !"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
