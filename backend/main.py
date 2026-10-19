@@ -14,8 +14,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="14.8",
-    description="Moteur de prédiction LNH & Football avec effectifs réalistes par club."
+    version="14.9",
+    description="Moteur de prédiction LNH & Football avec effectifs corrects."
 )
 
 app.add_middleware(
@@ -180,6 +180,7 @@ def fetch_football_key_players(team_id, team_name=""):
             {"name": "Nicolas Viola", "pos": "MIL", "stats": "3B / 3P", "pct": 50}
         ]
     
+    # Générateur de noms cohérents par hachage (sans mélanger de stars globales)
     h = int(hashlib.md5(t_name.encode('utf-8')).hexdigest(), 16) if t_name else 12345
     
     first_names = ["Lucas", "Matteo", "Marco", "Alessandro", "Davide", "Andrea", "Nicolò", "Filippo", "Lorenzo", "Simone"]
