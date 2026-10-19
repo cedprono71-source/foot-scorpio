@@ -370,4 +370,98 @@ def get_nhl_matches(date: str = "now"):
         url = f"https://api-web.nhle.com/v1/schedule/{start_date_str}"
         response = requests.get(url)
         
-        
+        if response.status_code == 200:
+            data = response.json()
+            matches = []
+            for day in data.get("gameWeek", []):
+                for g in day.get("games", []):
+                    start_time_utc = g.get("startTimeUTC")
+                    if start_time_utc:
+                        dt_utc = datetime.strptime(start_time_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                        dt_local = dt_utc + timedelta(hours=2)
+                        game_date_local = dt_local.strftime("%Y-%m-%d")
+                    else:
+                        game_date_local = day.get("date")
+
+                    if game_date_local == target_date_str:
+                        home_obj = g.get("homeTeam", {})
+                        away_obj = g.get("awayTeam", {})
+                        
+                        home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
+                        away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
+                        
+                        if home_name.lower() == "new york":
+                            home_name = "New York Islanders" if "nyi" in home_obj.get("logo", "").lower() else "New York Rangers"
+                        if away_name.lower() == "new york":
+                            away_name = "New York Islanders" if "nyi" in away_obj.get("logo", "").lower() else "New York Rangers"
+
+                        game_state = g.get("gameState", "FUT")
+                        matches.append({
+                            "id": g.get("id"),
+                            "date": game_date_local,
+                            "home_team": home_name,
+                            "away_team": away_name,
+                            "home_logo": home_obj.get("logo", ""),
+                            "away_logo": away_obj.get("logo", ""),
+                            "time": start_time_utc,
+                            "game_state": game_state,
+                            "home_score": home_obj.get("score") if game_state in ["OFF", "FINAL", "LIVE"] else None,
+                            "away_score": away_obj.get("score") if game_state in ["OFF", "FINAL", "LIVE"] else None
+                        })
+            return {"matches": matches}
+        return {"matches": []}
+    except Exception as e:
+        return {"matches": [], "error": str(e)}
+
+@app.get("/api/matches/foot")
+def get_football_matches(date: str = "now"):
+    try:
+        if not date or date == "now":
+            target_date_str = datetime.now().strftime("%Y-%m-%d")
+        else:
+            target_date_str = date
+
+        matches = []
+        api_token = os.getenv("FOOTBALL_API_KEY", "")
+
+        if api_token:
+            try:
+                headers = {"X-Auth-Token": api_token}
+                url = f"https://api.football-data.org/v4/matches?dateFrom={target_date_str}&dateTo={target_date_str}"
+                response = requests.get(url, headers=headers, timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    for g in data.get("matches", []):
+                        home_team_obj = g.get("homeTeam", {})
+                        away_team_obj = g.get("awayTeam", {})
+                        
+                        home_team = home_team_obj.get("name", "Domicile")
+                        away_team = away_team_obj.get("name", "Extérieur")
+                        status = g.get("status", "SCHEDULED")
+                        score = g.get("score", {}).get("fullTime", {})
+                        
+                        matches.append({
+                            "id": g.get("id"),
+                            "date": target_date_str,
+                            "home_team": home_team,
+                            "away_team": away_team,
+                            "home_id": home_team_obj.get("id"),
+                            "away_id": away_team_obj.get("id"),
+                            "home_logo": home_team_obj.get("crest", ""),
+                            "away_logo": away_team_obj.get("crest", ""),
+                            "time": g.get("utcDate", ""),
+                            "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
+                            "home_score": score.get("home"),
+                            "away_score": score.get("away")
+                        })
+            except Exception:
+                pass
+
+        return {"matches": matches}
+    except Exception as e:
+        return {"matches": [], "error": str(e)}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
