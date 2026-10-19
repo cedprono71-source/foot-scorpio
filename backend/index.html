@@ -184,7 +184,7 @@
         <button id="btn-foot" class="sport-btn active-foot" onclick="switchSport('foot')">⚽ Football</button>
     </div>
 
-    <!-- Sélecteur de Date -->
+    <!-- Sélecteur de Date (Élargi : 7 jours en arrière, 30 jours en avant) -->
     <div class="date-strip" id="date-strip">
         <!-- Généré dynamiquement en JS -->
     </div>
@@ -197,6 +197,20 @@
     </div>
 </div>
 
+<!-- Fenêtre Modale de Pronostic Stylisée -->
+<div id="prono-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; padding: 16px;">
+    <div style="background-color: #1e293b; width: 100%; max-width: 440px; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 16px; max-height: 90vh; overflow-y: auto; border: 1px solid #334155;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 id="modal-title" style="font-size: 1.1rem; color: #f8fafc;">Pronostic</h3>
+            <button onclick="closeModal()" style="background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer;">&times;</button>
+        </div>
+        <div id="modal-body" style="display: flex; flex-direction: column; gap: 14px; font-size: 0.9rem; color: #cbd5e1;">
+            <!-- Contenu dynamique -->
+        </div>
+        <button onclick="closeModal()" style="background-color: #3b82f6; color: white; border: none; padding: 10px; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 4px;">Fermer</button>
+    </div>
+</div>
+
 <script>
     let currentSport = 'foot';
     let selectedDate = new Date().toISOString().split('T')[0];
@@ -205,7 +219,8 @@
         const strip = document.getElementById('date-strip');
         strip.innerHTML = '';
         
-        for (let i = -2; i <= 4; i++) {
+        // Plage élargie : de -7 jours à +30 jours
+        for (let i = -7; i <= 30; i++) {
             const d = new Date();
             d.setDate(d.getDate() + i);
             const dateStr = d.toISOString().split('T')[0];
@@ -252,6 +267,10 @@
     function openPrediction(home, away) {
         const endpoint = currentSport === 'foot' ? '/predict/match/foot' : '/predict/match';
         
+        document.getElementById('modal-title').innerText = `Analyse IA en cours...`;
+        document.getElementById('modal-body').innerHTML = `<div style="text-align: center; padding: 20px; color: #94a3b8;">Calcul des probabilités et des statistiques...</div>`;
+        document.getElementById('prono-modal').style.display = 'flex';
+
         fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -259,34 +278,69 @@
         })
         .then(res => res.json())
         .then(data => {
+            document.getElementById('modal-title').innerText = `⚡ PRONOSTIC ${currentSport.toUpperCase()}`;
+            
             let playersHtml = '';
             if (data.home_players && data.away_players) {
-                playersHtml = `\n\n⭐ JOUEURS CLÉS (${home}) :\n` +
-                              data.home_players.map(p => `- ${p.name} (${p.pos}) : ${p.stats} [Impact: ${p.pct}%]`).join('\n') +
-                              `\n\n⭐ JOUEURS CLÉS (${away}) :\n` +
-                              data.away_players.map(p => `- ${p.name} (${p.pos}) : ${p.stats} [Impact: ${p.pct}%]`).join('\n');
+                const renderPlayers = (title, list) => `
+                    <div style="background: #0f172a; padding: 10px; border-radius: 8px; margin-top: 6px;">
+                        <div style="font-weight: bold; color: #38bdf8; margin-bottom: 6px; font-size: 0.85rem;">⭐ ${title}</div>
+                        ${list.map(p => `
+                            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding: 3px 0; border-bottom: 1px solid #1e293b;">
+                                <span>${p.name} <span style="color:#64748b">(${p.pos})</span></span>
+                                <span style="font-weight: 600;">${p.stats} <span style="color: #10b981;">[${p.pct}%]</span></span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                playersHtml = renderPlayers(home, data.home_players) + renderPlayers(away, data.away_players);
             }
 
+            let contentHtml = '';
             if (currentSport === 'foot') {
-                alert(`⚽ PRONOSTIC FOOTBALL\n\n` +
-                      `Match : ${data.match}\n` +
-                      `Score exact estimé : ${data.predicted_score}\n\n` +
-                      `📊 Probabilités 1N2 :\n` +
-                      `- Victoire ${home} : ${data.probabilities.home_win}%\n` +
-                      `- Nul : ${data.probabilities.draw}%\n` +
-                      `- Victoire ${away} : ${data.probabilities.away_win}%\n\n` +
-                      `⚡ Over 2.5 buts : ${data.over_under_2_5.over_prob}%` +
-                      playersHtml);
+                contentHtml = `
+                    <div style="font-weight: bold; font-size: 1rem; color: white; text-align: center; margin-bottom: 4px;">${data.match}</div>
+                    <div style="display: flex; justify-content: space-around; background: #0f172a; padding: 12px; border-radius: 10px; text-align: center;">
+                        <div><div style="font-size:0.75rem; color:#94a3b8">SCORE ESTIMÉ</div><div style="font-size:1.2rem; font-weight:bold; color:#f59e0b;">${data.predicted_score}</div></div>
+                        <div><div style="font-size:0.75rem; color:#94a3b8">OVER 2.5 BUTS</div><div style="font-size:1.2rem; font-weight:bold; color:#38bdf8;">${data.over_under_2_5.over_prob}%</div></div>
+                    </div>
+                    <div>
+                        <div style="font-weight:bold; margin-bottom:6px; color:#f8fafc;">📊 Probabilités 1N2 :</div>
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <div style="display:flex; justify-content:space-between;"><span>1 (${home}) :</span> <b>${data.probabilities.home_win}%</b></div>
+                            <div style="display:flex; justify-content:space-between;"><span>N (Nul) :</span> <b>${data.probabilities.draw}%</b></div>
+                            <div style="display:flex; justify-content:space-between;"><span>2 (${away}) :</span> <b>${data.probabilities.away_win}%</b></div>
+                        </div>
+                    </div>
+                    ${playersHtml}
+                `;
             } else {
-                alert(`🏒 PRONOSTIC NHL\n\n` +
-                      `Match : ${data.match}\n` +
-                      `Score estimé : ${data.predicted_score}\n` +
-                      `Victoire Domicile : ${data.probabilities.home_win}%\n` +
-                      `Victoire Extérieur : ${data.probabilities.away_win}%` +
-                      playersHtml);
+                contentHtml = `
+                    <div style="font-weight: bold; font-size: 1rem; color: white; text-align: center; margin-bottom: 4px;">${data.match}</div>
+                    <div style="display: flex; justify-content: space-around; background: #0f172a; padding: 12px; border-radius: 10px; text-align: center;">
+                        <div><div style="font-size:0.75rem; color:#94a3b8">SCORE ESTIMÉ</div><div style="font-size:1.2rem; font-weight:bold; color:#f59e0b;">${data.predicted_score}</div></div>
+                        <div><div style="font-size:0.75rem; color:#94a3b8">OVER 5.5</div><div style="font-size:1.2rem; font-weight:bold; color:#38bdf8;">${data.over_under_5_5.over_prob}%</div></div>
+                    </div>
+                    <div>
+                        <div style="font-weight:bold; margin-bottom:6px; color:#f8fafc;">📊 Probabilités de Victoire :</div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>${home} : <b>${data.probabilities.home_win}%</b></span>
+                            <span>${away} : <b>${data.probabilities.away_win}%</b></span>
+                        </div>
+                    </div>
+                    ${playersHtml}
+                `;
             }
+
+            document.getElementById('modal-body').innerHTML = contentHtml;
         })
-        .catch(() => alert("Erreur lors du calcul du pronostic."));
+        .catch(() => {
+            document.getElementById('modal-body').innerHTML = `<div style="color: #ef4444; text-align: center; padding: 20px;">Erreur lors du chargement des prédictions.</div>`;
+        });
+    }
+
+    function closeModal() {
+        document.getElementById('prono-modal').style.display = 'none';
     }
 
     function loadMatches() {
