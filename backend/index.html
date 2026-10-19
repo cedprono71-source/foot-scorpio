@@ -315,21 +315,6 @@
             </div>
         `;
 
-        let consensusHtml = '';
-        if (data.ai_models && data.ai_models.length > 0) {
-            consensusHtml = `
-                <div style="background: #1e293b; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-weight: bold; color: #94a3b8; font-size: 0.75rem; letter-spacing: 0.5px;">🤖 CONSENSUS MULTI-IA</div>
-                    ${data.ai_models.map(ai => `
-                        <div style="display: flex; justify-content: space-between; align-items: center; background: #0f172a; padding: 6px 10px; border-radius: 6px; font-size: 0.8rem;">
-                            <span style="color: #38bdf8; font-weight: 500;">${ai.name}</span>
-                            <span style="color: #cbd5e1; font-weight: bold;">${ai.home}% / ${ai.draw !== undefined ? ai.draw + '\% / ' : ''}${ai.away}%</span>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-        }
-
         let middleSection = '';
         if (!isFoot && data.goalies) {
             middleSection = `
@@ -390,7 +375,6 @@
                 </div>
             </div>
             ${probHtml}
-            ${consensusHtml}
             ${middleSection}
             ${playersHtml}
         `;
