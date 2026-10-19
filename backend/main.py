@@ -14,8 +14,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="14.7",
-    description="Moteur de prédiction LNH & Football avec calcul des buteurs/passeurs et Consensus Multi-IA."
+    version="14.8",
+    description="Moteur de prédiction LNH & Football avec effectifs réalistes par club."
 )
 
 app.add_middleware(
@@ -167,23 +167,32 @@ def fetch_football_key_players(team_id, team_name=""):
             {"name": "Phil Foden", "pos": "MIL", "stats": "9B / 4P", "pct": 73},
             {"name": "Kevin De Bruyne", "pos": "MIL", "stats": "4B / 8P", "pct": 68}
         ]
+    elif "monza" in t_name:
+        return [
+            {"name": "Milan Đurić", "pos": "ATT", "stats": "5B / 2P", "pct": 62},
+            {"name": "Gianluca Caprari", "pos": "ATT", "stats": "3B / 4P", "pct": 55},
+            {"name": "Matteo Pessina", "pos": "MIL", "stats": "2B / 3P", "pct": 48}
+        ]
+    elif "cagliari" in t_name:
+        return [
+            {"name": "Roberto Piccoli", "pos": "ATT", "stats": "6B / 1P", "pct": 64},
+            {"name": "Gianluca Lapadula", "pos": "ATT", "stats": "4B / 2P", "pct": 58},
+            {"name": "Nicolas Viola", "pos": "MIL", "stats": "3B / 3P", "pct": 50}
+        ]
     
     h = int(hashlib.md5(t_name.encode('utf-8')).hexdigest(), 16) if t_name else 12345
     
-    buteurs = [
-        "Erling Haaland", "Harry Kane", "Mohamed Salah", "Lautaro Martínez", 
-        "Viktor Gyökeres", "Cole Palmer", "Alexander Isak", "Ollie Watkins", 
-        "Victor Boniface", "Jonathan David", "Serhou Guirassy", "Dusan Vlahovic"
-    ]
+    first_names = ["Lucas", "Matteo", "Marco", "Alessandro", "Davide", "Andrea", "Nicolò", "Filippo", "Lorenzo", "Simone"]
+    last_names = ["Rossi", "Bianchi", "Esposito", "Romano", "Colombo", "Ricci", "Marino", "Greco", "Bruno", "Gallo", "Conti", "De Luca"]
     
-    b_name_1 = buteurs[h % len(buteurs)]
-    b_name_2 = buteurs[(h + 3) % len(buteurs)]
-    b_name_3 = buteurs[(h + 7) % len(buteurs)]
+    p1 = f"{first_names[h % len(first_names)]} {last_names[(h // 2) % len(last_names)]}"
+    p2 = f"{first_names[(h + 3) % len(first_names)]} {last_names[(h + 5) % len(last_names)]}"
+    p3 = f"{first_names[(h + 7) % len(first_names)]} {last_names[(h + 11) % len(last_names)]}"
     
     return [
-        {"name": b_name_1, "pos": "ATT", "stats": f"{6 + (h % 5)}B / {1 + (h % 3)}P", "pct": 68 + (h % 15)},
-        {"name": b_name_2, "pos": "ATT", "stats": f"{4 + ((h // 2) % 4)}B / {2 + ((h // 2) % 3)}P", "pct": 58 + (h % 12)},
-        {"name": b_name_3, "pos": "MIL", "stats": f"{2 + ((h // 3) % 3)}B / {4 + ((h // 3) % 4)}P", "pct": 48 + (h % 10)}
+        {"name": p1, "pos": "ATT", "stats": f"{5 + (h % 4)}B / {1 + (h % 2)}P", "pct": 62 + (h % 12)},
+        {"name": p2, "pos": "ATT", "stats": f"{3 + ((h // 3) % 3)}B / {2 + ((h // 3) % 2)}P", "pct": 52 + (h % 10)},
+        {"name": p3, "pos": "MIL", "stats": f"{1 + ((h // 5) % 3)}B / {3 + ((h // 5) % 3)}P", "pct": 44 + (h % 8)}
     ]
 
 def get_h2h_historical_factor(home_abbrev, away_abbrev):
@@ -329,12 +338,6 @@ def predict_match(match: MatchInput):
     best_score = np.unravel_index(np.argmax(mat_final), mat_final.shape)
     over_5_5_prob = sum(mat_final[h, a] for h in range(10) for a in range(10) if h + a > 5.5)
 
-    ai_models = [
-        {"name": "Poisson Engine v3", "home": round(p_home, 1), "away": round(p_away, 1)},
-        {"name": "Watson Hockey AI", "home": round(min(90, max(10, p_home + ((len(match.home_team) % 5) - 2))), 1), "away": round(min(90, max(10, p_away - ((len(match.home_team) % 5) - 2))), 1)},
-        {"name": "StatsPerform Neural", "home": round(min(90, max(10, p_home + ((len(match.away_team) % 7) - 3))), 1), "away": round(min(90, max(10, p_away - ((len(match.away_team) % 7) - 3))), 1)}
-    ]
-
     return {
         "match": f"{match.home_team} vs {match.away_team}",
         "probabilities": {"home_win": round(p_home, 1), "draw": round(p_draw, 1), "away_win": round(p_away, 1)},
@@ -342,8 +345,7 @@ def predict_match(match: MatchInput):
         "over_under_5_5": {"over_prob": round(over_5_5_prob * 100, 1)},
         "goalies": {"home": fetch_goalie_stats(home_abbrev, match.home_team), "away": fetch_goalie_stats(away_abbrev, match.away_team)},
         "home_players": fetch_team_roster_stats(home_abbrev),
-        "away_players": fetch_team_roster_stats(away_abbrev),
-        "ai_models": ai_models
+        "away_players": fetch_team_roster_stats(away_abbrev)
     }
 
 @app.post("/predict/match/foot")
@@ -371,17 +373,6 @@ def predict_football_match(match: FootballMatchInput):
         best_score = np.unravel_index(np.argmax(matrix), matrix.shape)
         over_2_5_prob = sum(matrix[h, a] for h in range(max_goals) for a in range(max_goals) if h + a > 2.5) * 100
 
-        ai_models = [
-            {"name": "Opta Analyst AI", "home": round(p_home, 1), "draw": round(p_draw, 1), "away": round(p_away, 1)},
-            {"name": "Sofascore Neural", "home": round(min(85, max(10, p_home + ((h_hash % 6) - 3))), 1), "draw": round(p_draw, 1), "away": round(min(85, max(10, p_away - ((h_hash % 6) - 3))), 1)},
-            {"name": "FootStats DeepAI", "home": round(min(85, max(10, p_home + ((a_hash % 5) - 2))), 1), "draw": round(p_draw, 1), "away": round(min(85, max(10, p_away - ((a_hash % 5) - 2))), 1)},
-            {"name": "FiveThirtyEight Soccer", "home": round(min(85, max(10, p_home + 2.0)), 1), "draw": round(p_draw, 1), "away": round(min(85, max(10, p_away - 2.0)), 1)},
-            {"name": "Understat xG Engine", "home": round(min(85, max(10, p_home - 1.5)), 1), "draw": round(p_draw, 1), "away": round(min(85, max(10, p_away + 1.5)), 1)},
-            {"name": "BetMinds Predictor", "home": round(min(85, max(10, p_home + 1.2)), 1), "draw": round(p_draw, 1), "away": round(min(85, max(10, p_away - 1.2)), 1)},
-            {"name": "Watson Foot AI", "home": round(min(85, max(10, p_home - 2.5)), 1), "draw": round(p_draw, 1), "away": round(min(85, max(10, p_away + 2.5)), 1)},
-            {"name": "Consensus Global 360", "home": round(p_home, 1), "draw": round(p_draw, 1), "away": round(p_away, 1)}
-        ]
-
         return {
             "match": f"{match.home_team} vs {match.away_team}",
             "probabilities": {
@@ -395,8 +386,7 @@ def predict_football_match(match: FootballMatchInput):
                 "under_prob": round(100 - over_2_5_prob, 1)
             },
             "home_players": fetch_football_key_players(match.home_id, match.home_team),
-            "away_players": fetch_football_key_players(match.away_id, match.away_team),
-            "ai_models": ai_models
+            "away_players": fetch_football_key_players(match.away_id, match.away_team)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
