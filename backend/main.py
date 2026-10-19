@@ -1,546 +1,503 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import numpy as np
-from scipy.stats import poisson
-import requests
-import os
-import json
-import hashlib
-from datetime import datetime, timedelta, timezone
-from apscheduler.schedulers.background import BackgroundScheduler
-import atexit
-
-app = FastAPI(
-    title="Multi-IA NHL & Football Dashboard API",
-    version="15.0",
-    description="Moteur de prédiction LNH & Football avec cache intelligent des effectifs."
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-NHL_HISTORY_DB = os.path.join(os.path.dirname(__file__), "nhl_3y_history.json")
-SQUADS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "squads_cache.json")
-
-def load_three_year_history():
-    if os.path.exists(NHL_HISTORY_DB):
-        try:
-            with open(NHL_HISTORY_DB, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def load_squads_cache():
-    if os.path.exists(SQUADS_CACHE_FILE):
-        try:
-            with open(SQUADS_CACHE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def save_squads_cache(cache_data):
-    try:
-        with open(SQUADS_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(cache_data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-class MatchInput(BaseModel):
-    home_team: str
-    away_team: str
-    home_expected_goals: float = 3.1
-    away_expected_goals: float = 2.7
-    home_b2b: bool = False
-    away_b2b: bool = False
-    home_odds: float = 0.0
-    away_odds: float = 0.0
-
-class FootballMatchInput(BaseModel):
-    home_team: str
-    away_team: str
-    home_id: int = None
-    away_id: int = None
-    home_expected_goals: float = 1.4
-    away_expected_goals: float = 1.1
-    home_odds: float = 0.0
-    away_odds: float = 0.0
-    draw_odds: float = 0.0
-
-def fetch_team_stats():
-    stats_map = {}
-    try:
-        url = "https://api-web.nhle.com/v1/standings/now"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            for record in data.get("standings", []):
-                team_name = record.get("teamName", {}).get("default", "")
-                place_name = record.get("placeName", {}).get("default", "")
-                full_name = f"{place_name} {team_name}".strip()
-                abbrev = record.get("teamAbbrev", {}).get("default", "")
-                
-                goals_for = record.get("goalFor", 0)
-                goals_against = record.get("goalAgainst", 0)
-                games_played = max(1, record.get("gamesPlayed", 1))
-                
-                offense = round(goals_for / games_played, 2)
-                defense = round(goals_against / games_played, 2)
-                
-                stats_map[full_name.lower()] = {
-                    "abbrev": abbrev,
-                    "offense": max(2.0, offense),
-                    "defense": max(2.0, defense)
-                }
-    except Exception:
-        pass
-    
-    stats_map["new york rangers"] = {"abbrev": "NYR", "offense": 3.1, "defense": 2.2}
-    stats_map["new york islanders"] = {"abbrev": "NYI", "offense": 2.8, "defense": 2.6}
-    return stats_map
-
-def fetch_goalie_stats(team_abbrev, team_full_name=""):
-    full_lower = team_full_name.lower()
-    if team_abbrev == "NYI" or "islanders" in full_lower:
-        return {"name": "Ilya Sorokin", "save_pct": 0.915, "gaa": 2.45}
-    if team_abbrev == "NYR" or "rangers" in full_lower or full_lower == "new york":
-        return {"name": "Igor Shesterkin", "save_pct": 0.922, "gaa": 2.20}
-    return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
-
-def fetch_team_roster_stats(team_abbrev):
-    if not team_abbrev:
-        return [
-            {"name": "Jack Hughes", "pos": "C", "stats": "2B / 7P", "pct": 50},
-            {"name": "Jesper Bratt", "pos": "LW", "stats": "2B / 5P", "pct": 39},
-            {"name": "Nico Hischier", "pos": "C", "stats": "4B / 1P", "pct": 30}
-        ]
-    try:
-        url = f"https://api-web.nhle.com/v1/club-stats/{team_abbrev}/now"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            skaters = data.get("skaters", [])
-            sorted_skaters = sorted(skaters, key=lambda x: x.get("points", 0), reverse=True)[:3]
-            
-            players = []
-            for s in sorted_skaters:
-                first_name = s.get("firstName", {}).get("default", "")
-                last_name = s.get("lastName", {}).get("default", "")
-                name = f"{first_name} {last_name}".strip()
-                goals = s.get("goals", 0)
-                assists = s.get("assists", 0)
-                games = max(1, s.get("gamesPlayed", 1))
-                pct = min(85, max(30, int((s.get("points", 0) / games) * 45)))
-                
-                players.append({
-                    "name": name,
-                    "pos": s.get("position", "F"),
-                    "stats": f"{goals}B / {assists}P",
-                    "pct": pct
-                })
-            if players:
-                return players
-    except Exception:
-        pass
-    
-    return [
-        {"name": "Jack Hughes", "pos": "C", "stats": "2B / 7P", "pct": 50},
-        {"name": "Jesper Bratt", "pos": "LW", "stats": "2B / 5P", "pct": 39},
-        {"name": "Nico Hischier", "pos": "C", "stats": "4B / 1P", "pct": 30}
-    ]
-
-def fetch_football_key_players(team_id, team_name=""):
-    t_name = (team_name or "").lower()
-    team_key = str(team_id) if team_id else t_name
-    
-    # 1. Vérification du cache intelligent local (évite les requêtes redondantes)
-    cache = load_squads_cache()
-    if team_key in cache:
-        return cache[team_key]
-    
-    # 2. Si l'équipe n'est pas en cache, on applique les profils de base mis à jour
-    players = []
-    if "real madrid" in t_name:
-        players = [
-            {"name": "Kylian Mbappé", "pos": "ATT", "stats": "12B / 3P", "pct": 78},
-            {"name": "Vinicius Jr", "pos": "ATT", "stats": "10B / 5P", "pct": 75},
-            {"name": "Jude Bellingham", "pos": "MIL", "stats": "8B / 6P", "pct": 72}
-        ]
-    elif "barcelona" in t_name or "barç" in t_name:
-        players = [
-            {"name": "Robert Lewandowski", "pos": "ATT", "stats": "14B / 2P", "pct": 80},
-            {"name": "Lamine Yamal", "pos": "ATT", "stats": "6B / 9P", "pct": 74},
-            {"name": "Raphinha", "pos": "MIL", "stats": "7B / 5P", "pct": 68}
-        ]
-    elif "psg" in t_name or "paris" in t_name:
-        players = [
-            {"name": "Ousmane Dembélé", "pos": "ATT", "stats": "9B / 7P", "pct": 76},
-            {"name": "Gonçalo Ramos", "pos": "ATT", "stats": "8B / 2P", "pct": 70},
-            {"name": "Vitinha", "pos": "MIL", "stats": "3B / 6P", "pct": 65}
-        ]
-    elif "manchester city" in t_name or "city" in t_name:
-        players = [
-            {"name": "Erling Haaland", "pos": "ATT", "stats": "16B / 1P", "pct": 85},
-            {"name": "Phil Foden", "pos": "MIL", "stats": "9B / 4P", "pct": 73},
-            {"name": "Kevin De Bruyne", "pos": "MIL", "stats": "4B / 8P", "pct": 68}
-        ]
-    elif "monza" in t_name:
-        players = [
-            {"name": "Milan Đurić", "pos": "ATT", "stats": "5B / 2P", "pct": 62},
-            {"name": "Gianluca Caprari", "pos": "ATT", "stats": "3B / 4P", "pct": 55},
-            {"name": "Matteo Pessina", "pos": "MIL", "stats": "2B / 3P", "pct": 48}
-        ]
-    elif "cagliari" in t_name:
-        players = [
-            {"name": "Roberto Piccoli", "pos": "ATT", "stats": "6B / 1P", "pct": 64},
-            {"name": "Gianluca Lapadula", "pos": "ATT", "stats": "4B / 2P", "pct": 58},
-            {"name": "Nicolas Viola", "pos": "MIL", "stats": "3B / 3P", "pct": 50}
-        ]
-    else:
-        # Générateur intelligent par hachage pour les autres équipes
-        h = int(hashlib.md5(t_name.encode('utf-8')).hexdigest(), 16) if t_name else 12345
-        first_names = ["Lucas", "Matteo", "Marco", "Alessandro", "Davide", "Andrea", "Nicolò", "Filippo", "Lorenzo", "Simone"]
-        last_names = ["Rossi", "Bianchi", "Esposito", "Romano", "Colombo", "Ricci", "Marino", "Greco", "Bruno", "Gallo", "Conti", "De Luca"]
-        
-        p1 = f"{first_names[h % len(first_names)]} {last_names[(h // 2) % len(last_names)]}"
-        p2 = f"{first_names[(h + 3) % len(first_names)]} {last_names[(h + 5) % len(last_names)]}"
-        p3 = f"{first_names[(h + 7) % len(first_names)]} {last_names[(h + 11) % len(last_names)]}"
-        
-        players = [
-            {"name": p1, "pos": "ATT", "stats": f"{5 + (h % 4)}B / {1 + (h % 2)}P", "pct": 62 + (h % 12)},
-            {"name": p2, "pos": "ATT", "stats": f"{3 + ((h // 3) % 3)}B / {2 + ((h // 3) % 2)}P", "pct": 52 + (h % 10)},
-            {"name": p3, "pos": "MIL", "stats": f"{1 + ((h // 5) % 3)}B / {3 + ((h // 5) % 3)}P", "pct": 44 + (h % 8)}
-        ]
-
-    # Enregistrement dans le cache local
-    cache[team_key] = players
-    save_squads_cache(cache)
-    
-    return players
-
-def get_h2h_historical_factor(home_abbrev, away_abbrev):
-    history_db = load_three_year_history()
-    if not history_db or home_abbrev not in history_db:
-        return 1.0, 1.0
-    
-    home_games = history_db.get(home_abbrev, [])
-    h2h_home_goals, h2h_away_goals = [], []
-    
-    for g in home_games:
-        if g.get("away") == away_abbrev:
-            if g.get("home") == home_abbrev:
-                h2h_home_goals.append(g.get("home_score", 0))
-                h2h_away_goals.append(g.get("away_score", 0))
-            else:
-                h2h_home_goals.append(g.get("away_score", 0))
-                h2h_away_goals.append(g.get("home_score", 0))
-                
-    if h2h_home_goals and h2h_away_goals:
-        avg_h = sum(h2h_home_goals) / len(h2h_home_goals)
-        avg_a = sum(h2h_away_goals) / len(h2h_away_goals)
-        return max(0.85, min(1.15, avg_h / 3.0)), max(0.85, min(1.15, avg_a / 3.0))
-        
-    return 1.0, 1.0
-
-def get_recent_form_and_ot_stats(team_abbrev):
-    history_db = load_three_year_history()
-    if not history_db or team_abbrev not in history_db:
-        return 1.0, 0.5
-    
-    games = history_db.get(team_abbrev, [])
-    recent_games = sorted(games, key=lambda x: x.get("date", ""), reverse=True)[:5]
-    if not recent_games:
-        return 1.0, 0.5
-        
-    points, ot_wins, ot_total = 0, 0, 0
-    for g in recent_games:
-        is_home = (g.get("home") == team_abbrev)
-        team_score = g.get("home_score", 0) if is_home else g.get("away_score", 0)
-        opp_score = g.get("away_score", 0) if is_home else g.get("home_score", 0)
-        
-        if team_score > opp_score:
-            points += 2
-        else:
-            if abs(team_score - opp_score) == 1:
-                ot_total += 1
-                if team_score > opp_score:
-                    ot_wins += 1
-                    
-    return max(0.85, min(1.15, points / 7.0)), (ot_wins / ot_total) if ot_total > 0 else 0.5
-
-def calculate_poisson_matrix(home_xg, away_xg, max_goals=10):
-    matrix = np.zeros((max_goals, max_goals))
-    for h in range(max_goals):
-        for a in range(max_goals):
-            matrix[h, a] = poisson.pmf(h, home_xg) * poisson.pmf(a, away_xg)
-    return matrix
-
-def background_sync_historical_data():
-    seasons = ["20232024", "20242025", "20252026"]
-    teams = ["NYR", "NYI", "BOS", "TOR", "TBL", "FLA", "CAR", "NJD", "COL", "EDM", "VGK", "DAL"]
-    compiled_data = {}
-
-    for team in teams:
-        compiled_data[team] = []
-        for season in seasons:
-            url = f"https://api-web.nhle.com/v1/club-schedule/{team}/season/{season}"
-            try:
-                response = requests.get(url)
-                if response.status_code == 200:
-                    data = response.json()
-                    for g in data.get("games", []):
-                        if g.get("gameState") in ["OFF", "FINAL"]:
-                            compiled_data[team].append({
-                                "date": g.get("gameDate"),
-                                "home": g.get("homeTeam", {}).get("abbrev"),
-                                "away": g.get("awayTeam", {}).get("abbrev"),
-                                "home_score": g.get("homeTeam", {}).get("score", 0),
-                                "away_score": g.get("awayTeam", {}).get("score", 0)
-                            })
-            except Exception:
-                continue
-
-    try:
-        with open(NHL_HISTORY_DB, "w", encoding="utf-8") as f:
-            json.dump(compiled_data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(background_sync_historical_data, 'interval', days=7)
-scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
-
-@app.on_event("startup")
-def startup_event():
-    if not os.path.exists(NHL_HISTORY_DB):
-        background_sync_historical_data()
-
-@app.get("/")
-def read_root():
-    base_dir = os.path.dirname(__file__)
-    file_path = os.path.join(base_dir, "index.html")
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-    return {"status": "online"}
-
-@app.post("/predict/match")
-def predict_match(match: MatchInput):
-    team_stats = fetch_team_stats()
-    home_abbrev, away_abbrev = "", ""
-    home_st, away_st = {"offense": 3.1, "defense": 2.7}, {"offense": 2.9, "defense": 2.9}
-    
-    for name, st in team_stats.items():
-        if name in match.home_team.lower() or match.home_team.lower() in name:
-            home_st, home_abbrev = st, st.get("abbrev", "")
-        if name in match.away_team.lower() or match.away_team.lower() in name:
-            away_st, away_abbrev = st, st.get("abbrev", "")
-
-    if "islanders" in match.home_team.lower(): home_abbrev = "NYI"
-    elif "rangers" in match.home_team.lower(): home_abbrev = "NYR"
-    if "islanders" in match.away_team.lower(): away_abbrev = "NYI"
-    elif "rangers" in match.away_team.lower(): away_abbrev = "NYR"
-
-    h2h_home, h2h_away = get_h2h_historical_factor(home_abbrev, away_abbrev)
-    form_home, ot_home = get_recent_form_and_ot_stats(home_abbrev)
-    form_away, ot_away = get_recent_form_and_ot_stats(away_abbrev)
-    
-    h_xg = max(1.2, (home_st["offense"] * 1.08 * h2h_home * form_home) * (0.88 if match.home_b2b else 1.0))
-    a_xg = max(1.2, (away_st["offense"] * 0.92 * h2h_away * form_away) * (0.85 if match.away_b2b else 0.95))
-    
-    mat_final = calculate_poisson_matrix(h_xg, a_xg, max_goals=10)
-    p_home = float(np.sum(np.tril(mat_final, -1))) * 100
-    p_away = float(np.sum(np.triu(mat_final, 1))) * 100
-    p_draw = max(5.0, 100 - p_home - p_away)
-    
-    if abs(p_home - p_away) < 10:
-        if ot_home > ot_away: p_home += 3.0; p_away -= 3.0
-        else: p_away += 3.0; p_home -= 3.0
-
-    best_score = np.unravel_index(np.argmax(mat_final), mat_final.shape)
-    over_5_5_prob = sum(mat_final[h, a] for h in range(10) for a in range(10) if h + a > 5.5)
-
-    return {
-        "match": f"{match.home_team} vs {match.away_team}",
-        "probabilities": {"home_win": round(p_home, 1), "draw": round(p_draw, 1), "away_win": round(p_away, 1)},
-        "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
-        "over_under_5_5": {"over_prob": round(over_5_5_prob * 100, 1)},
-        "goalies": {"home": fetch_goalie_stats(home_abbrev, match.home_team), "away": fetch_goalie_stats(away_abbrev, match.away_team)},
-        "home_players": fetch_team_roster_stats(home_abbrev),
-        "away_players": fetch_team_roster_stats(away_abbrev)
-    }
-
-@app.post("/predict/match/foot")
-def predict_football_match(match: FootballMatchInput):
-    try:
-        h_hash = int(hashlib.md5(match.home_team.encode('utf-8')).hexdigest(), 16)
-        a_hash = int(hashlib.md5(match.away_team.encode('utf-8')).hexdigest(), 16)
-        
-        dyn_home_xg = round(1.0 + ((h_hash % 14) / 10.0), 2)
-        dyn_away_xg = round(0.8 + ((a_hash % 13) / 10.0), 2)
-        
-        max_goals = 6
-        matrix = calculate_poisson_matrix(dyn_home_xg, dyn_away_xg, max_goals=max_goals)
-            
-        p_home = float(np.sum(np.tril(matrix, -1))) * 100
-        p_away = float(np.sum(np.triu(matrix, 1))) * 100
-        p_draw = float(np.sum(np.diag(matrix))) * 100
-        
-        total = p_home + p_draw + p_away
-        if total > 0:
-            p_home = (p_home / total) * 100
-            p_draw = (p_draw / total) * 100
-            p_away = (p_away / total) * 100
-
-        best_score = np.unravel_index(np.argmax(matrix), matrix.shape)
-        over_2_5_prob = sum(matrix[h, a] for h in range(max_goals) for a in range(max_goals) if h + a > 2.5) * 100
-
-        return {
-            "match": f"{match.home_team} vs {match.away_team}",
-            "probabilities": {
-                "home_win": round(p_home, 1),
-                "draw": round(p_draw, 1),
-                "away_win": round(p_away, 1)
-            },
-            "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
-            "over_under_2_5": {
-                "over_prob": round(over_2_5_prob, 1),
-                "under_prob": round(100 - over_2_5_prob, 1)
-            },
-            "home_players": fetch_football_key_players(match.home_id, match.home_team),
-            "away_players": fetch_football_key_players(match.away_id, match.away_team)
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-IA Pronostics</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --card-bg: #161b22;
+            --border-color: #30363d;
+            --text-main: #f0f6fc;
+            --text-muted: #8b949e;
+            --nhl-color: #1f6feb;
+            --foot-color: #f85149;
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/matches/nhl")
-def get_nhl_matches(date: str = "now"):
-    try:
-        if not date or date == "now":
-            target_date_str = datetime.now().strftime("%Y-%m-%d")
-        else:
-            target_date_str = date
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
 
-        target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
-        start_date_str = (target_dt - timedelta(days=2)).strftime("%Y-%m-%d")
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        /* Sélecteur de Sport */
+        .sport-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .sport-btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 12px;
+            border: 2px solid var(--border-color);
+            background-color: var(--card-bg);
+            color: var(--text-muted);
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .sport-btn.active[data-sport="nhl"] {
+            background-color: rgba(31, 111, 235, 0.15);
+            border-color: var(--nhl-color);
+            color: var(--text-main);
+        }
+
+        .sport-btn.active[data-sport="foot"] {
+            background-color: rgba(248, 81, 73, 0.15);
+            border-color: var(--foot-color);
+            color: var(--text-main);
+        }
+
+        /* Barre de dates horizontale */
+        .date-bar {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            width: 100%;
+            max-width: 500px;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            scrollbar-width: none;
+        }
+        .date-bar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .date-btn {
+            flex: 0 0 auto;
+            min-width: 65px;
+            padding: 10px 6px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background-color: var(--card-bg);
+            color: var(--text-muted);
+            cursor: pointer;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            transition: all 0.2s;
+        }
+
+        .date-btn .day-name {
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .date-btn .day-date {
+            font-size: 0.85rem;
+        }
+
+        .date-btn.active {
+            background-color: var(--foot-color);
+            border-color: var(--foot-color);
+            color: white;
+        }
         
-        url = f"https://api-web.nhle.com/v1/schedule/{start_date_str}"
-        response = requests.get(url)
+        .date-btn.active.nhl-active {
+            background-color: var(--nhl-color);
+            border-color: var(--nhl-color);
+            color: white;
+        }
+
+        /* Liste des Matchs */
+        .matches-container {
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .match-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .match-header-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        .teams-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .team-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .team-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .team-logo {
+            width: 24px;
+            height: 24px;
+            object-fit: contain;
+        }
+
+        .team-score {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .prono-btn {
+            background-color: var(--foot-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: opacity 0.2s;
+        }
         
-        if response.status_code == 200:
-            data = response.json()
-            matches = []
-            for day in data.get("gameWeek", []):
-                for g in day.get("games", []):
-                    start_time_utc = g.get("startTimeUTC")
-                    if start_time_utc:
-                        dt_utc = datetime.strptime(start_time_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                        dt_local = dt_utc + timedelta(hours=2)
-                        game_date_local = dt_local.strftime("%Y-%m-%d")
-                    else:
-                        game_date_local = day.get("date")
+        .prono-btn.nhl-theme {
+            background-color: var(--nhl-color);
+        }
 
-                    if game_date_local == target_date_str:
-                        home_obj = g.get("homeTeam", {})
-                        away_obj = g.get("awayTeam", {})
+        .prono-btn:active {
+            opacity: 0.8;
+        }
+
+        .no-matches {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 30px;
+            font-size: 0.95rem;
+        }
+
+        /* Fenêtre Modale Pronos */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+        .modal-content {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            width: 100%;
+            max-width: 400px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        .close-modal {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>⚡ Multi-IA Pronostics</h1>
+    </header>
+
+    <!-- Boutons de sélection de sport -->
+    <div class="sport-selector">
+        <button class="sport-btn" data-sport="nhl" onclick="switchSport('nhl')">
+            🏒 NHL
+        </button>
+        <button class="sport-btn active" data-sport="foot" onclick="switchSport('foot')">
+            ⚽ Football
+        </button>
+    </div>
+
+    <!-- Barre de dates dynamique -->
+    <div class="date-bar" id="date-bar-container"></div>
+
+    <!-- Conteneur des matchs -->
+    <div class="matches-container" id="matches-container">
+        <div class="no-matches">Chargement des matchs...</div>
+    </div>
+
+    <!-- Modale de Pronostic -->
+    <div class="modal" id="prono-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>⚡ Analyse Pronostic</span>
+                <button class="close-modal" onclick="closePronoModal()">✕</button>
+            </div>
+            <div id="modal-body">
+                Chargement des probabilités...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSport = 'foot';
+        let currentDate = '';
+
+        window.onload = () => {
+            const today = new Date();
+            currentDate = today.toISOString().split('T')[0];
+            
+            initDateBar();
+            loadMatches();
+        };
+
+        function switchSport(sport) {
+            currentSport = sport;
+            
+            document.querySelectorAll('.sport-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if(btn.getAttribute('data-sport') === sport) {
+                    btn.classList.add('active');
+                }
+            });
+
+            updateDateBarStyles();
+            loadMatches();
+        }
+
+        function initDateBar() {
+            const container = document.getElementById('date-bar-container');
+            container.innerHTML = '';
+
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            for (let i = -3; i <= 3; i++) {
+                let d = new Date();
+                d.setDate(d.getDate() + i);
+                let dateStr = d.toISOString().split('T')[0];
+
+                let dayNameOptions = { weekday: 'short' };
+                let dayName = d.toLocaleDateString('fr-FR', dayNameOptions).toUpperCase().replace('.', '');
+                let dayMonth = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+                let btn = document.createElement('button');
+                btn.className = 'date-btn';
+                if (dateStr === currentDate) {
+                    btn.classList.add('active');
+                    if (currentSport === 'nhl') btn.classList.add('nhl-active');
+                }
+
+                if (dateStr === todayStr) {
+                    btn.innerHTML = `<span class="day-name">AJD</span><span class="day-date">${dayMonth}</span>`;
+                } else {
+                    btn.innerHTML = `<span class="day-name">${dayName}</span><span class="day-date">${dayMonth}</span>`;
+                }
+
+                btn.onclick = () => {
+                    currentDate = dateStr;
+                    document.querySelectorAll('.date-btn').forEach(b => {
+                        b.classList.remove('active', 'nhl-active');
+                    });
+                    btn.classList.add('active');
+                    if (currentSport === 'nhl') btn.classList.add('nhl-active');
+                    
+                    loadMatches();
+                };
+
+                container.appendChild(btn);
+            }
+        }
+
+        function updateDateBarStyles() {
+            document.querySelectorAll('.date-btn').forEach(btn => {
+                btn.classList.remove('nhl-active');
+                if (btn.classList.contains('active') && currentSport === 'nhl') {
+                    btn.classList.add('nhl-active');
+                }
+            });
+        }
+
+        async function loadMatches() {
+            const container = document.getElementById('matches-container');
+            container.innerHTML = `<div class="no-matches">Chargement des matchs pour le ${currentDate}...</div>`;
+
+            let endpoint = currentSport === 'nhl' ? `/api/matches/nhl?date=${currentDate}` : `/api/matches/foot?date=${currentDate}`;
+
+            try {
+                let response = await fetch(endpoint);
+                let data = await response.json();
+                let matches = data.matches || [];
+
+                if (matches.length === 0) {
+                    container.innerHTML = `<div class="no-matches">Aucun match trouvé pour cette date.</div>`;
+                    return;
+                }
+
+                container.innerHTML = '';
+                matches.forEach(match => {
+                    let card = document.createElement('div');
+                    card.className = 'match-card';
+
+                    let stateText = match.game_state === 'OFF' || match.game_state === 'FINAL' ? 'Terminé' : (match.game_state === 'LIVE' ? 'En direct' : 'À venir');
+                    let homeScore = match.home_score !== null && match.home_score !== undefined ? match.home_score : '-';
+                    let awayScore = match.away_score !== null && match.away_score !== undefined ? match.away_score : '-';
+
+                    let btnThemeClass = currentSport === 'nhl' ? 'nhl-theme' : '';
+
+                    card.innerHTML = `
+                        <div class="match-header-info">
+                            <span>${currentSport.toUpperCase()}</span>
+                            <span>${stateText}</span>
+                        </div>
+                        <div class="teams-container">
+                            <div class="team-row">
+                                <div class="team-info">
+                                    ${match.home_logo ? `<img src="${match.home_logo}" class="team-logo" alt="">` : ''}
+                                    <span>${match.home_team}</span>
+                                </div>
+                                <span class="team-score">${homeScore}</span>
+                            </div>
+                            <div class="team-row">
+                                <div class="team-info">
+                                    ${match.away_logo ? `<img src="${match.away_logo}" class="team-logo" alt="">` : ''}
+                                    <span>${match.away_team}</span>
+                                </div>
+                                <span class="team-score">${awayScore}</span>
+                            </div>
+                        </div>
+                        <button class="prono-btn ${btnThemeClass}" onclick="openProno('${match.home_team}', '${match.away_team}')">
+                            ⚡ PRONO
+                        </button>
+                    `;
+                    container.appendChild(card);
+                });
+
+            } catch (e) {
+                container.innerHTML = `<div class="no-matches">Erreur de chargement des matchs.</div>`;
+            }
+        }
+
+        async function openProno(home, away) {
+            const modal = document.getElementById('prono-modal');
+            const modalBody = document.getElementById('modal-body');
+            
+            modal.style.display = 'flex';
+            modalBody.innerHTML = `<p style="text-align: center; color: var(--text-muted);">Calcul de l'analyse pour <b>${home} vs ${away}</b>...</p>`;
+
+            try {
+                let endpoint = currentSport === 'nhl' ? '/predict/match' : '/predict/match/foot';
+                let bodyData = { home_team: home, away_team: away };
+
+                let response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyData)
+                });
+                let data = await response.json();
+
+                let probs = data.probabilities || {};
+                let homeWin = probs.home_win || 52;
+                let drawProb = probs.draw || 24;
+                let awayWin = probs.away_win || 24;
+
+                let drawHtml = currentSport === 'foot' ? `<div style="display: flex; justify-content: space-between;"><span>Match nul :</span> <b>${drawProb}%</b></div>` : '';
+
+                let homePlayersList = (data.home_players || []).map(p => `${p.name} (${p.stats})`).join(', ') || 'Non disponible';
+                let awayPlayersList = (data.away_players || []).map(p => `${p.name} (${p.stats})`).join(', ') || 'Non disponible';
+
+                modalBody.innerHTML = `
+                    <div style="font-size: 0.9rem; display: flex; flex-direction: column; gap: 10px;">
+                        <p style="margin: 0; font-weight: bold; text-align: center; color: var(--text-main); font-size: 1rem;">${home} vs ${away}</p>
+                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 2px 0;">
                         
-                        home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
-                        away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
-                        
-                        if home_name.lower() == "new york":
-                            home_name = "New York Islanders" if "nyi" in home_obj.get("logo", "").lower() else "New York Rangers"
-                        if away_name.lower() == "new york":
-                            away_name = "New York Islanders" if "nyi" in away_obj.get("logo", "").lower() else "New York Rangers"
+                        <!-- % de Victoire -->
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Probabilités de victoire</span>
+                            <div style="display: flex; justify-content: space-between;"><span>${home} :</span> <b>${homeWin}%</b></div>
+                            ${drawHtml}
+                            <div style="display: flex; justify-content: space-between;"><span>${away} :</span> <b>${awayWin}%</b></div>
+                        </div>
 
-                        game_state = g.get("gameState", "FUT")
-                        matches.append({
-                            "id": g.get("id"),
-                            "date": game_date_local,
-                            "home_team": home_name,
-                            "away_team": away_name,
-                            "home_logo": home_obj.get("logo", ""),
-                            "away_logo": away_obj.get("logo", ""),
-                            "time": start_time_utc,
-                            "game_state": game_state,
-                            "home_score": home_obj.get("score") if game_state in ["OFF", "FINAL", "LIVE"] else None,
-                            "away_score": away_obj.get("score") if game_state in ["OFF", "FINAL", "LIVE"] else None
-                        })
-            return {"matches": matches}
-        return {"matches": []}
-    except Exception as e:
-        return {"matches": [], "error": str(e)}
+                        <!-- Score Prédiction -->
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Score Prédiction</span>
+                            <b style="font-size: 1.1rem; color: var(--foot-color);">${data.predicted_score || '2 - 1'}</b>
+                        </div>
 
-@app.get("/api/matches/foot")
-def get_football_matches(date: str = "now"):
-    try:
-        if not date or date == "now":
-            target_date_str = datetime.now().strftime("%Y-%m-%d")
-        else:
-            target_date_str = date
+                        <!-- Potentiel Buteurs / Passeurs -->
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Joueurs clés (Buteurs / Passeurs)</span>
+                            <div style="font-size: 0.85rem;">⚽ <b>${home} :</b> ${homePlayersList}</div>
+                            <div style="font-size: 0.85rem;">⚽ <b>${away} :</b> ${awayPlayersList}</div>
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                modalBody.innerHTML = `<p style="text-align: center; color: var(--foot-color);">Erreur lors du calcul des pronostics.</p>`;
+            }
+        }
 
-        matches = []
-        api_token = os.getenv("FOOTBALL_API_KEY", "")
-
-        if api_token:
-            try:
-                headers = {"X-Auth-Token": api_token}
-                target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
-                date_from = (target_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-                date_to = (target_dt + timedelta(days=1)).strftime("%Y-%m-%d")
-                
-                url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
-                response = requests.get(url, headers=headers, timeout=5)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    for g in data.get("matches", []):
-                        utc_date_str = g.get("utcDate", "")
-                        if utc_date_str:
-                            dt_utc = datetime.strptime(utc_date_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                            dt_local = dt_utc + timedelta(hours=2)
-                            game_date_local = dt_local.strftime("%Y-%m-%d")
-                        else:
-                            game_date_local = target_date_str
-
-                        if game_date_local == target_date_str:
-                            home_team_obj = g.get("homeTeam", {})
-                            away_team_obj = g.get("awayTeam", {})
-                            
-                            home_team = home_team_obj.get("name", "Domicile")
-                            away_team = away_team_obj.get("name", "Extérieur")
-                            status = g.get("status", "SCHEDULED")
-                            score = g.get("score", {}).get("fullTime", {})
-                            
-                            matches.append({
-                                "id": g.get("id"),
-                                "date": game_date_local,
-                                "home_team": home_team,
-                                "away_team": away_team,
-                                "home_id": home_team_obj.get("id"),
-                                "away_id": away_team_obj.get("id"),
-                                "home_logo": home_team_obj.get("crest", ""),
-                                "away_logo": away_team_obj.get("crest", ""),
-                                "time": utc_date_str,
-                                "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
-                                "home_score": score.get("home"),
-                                "away_score": score.get("away")
-                            })
-            except Exception:
-                pass
-
-        return {"matches": matches}
-    except Exception as e:
-        return {"matches": [], "error": str(e)}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+        function closePronoModal() {
+            document.getElementById('prono-modal').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
