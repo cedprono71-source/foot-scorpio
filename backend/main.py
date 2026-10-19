@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="3.1",
-    description="Correction précise basée sur l'analyse des logos et abréviations pour séparer Rangers et Islanders."
+    version="4.0",
+    description="API avec interrogation dynamique et automatique des effectifs LNH."
 )
 
 app.add_middleware(
@@ -48,36 +48,6 @@ class MatchInput(BaseModel):
     away_expected_goals: float = 2.7
     home_b2b: bool = False
     away_b2b: bool = False
-
-# EFFECTIF OFFICIEL DES NEW YORK RANGERS
-RANGERS_CUSTOM_ROSTER = [
-    {"name": "Oliver Bjorkstrand", "pos": "AD", "goals": 6, "assists": 8, "points": 14, "goal_prob": 32.0, "assist_prob": 38.0, "point_prob": 56.0},
-    {"name": "Alexis Lafrenière", "pos": "AG", "goals": 7, "assists": 4, "points": 11, "goal_prob": 35.0, "assist_prob": 25.0, "point_prob": 55.0},
-    {"name": "Mika Zibanejad", "pos": "C", "goals": 3, "assists": 6, "points": 9, "goal_prob": 28.0, "assist_prob": 40.0, "point_prob": 52.0},
-    {"name": "Adam Fox", "pos": "D", "goals": 1, "assists": 8, "points": 9, "goal_prob": 15.0, "assist_prob": 50.0, "point_prob": 50.0},
-    {"name": "J.T. Miller", "pos": "C", "goals": 2, "assists": 5, "points": 7, "goal_prob": 22.0, "assist_prob": 35.0, "point_prob": 48.0},
-    {"name": "Pavel Dorofeyev", "pos": "AD", "goals": 4, "assists": 3, "points": 7, "goal_prob": 29.0, "assist_prob": 24.0, "point_prob": 46.0},
-    {"name": "Gabe Perreault", "pos": "AD", "goals": 3, "assists": 3, "points": 6, "goal_prob": 25.0, "assist_prob": 25.0, "point_prob": 42.0},
-    {"name": "Will Cuylle", "pos": "AG", "goals": 3, "assists": 3, "points": 6, "goal_prob": 24.0, "assist_prob": 24.0, "point_prob": 40.0},
-    {"name": "Eeli Tolvanen", "pos": "AD", "goals": 3, "assists": 2, "points": 5, "goal_prob": 26.0, "assist_prob": 20.0, "point_prob": 39.0},
-    {"name": "Sean Durzi", "pos": "D", "goals": 1, "assists": 4, "points": 5, "goal_prob": 12.0, "assist_prob": 30.0, "point_prob": 35.0},
-    {"name": "Tye Kartye", "pos": "AG", "goals": 2, "assists": 4, "points": 6, "goal_prob": 20.0, "assist_prob": 32.0, "point_prob": 38.0},
-    {"name": "Justin Dowling", "pos": "C", "goals": 1, "assists": 3, "points": 4, "goal_prob": 15.0, "assist_prob": 25.0, "point_prob": 32.0},
-    {"name": "Matt Rempe", "pos": "C", "goals": 0, "assists": 1, "points": 1, "goal_prob": 5.0, "assist_prob": 15.0, "point_prob": 18.0},
-    {"name": "Vladislav Gavrikov", "pos": "D", "goals": 1, "assists": 4, "points": 5, "goal_prob": 12.0, "assist_prob": 30.0, "point_prob": 35.0}
-]
-
-# EFFECTIF OFFICIEL DES NEW YORK ISLANDERS
-ISLANDERS_CUSTOM_ROSTER = [
-    {"name": "Mathew Barzal", "pos": "C", "goals": 4, "assists": 7, "points": 11, "goal_prob": 30.0, "assist_prob": 48.0, "point_prob": 54.0},
-    {"name": "Bo Horvat", "pos": "C", "goals": 6, "assists": 3, "points": 9, "goal_prob": 34.0, "assist_prob": 22.0, "point_prob": 50.0},
-    {"name": "Noah Dobson", "pos": "D", "goals": 1, "assists": 7, "points": 8, "goal_prob": 12.0, "assist_prob": 45.0, "point_prob": 46.0},
-    {"name": "Brock Nelson", "pos": "C", "goals": 5, "assists": 2, "points": 7, "goal_prob": 32.0, "assist_prob": 18.0, "point_prob": 44.0},
-    {"name": "Kyle Palmieri", "pos": "F", "goals": 4, "assists": 2, "points": 6, "goal_prob": 28.0, "assist_prob": 16.0, "point_prob": 39.0},
-    {"name": "Anders Lee", "pos": "AG", "goals": 3, "assists": 3, "points": 6, "goal_prob": 25.0, "assist_prob": 20.0, "point_prob": 38.0},
-    {"name": "Jean-Gabriel Pageau", "pos": "C", "goals": 2, "assists": 3, "points": 5, "goal_prob": 18.0, "assist_prob": 25.0, "point_prob": 35.0},
-    {"name": "Ryan Pulock", "pos": "D", "goals": 1, "assists": 3, "points": 4, "goal_prob": 10.0, "assist_prob": 30.0, "point_prob": 33.0}
-]
 
 def fetch_team_stats():
     stats_map = {}
@@ -146,22 +116,6 @@ def fetch_goalie_stats(team_abbrev, team_full_name=""):
     return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
 
 def fetch_all_players_projections(team_abbrev, expected_team_goals, team_full_name=""):
-    full_lower = team_full_name.lower()
-    
-    # Distinction stricte et prioritaire pour les Islanders
-    if "islanders" in full_lower or team_abbrev == "NYI":
-        players = ISLANDERS_CUSTOM_ROSTER
-        top_scorer = max(players, key=lambda x: x["goal_prob"])
-        top_passer = max(players, key=lambda x: x["assist_prob"])
-        return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
-        
-    # Distinction pour les Rangers
-    if "rangers" in full_lower or team_abbrev == "NYR" or full_lower == "new york":
-        players = RANGERS_CUSTOM_ROSTER
-        top_scorer = max(players, key=lambda x: x["goal_prob"])
-        top_passer = max(players, key=lambda x: x["assist_prob"])
-        return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
-
     players = []
     top_scorer, top_passer = None, None
     if not team_abbrev:
@@ -332,7 +286,6 @@ def get_nhl_matches(date: str = "now"):
                     home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
                     away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
                     
-                    # Analyse intelligente basée sur le lien du logo pour départager les deux New York
                     if home_name.lower() == "new york":
                         logo_url = home_obj.get("logo", "").lower()
                         if "nyi" in logo_url or "islanders" in logo_url:
@@ -363,4 +316,3 @@ def get_football_matches():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
