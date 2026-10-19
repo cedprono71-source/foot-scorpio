@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NHL IA Pronostics</title>
+    <title>Multi-IA Dashboard - NHL & Football</title>
     <style>
         :root {
             --bg-color: #0b0f19;
@@ -47,7 +47,7 @@
             background-color: var(--card-bg);
             border-radius: 12px;
             padding: 5px;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
             border: 1px solid var(--border-color);
         }
 
@@ -64,6 +64,37 @@
 
         .tab.active {
             background-color: var(--accent-color);
+            color: white;
+        }
+
+        /* Sous-onglets de championnats pour le Foot */
+        .sub-tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .sub-tabs::-webkit-scrollbar { height: 4px; }
+        .sub-tabs::-webkit-scrollbar-thumb { background-color: var(--border-color); border-radius: 4px; }
+
+        .sub-tab {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .sub-tab.active {
+            background-color: var(--blue-color);
+            border-color: var(--blue-color);
             color: white;
         }
 
@@ -129,7 +160,7 @@
 
         .no-matches { text-align: center; color: var(--text-muted); padding: 40px; background-color: var(--card-bg); border-radius: 14px; border: 1px solid var(--border-color); }
 
-        /* Style de la modale analytique complète */
+        /* Style de la modale analytique */
         .modal {
             display: none;
             position: fixed;
@@ -264,12 +295,20 @@
 <body>
     <div class="container">
         <header>
-            <h1>🏒 NHL IA Pronostics</h1>
+            <h1>⚡ Multi-IA Pronostics</h1>
         </header>
 
+        <!-- Onglets Principaux -->
         <div class="tabs">
-            <div class="tab active" id="tabNhl" onclick="switchTab('nhl')">🏒 NHL</div>
-            <div class="tab" id="tabFoot" onclick="switchTab('foot')">⚽ Football</div>
+            <div class="tab active" id="tabNhl" onclick="switchSport('nhl')">🏒 NHL</div>
+            <div class="tab" id="tabFoot" onclick="switchSport('foot')">⚽ Football</div>
+        </div>
+
+        <!-- Sous-onglets de championnats (visibles uniquement en mode Foot) -->
+        <div class="sub-tabs" id="footballLeagues" style="display: none;">
+            <div class="sub-tab active" onclick="switchLeague('all', event)">Tous</div>
+            <div class="sub-tab" onclick="switchLeague('ligue1', event)">Ligue 1</div>
+            <div class="sub-tab" onclick="switchLeague('premier-league', event)">Premier League</div>
         </div>
 
         <div class="dates-bar" id="datesBar"></div>
@@ -281,7 +320,7 @@
         </div>
     </div>
 
-    <!-- Modale Analytique Riche -->
+    <!-- Modale Analytique -->
     <div class="modal" id="predictionModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -296,6 +335,7 @@
 
     <script>
         let currentSport = 'nhl';
+        let currentLeague = 'all';
         let selectedDate = new Date().toISOString().split('T')[0];
         let currentMatchData = null;
 
@@ -327,10 +367,25 @@
             }
         }
 
-        function switchTab(sport) {
+        function switchSport(sport) {
             currentSport = sport;
             document.getElementById('tabNhl').className = `tab ${sport === 'nhl' ? 'active' : ''}`;
             document.getElementById('tabFoot').className = `tab ${sport === 'foot' ? 'active' : ''}`;
+            
+            const footLeaguesEl = document.getElementById('footballLeagues');
+            if (sport === 'foot') {
+                footLeaguesEl.style.display = 'flex';
+            } else {
+                footLeaguesEl.style.display = 'none';
+                currentLeague = 'all';
+            }
+            loadMatches();
+        }
+
+        function switchLeague(league, event) {
+            currentLeague = league;
+            document.querySelectorAll('.sub-tab').forEach(el => el.classList.remove('active'));
+            event.target.classList.add('active');
             loadMatches();
         }
 
@@ -338,16 +393,13 @@
             const container = document.getElementById('matchesContainer');
             const titleEl = document.getElementById('sectionTitle');
             
-            titleEl.innerText = currentSport === 'nhl' ? `MATCHS DU ${selectedDate}` : "SECTION FOOTBALL";
+            titleEl.innerText = currentSport === 'nhl' ? `MATCHS LNH DU ${selectedDate}` : `MATCHS FOOTBALL DU ${selectedDate}`;
             container.innerHTML = `<div class="no-matches">Chargement...</div>`;
 
-            if (currentSport === 'foot') {
-                container.innerHTML = `<div class="no-matches">Aucun match de football disponible pour le moment.</div>`;
-                return;
-            }
+            let endpoint = currentSport === 'nhl' ? `/api/matches/nhl?date=${selectedDate}` : `/api/matches/foot?date=${selectedDate}&league=${currentLeague}`;
 
             try {
-                const response = await fetch(`/api/matches/nhl?date=${selectedDate}`);
+                const response = await fetch(endpoint);
                 const data = await response.json();
                 
                 container.innerHTML = '';
@@ -379,11 +431,11 @@
                     card.innerHTML = `
                         <div class="team-info">
                             <div class="team-row">
-                                <img src="${m.home_logo}" alt="" onerror="this.style.display='none'">
+                                <img src="${m.home_logo || ''}" alt="" onerror="this.style.display='none'">
                                 <span>${m.home_team}</span>
                             </div>
                             <div class="team-row">
-                                <img src="${m.away_logo}" alt="" onerror="this.style.display='none'">
+                                <img src="${m.away_logo || ''}" alt="" onerror="this.style.display='none'">
                                 <span>${m.away_team}</span>
                             </div>
                         </div>
@@ -449,12 +501,10 @@
                 playersHtml = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted);">Aucune donnée joueur disponible</td></tr>`;
             }
 
-            // Sélection dynamique du buteur et passeur favori (basé sur le premier et deuxième joueur de la liste)
             const topScorer = playersList && playersList.length > 0 ? playersList[0] : { name: "N/A", pct: 0 };
             const topAssister = playersList && playersList.length > 1 ? playersList[1] : topScorer;
 
             modalBody.innerHTML = `
-                <!-- Probabilités Multi-IA -->
                 <div class="analytics-section">
                     <div class="analytics-title">📊 Probabilités Multi-IA</div>
                     <div class="prob-row">
@@ -464,7 +514,7 @@
                     <div class="progress-bar"><div class="bar-fill-home" style="width: ${pHome}%;"></div></div>
 
                     <div class="prob-row">
-                        <span>Match Nul / Prolongations</span>
+                        <span>Match Nul</span>
                         <span>${pDraw}%</span>
                     </div>
                     <div class="progress-bar"><div class="bar-fill-draw" style="width: ${pDraw}%;"></div></div>
@@ -476,47 +526,30 @@
                     <div class="progress-bar"><div class="bar-fill-away" style="width: ${pAway}%;"></div></div>
                 </div>
 
-                <!-- Total Buts -->
                 <div class="analytics-section">
-                    <div class="analytics-title">🏒 Total Buts (Over / Under 5.5)</div>
+                    <div class="analytics-title">⚽ Analyse des Buts</div>
                     <div style="display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: bold;">
-                        <span>Plus de 5.5 buts</span>
+                        <span>Probabilité Plus de 2.5 buts</span>
                         <span style="color: var(--accent-color);">${res.over_under_5_5.over_prob}%</span>
                     </div>
                 </div>
 
-                <!-- Gardiens & Power Play -->
                 <div class="analytics-section">
-                    <div class="analytics-title">🥅 Gardiens & Power Play</div>
-                    <div class="goalies-grid">
-                        <div class="goalie-card">
-                            <div style="font-weight: bold; margin-bottom: 4px;">${res.goalies.home.name}</div>
-                            <div style="color: var(--text-muted);">SV%: ${(res.goalies.home.save_pct * 100).toFixed(1)}%</div>
-                        </div>
-                        <div class="goalie-card">
-                            <div style="font-weight: bold; margin-bottom: 4px;">${res.goalies.away.name}</div>
-                            <div style="color: var(--text-muted);">SV%: ${(res.goalies.away.save_pct * 100).toFixed(1)}%</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Projections Joueurs -->
-                <div class="analytics-section">
-                    <div class="analytics-title">👤 Projections Joueurs (Point %)</div>
+                    <div class="analytics-title">👤 Projections Joueurs & Buteurs</div>
                     <div class="team-tabs-modal">
                         <div class="team-tab ${activeTeamTab === 'home' ? 'active' : ''}" onclick="renderModalContent('home')">${homeTeamName}</div>
                         <div class="team-tab ${activeTeamTab === 'away' ? 'active' : ''}" onclick="renderModalContent('away')">${awayTeamName}</div>
                     </div>
                     <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 10px;">
-                        🎯 <span style="color: var(--text-muted);">Buteur Favori IA :</span> <strong style="color: var(--accent-color);">${topScorer.name} (${topScorer.pct}%)</strong><br>
-                        🏒 <span style="color: var(--text-muted);">Passeur Favori IA :</span> <strong style="color: var(--blue-color);">${topAssister.name} (${topAssister.pct}%)</strong>
+                        🎯 <span style="color: var(--text-muted);">Buteur Favori :</span> <strong style="color: var(--accent-color);">${topScorer.name} (${topScorer.pct}%)</strong><br>
+                        🎯 <span style="color: var(--text-muted);">Passeur Favori :</span> <strong style="color: var(--blue-color);">${topAssister.name} (${topAssister.pct}%)</strong>
                     </div>
                     <table class="player-table">
                         <thead>
                             <tr>
                                 <th>Joueur</th>
                                 <th>Stats</th>
-                                <th>Point %</th>
+                                <th>Impact %</th>
                             </tr>
                         </thead>
                         <tbody>
