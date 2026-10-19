@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="13.4",
-    description="Moteur de prédiction LNH & Football avec statistiques de joueurs unifiées."
+    version="13.5",
+    description="Moteur de prédiction LNH & Football avec calendrier unifié et modale de pronostics."
 )
 
 app.add_middleware(
