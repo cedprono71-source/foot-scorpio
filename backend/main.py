@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="13.1",
-    description="Moteur de prédiction LNH & Football avec API officielle de football en direct et gestion exacte des dates."
+    version="13.2",
+    description="Moteur de prédiction LNH & Football avec calendrier unifié par date."
 )
 
 app.add_middleware(
@@ -348,7 +348,7 @@ def get_nhl_matches(date: str = "now"):
         return {"matches": [], "error": str(e)}
 
 @app.get("/api/matches/foot")
-def get_football_matches(date: str = "now", league: str = "all"):
+def get_football_matches(date: str = "now"):
     try:
         if not date or date == "now":
             target_date_str = datetime.now().strftime("%Y-%m-%d")
@@ -361,49 +361,42 @@ def get_football_matches(date: str = "now", league: str = "all"):
         if api_token:
             try:
                 headers = {"X-Auth-Token": api_token}
-                url = f"https://api.football-data.org/v4/matches?date={target_date_str}"
+                target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
+                date_from = (target_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+                date_to = (target_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+                
+                url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
                 response = requests.get(url, headers=headers, timeout=5)
                 
                 if response.status_code == 200:
                     data = response.json()
                     for g in data.get("matches", []):
-                        comp_code = g.get("competition", {}).get("code", "").lower()
-                        
-                        league_mapping = {
-                            "fl1": "ligue1",
-                            "pl": "premier-league",
-                            "cl": "champions-league"
-                        }
-                        mapped_league = league_mapping.get(comp_code, "other")
-                        
-                        if league == "all" or mapped_league == league:
-                            utc_date_str = g.get("utcDate", "")
-                            if utc_date_str:
-                                dt_utc = datetime.strptime(utc_date_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                                dt_local = dt_utc + timedelta(hours=2)
-                                game_date_local = dt_local.strftime("%Y-%m-%d")
-                            else:
-                                game_date_local = target_date_str
+                        utc_date_str = g.get("utcDate", "")
+                        if utc_date_str:
+                            dt_utc = datetime.strptime(utc_date_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                            dt_local = dt_utc + timedelta(hours=2)
+                            game_date_local = dt_local.strftime("%Y-%m-%d")
+                        else:
+                            game_date_local = target_date_str
 
-                            if game_date_local == target_date_str:
-                                home_team = g.get("homeTeam", {}).get("name", "Domicile")
-                                away_team = g.get("awayTeam", {}).get("name", "Extérieur")
-                                status = g.get("status", "SCHEDULED")
-                                score = g.get("score", {}).get("fullTime", {})
-                                
-                                matches.append({
-                                    "id": g.get("id"),
-                                    "league": mapped_league,
-                                    "date": game_date_local,
-                                    "home_team": home_team,
-                                    "away_team": away_team,
-                                    "home_logo": g.get("homeTeam", {}).get("crest", ""),
-                                    "away_logo": g.get("awayTeam", {}).get("crest", ""),
-                                    "time": utc_date_str,
-                                    "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
-                                    "home_score": score.get("home"),
-                                    "away_score": score.get("away")
-                                })
+                        if game_date_local == target_date_str:
+                            home_team = g.get("homeTeam", {}).get("name", "Domicile")
+                            away_team = g.get("awayTeam", {}).get("name", "Extérieur")
+                            status = g.get("status", "SCHEDULED")
+                            score = g.get("score", {}).get("fullTime", {})
+                            
+                            matches.append({
+                                "id": g.get("id"),
+                                "date": game_date_local,
+                                "home_team": home_team,
+                                "away_team": away_team,
+                                "home_logo": g.get("homeTeam", {}).get("crest", ""),
+                                "away_logo": g.get("awayTeam", {}).get("crest", ""),
+                                "time": utc_date_str,
+                                "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
+                                "home_score": score.get("home"),
+                                "away_score": score.get("away")
+                            })
             except Exception:
                 pass
 
