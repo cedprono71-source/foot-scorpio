@@ -67,7 +67,6 @@
             color: white;
         }
 
-        /* Sous-onglets de championnats pour le Foot */
         .sub-tabs {
             display: flex;
             gap: 6px;
@@ -160,7 +159,6 @@
 
         .no-matches { text-align: center; color: var(--text-muted); padding: 40px; background-color: var(--card-bg); border-radius: 14px; border: 1px solid var(--border-color); }
 
-        /* Style de la modale analytique */
         .modal {
             display: none;
             position: fixed;
@@ -233,20 +231,6 @@
         .bar-fill-draw { background-color: var(--text-muted); height: 100%; }
         .bar-fill-away { background-color: var(--accent-color); height: 100%; }
 
-        .goalies-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-
-        .goalie-card {
-            background: rgba(19, 27, 46, 0.8);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 8px;
-            font-size: 0.85rem;
-        }
-
         .team-tabs-modal {
             display: flex;
             background-color: var(--bg-color);
@@ -298,13 +282,11 @@
             <h1>⚡ Multi-IA Pronostics</h1>
         </header>
 
-        <!-- Onglets Principaux -->
         <div class="tabs">
             <div class="tab active" id="tabNhl" onclick="switchSport('nhl')">🏒 NHL</div>
             <div class="tab" id="tabFoot" onclick="switchSport('foot')">⚽ Football</div>
         </div>
 
-        <!-- Sous-onglets de championnats (visibles uniquement en mode Foot) -->
         <div class="sub-tabs" id="footballLeagues" style="display: none;">
             <div class="sub-tab active" onclick="switchLeague('all', event)">Tous</div>
             <div class="sub-tab" onclick="switchLeague('ligue1', event)">Ligue 1</div>
@@ -320,7 +302,6 @@
         </div>
     </div>
 
-    <!-- Modale Analytique -->
     <div class="modal" id="predictionModal">
         <div class="modal-content">
             <div class="modal-header">
