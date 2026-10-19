@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="10.0",
-    description="Moteur de prédiction LNH & Football avec calendrier de football rotatif dynamique."
+    version="11.0",
+    description="Moteur de prédiction LNH & Football avec API de football en direct."
 )
 
 app.add_middleware(
@@ -355,69 +355,50 @@ def get_football_matches(date: str = "now", league: str = "all"):
         else:
             target_date_str = date
 
-        pool_ligue1 = [
-            ("Paris Saint-Germain", "Olympique de Marseille"),
-            ("AS Monaco", "Olympique Lyonnais"),
-            ("LOSC Lille", "OGC Nice"),
-            ("Stade Rennais FC", "RC Lens"),
-            ("Stade Brestois 29", "RC Strasbourg"),
-            ("FC Nantes", "Toulouse FC"),
-            ("Montpellier HSC", "Stade de Reims")
-        ]
-        
-        pool_pl = [
-            ("Manchester City", "Arsenal"),
-            ("Liverpool FC", "Chelsea FC"),
-            ("Manchester United", "Tottenham Hotspur"),
-            ("Newcastle United", "Aston Villa"),
-            ("Brighton & Hove Albion", "West Ham United"),
-            ("Crystal Palace", "Everton"),
-            ("Fulham FC", "Brentford FC")
-        ]
+        matches = []
+        api_token = os.getenv("FOOTBALL_API_KEY", "")
 
-        dt = datetime.strptime(target_date_str, "%Y-%m-%d")
-        day_seed = dt.toordinal()
+        if api_token:
+            try:
+                headers = {"X-Auth-Token": api_token}
+                url = f"https://api.football-data.org/v4/matches?date={target_date_str}"
+                response = requests.get(url, headers=headers, timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    for g in data.get("matches", []):
+                        comp_code = g.get("competition", {}).get("code", "").lower()
+                        
+                        league_mapping = {
+                            "fl1": "ligue1",
+                            "pl": "premier-league",
+                            "cl": "champions-league"
+                        }
+                        mapped_league = league_mapping.get(comp_code, "other")
+                        
+                        if league == "all" or mapped_league == league:
+                            home_team = g.get("homeTeam", {}).get("name", "Domicile")
+                            away_team = g.get("awayTeam", {}).get("name", "Extérieur")
+                            status = g.get("status", "SCHEDULED")
+                            score = g.get("score", {}).get("fullTime", {})
+                            
+                            matches.append({
+                                "id": g.get("id"),
+                                "league": mapped_league,
+                                "date": target_date_str,
+                                "home_team": home_team,
+                                "away_team": away_team,
+                                "home_logo": g.get("homeTeam", {}).get("crest", ""),
+                                "away_logo": g.get("awayTeam", {}).get("crest", ""),
+                                "time": g.get("utcDate"),
+                                "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
+                                "home_score": score.get("home"),
+                                "away_score": score.get("away")
+                            })
+            except Exception:
+                pass
 
-        l1_selected = [pool_ligue1[(day_seed + i) % len(pool_ligue1)] for i in range(2)]
-        pl_selected = [pool_pl[(day_seed + i) % len(pool_pl)] for i in range(2)]
-
-        all_matches = []
-        
-        for i, (home, away) in enumerate(l1_selected):
-            all_matches.append({
-                "id": 1000 + (day_seed % 900) + i,
-                "league": "ligue1",
-                "date": target_date_str,
-                "home_team": home,
-                "away_team": away,
-                "home_logo": "",
-                "away_logo": "",
-                "time": f"{target_date_str}T{17 + (i*2):02d}:00:00Z",
-                "game_state": "FUT",
-                "home_score": None,
-                "away_score": None
-            })
-
-        for i, (home, away) in enumerate(pl_selected):
-            all_matches.append({
-                "id": 2000 + (day_seed % 900) + i,
-                "league": "premier-league",
-                "date": target_date_str,
-                "home_team": home,
-                "away_team": away,
-                "home_logo": "",
-                "away_logo": "",
-                "time": f"{target_date_str}T{15 + (i*2):02d}:30:00Z",
-                "game_state": "FUT",
-                "home_score": None,
-                "away_score": None
-            })
-
-        filtered = [m for m in all_matches if m["date"] == target_date_str]
-        if league != "all":
-            filtered = [m for m in filtered if m["league"] == league]
-
-        return {"matches": filtered}
+        return {"matches": matches}
     except Exception as e:
         return {"matches": [], "error": str(e)}
 
