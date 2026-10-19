@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="2.9",
-    description="API avec dissociation stricte et définitive des effectifs Rangers et Islanders."
+    version="3.0",
+    description="Correction de la détection 'New York' générique."
 )
 
 app.add_middleware(
@@ -67,7 +67,7 @@ RANGERS_CUSTOM_ROSTER = [
     {"name": "Vladislav Gavrikov", "pos": "D", "goals": 1, "assists": 4, "points": 5, "goal_prob": 12.0, "assist_prob": 30.0, "point_prob": 35.0}
 ]
 
-# EFFECTIF OFFICIEL DES NEW YORK ISLANDERS (Totalement indépendant)
+# EFFECTIF OFFICIEL DES NEW YORK ISLANDERS
 ISLANDERS_CUSTOM_ROSTER = [
     {"name": "Mathew Barzal", "pos": "C", "goals": 4, "assists": 7, "points": 11, "goal_prob": 30.0, "assist_prob": 48.0, "point_prob": 54.0},
     {"name": "Bo Horvat", "pos": "C", "goals": 6, "assists": 3, "points": 9, "goal_prob": 34.0, "assist_prob": 22.0, "point_prob": 50.0},
@@ -76,10 +76,7 @@ ISLANDERS_CUSTOM_ROSTER = [
     {"name": "Kyle Palmieri", "pos": "F", "goals": 4, "assists": 2, "points": 6, "goal_prob": 28.0, "assist_prob": 16.0, "point_prob": 39.0},
     {"name": "Anders Lee", "pos": "AG", "goals": 3, "assists": 3, "points": 6, "goal_prob": 25.0, "assist_prob": 20.0, "point_prob": 38.0},
     {"name": "Jean-Gabriel Pageau", "pos": "C", "goals": 2, "assists": 3, "points": 5, "goal_prob": 18.0, "assist_prob": 25.0, "point_prob": 35.0},
-    {"name": "Ryan Pulock", "pos": "D", "goals": 1, "assists": 3, "points": 4, "goal_prob": 10.0, "assist_prob": 30.0, "point_prob": 33.0},
-    {"name": "Brayden Schenn", "pos": "C", "goals": 3, "assists": 4, "points": 7, "goal_prob": 22.0, "assist_prob": 32.0, "point_prob": 41.0},
-    {"name": "Anthony Duclair", "pos": "AG", "goals": 3, "assists": 2, "points": 5, "goal_prob": 25.0, "assist_prob": 20.0, "point_prob": 36.0},
-    {"name": "Tony DeAngelo", "pos": "D", "goals": 1, "assists": 5, "points": 6, "goal_prob": 12.0, "assist_prob": 38.0, "point_prob": 40.0}
+    {"name": "Ryan Pulock", "pos": "D", "goals": 1, "assists": 3, "points": 4, "goal_prob": 10.0, "assist_prob": 30.0, "point_prob": 33.0}
 ]
 
 def fetch_team_stats():
@@ -117,14 +114,18 @@ def fetch_team_stats():
     
     stats_map["new york rangers"] = {"abbrev": "NYR", "offense": 3.1, "defense": 2.2, "pp_pct": 0.20, "pk_pct": 0.935}
     stats_map["new york islanders"] = {"abbrev": "NYI", "offense": 2.8, "defense": 2.6, "pp_pct": 0.19, "pk_pct": 0.810}
+    stats_map["new york"] = {"abbrev": "NYR", "offense": 3.1, "defense": 2.2, "pp_pct": 0.20, "pk_pct": 0.935}
     return stats_map
 
 def fetch_goalie_stats(team_abbrev, team_full_name=""):
     full_lower = team_full_name.lower()
-    if team_abbrev == "NYR" or "rangers" in full_lower:
-        return {"name": "Igor Shesterkin", "save_pct": 0.922, "gaa": 2.20}
+    # Si le nom est juste "New York", on regarde si c' Islanders ou Rangers selon le contexte ou l'abréviation
     if team_abbrev == "NYI" or "islanders" in full_lower:
         return {"name": "Ilya Sorokin", "save_pct": 0.915, "gaa": 2.45}
+    
+    # Par défaut pour New York / Rangers
+    if team_abbrev == "NYR" or "rangers" in full_lower or full_lower == "new york":
+        return {"name": "Igor Shesterkin", "save_pct": 0.922, "gaa": 2.20}
         
     if not team_abbrev:
         return {"name": "Gardien Titulaire", "save_pct": 0.905, "gaa": 2.80}
@@ -151,15 +152,17 @@ def fetch_goalie_stats(team_abbrev, team_full_name=""):
 def fetch_all_players_projections(team_abbrev, expected_team_goals, team_full_name=""):
     full_lower = team_full_name.lower()
     
-    # SÉPARATION STRICTE ET EXCLUSIVE DES DEUX ÉQUIPES NEW-YORKAISES
-    if "rangers" in full_lower or team_abbrev == "NYR":
-        players = RANGERS_CUSTOM_ROSTER
+    # Si l'API renvoie juste "New York", on discrimine selon le gardien ou on associe aux Rangers par défaut,
+    # mais Surtout : si c'est les Islanders, on force les Islanders.
+    if "islanders" in full_lower or team_abbrev == "NYI":
+        players = ISLANDERS_CUSTOM_ROSTER
         top_scorer = max(players, key=lambda x: x["goal_prob"])
         top_passer = max(players, key=lambda x: x["assist_prob"])
         return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
         
-    if "islanders" in full_lower or team_abbrev == "NYI":
-        players = ISLANDERS_CUSTOM_ROSTER
+    # Dans tous les autres cas pour New York (Rangers ou nom générique "New York"), on force les Rangers
+    if "rangers" in full_lower or team_abbrev == "NYR" or full_lower == "new york":
+        players = RANGERS_CUSTOM_ROSTER
         top_scorer = max(players, key=lambda x: x["goal_prob"])
         top_passer = max(players, key=lambda x: x["assist_prob"])
         return {"all": players, "top_scorer": top_scorer, "top_passer": top_passer}
@@ -236,12 +239,12 @@ def predict_match(match: MatchInput):
             away_st = st
             away_abbrev = st.get("abbrev", "")
 
-    if "rangers" in match.home_team.lower():
+    if "rangers" in match.home_team.lower() or match.home_team.lower() == "new york":
         home_abbrev = "NYR"
     elif "islanders" in match.home_team.lower():
         home_abbrev = "NYI"
 
-    if "rangers" in match.away_team.lower():
+    if "rangers" in match.away_team.lower() or match.away_team.lower() == "new york":
         away_abbrev = "NYR"
     elif "islanders" in match.away_team.lower():
         away_abbrev = "NYI"
@@ -330,8 +333,25 @@ def get_nhl_matches(date: str = "now"):
                 for g in day.get("games", []):
                     home_obj = g.get("homeTeam", {})
                     away_obj = g.get("awayTeam", {})
+                    # Si l'API renvoie juste "New York", on essaie de récupérer le nom complet ou on garde "New York"
                     home_name = home_obj.get("placeName", {}).get("default") or home_obj.get("commonName", {}).get("default", "Domicile")
                     away_name = away_obj.get("placeName", {}).get("default") or away_obj.get("commonName", {}).get("default", "Extérieur")
+                    
+                    # Correction pour éviter le simple "New York" ambigu si l'ID ou le logo indique les Rangers
+                    if home_name.lower() == "new york":
+                        logo_url = home_obj.get("logo", "").lower()
+                        if "islanders" in logo_url:
+                            home_name = "New York Islanders"
+                        else:
+                            home_name = "New York Rangers"
+                            
+                    if away_name.lower() == "new york":
+                        logo_url = away_obj.get("logo", "").lower()
+                        if "islanders" in logo_url:
+                            away_name = "New York Islanders"
+                        else:
+                            away_name = "New York Rangers"
+
                     matches.append({
                         "id": g.get("id"), "date": game_date, "home_team": home_name, "away_team": away_name,
                         "home_logo": home_obj.get("logo", ""), "away_logo": away_obj.get("logo", ""), "time": g.get("startTimeUTC")
