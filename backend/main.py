@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="6.3",
-    description="Moteur de prédiction LNH, calendrier avec gestion des fuseaux horaires et effectifs dynamiques."
+    version="7.0",
+    description="Moteur de prédiction LNH & Football avec sous-onglets de championnats."
 )
 
 app.add_middleware(
@@ -25,7 +25,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
 NHL_HISTORY_DB = os.path.join(os.path.dirname(__file__), "nhl_3y_history.json")
 
 def load_three_year_history():
@@ -345,6 +344,51 @@ def get_nhl_matches(date: str = "now"):
                         })
             return {"matches": matches}
         return {"matches": []}
+    except Exception as e:
+        return {"matches": [], "error": str(e)}
+
+@app.get("/api/matches/foot")
+def get_football_matches(date: str = "now", league: str = "all"):
+    try:
+        if not date or date == "now":
+            target_date_str = datetime.now().strftime("%Y-%m-%d")
+        else:
+            target_date_str = date
+
+        matches = [
+            {
+                "id": 101,
+                "league": "ligue1",
+                "date": target_date_str,
+                "home_team": "Paris Saint-Germain",
+                "away_team": "Olympique de Marseille",
+                "home_logo": "",
+                "away_logo": "",
+                "time": f"{target_date_str}T21:00:00Z",
+                "game_state": "FUT",
+                "home_score": None,
+                "away_score": None
+            },
+            {
+                "id": 102,
+                "league": "premier-league",
+                "date": target_date_str,
+                "home_team": "Manchester City",
+                "away_team": "Arsenal",
+                "home_logo": "",
+                "away_logo": "",
+                "time": f"{target_date_str}T17:30:00Z",
+                "game_state": "FUT",
+                "home_score": None,
+                "away_score": None
+            }
+        ]
+        
+        filtered = [m for m in matches if m["date"] == target_date_str]
+        if league != "all":
+            filtered = [m for m in filtered if m["league"] == league]
+            
+        return {"matches": filtered}
     except Exception as e:
         return {"matches": [], "error": str(e)}
 
