@@ -13,8 +13,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="6.0",
-    description="Moteur de prédiction LNH avec historique des matchs joués et scores en direct."
+    version="6.1",
+    description="Moteur de prédiction LNH et calendrier avec historique des scores."
 )
 
 app.add_middleware(
@@ -249,21 +249,24 @@ def predict_match(match: MatchInput):
 
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str = "now"):
-    """
-    Récupère le calendrier et les scores des matchs pour une date spécifique.
-    Supporte aussi bien les dates futures que passées grâce à l'API LNH.
-    """
     try:
-        target_date = datetime.strptime(date, "%Y-%m-%d") if date != "now" else datetime.now()
-        date_str = target_date.strftime("%Y-%m-%d")
+        if not date or date == "now":
+            target_date_str = datetime.now().strftime("%Y-%m-%d")
+        else:
+            target_date_str = date
+
+        target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
+        start_date_str = (target_dt - timedelta(days=1)).strftime("%Y-%m-%d")
         
-        url = f"https://api-web.nhle.com/v1/schedule/{date_str}"
+        url = f"https://api-web.nhle.com/v1/schedule/{start_date_str}"
         response = requests.get(url)
+        
         if response.status_code == 200:
             data = response.json()
             matches = []
             for day in data.get("gameWeek", []):
-                if day.get("date") == date_str:
+                game_date = day.get("date")
+                if game_date == target_date_str:
                     for g in day.get("games", []):
                         home_obj = g.get("homeTeam", {})
                         away_obj = g.get("awayTeam", {})
@@ -279,20 +282,20 @@ def get_nhl_matches(date: str = "now"):
                         game_state = g.get("gameState", "FUT")
                         matches.append({
                             "id": g.get("id"),
-                            "date": date_str,
+                            "date": game_date,
                             "home_team": home_name,
                             "away_team": away_name,
                             "home_logo": home_obj.get("logo", ""),
                             "away_logo": away_obj.get("logo", ""),
                             "time": g.get("startTimeUTC"),
                             "game_state": game_state,
-                            "home_score": home_obj.get("score", 0) if game_state in ["OFF", "FINAL", "LIVE"] else None,
-                            "away_score": away_obj.get("score", 0) if game_state in ["OFF", "FINAL", "LIVE"] else None
+                            "home_score": home_obj.get("score") if game_state in ["OFF", "FINAL", "LIVE"] else None,
+                            "away_score": away_obj.get("score") if game_state in ["OFF", "FINAL", "LIVE"] else None
                         })
             return {"matches": matches}
         return {"matches": []}
     except Exception as e:
-        return {"error": str(e)}
+        return {"matches": [], "error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
