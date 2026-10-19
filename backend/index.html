@@ -440,31 +440,72 @@
             const modalBody = document.getElementById('modal-body');
             
             modal.style.display = 'flex';
-            modalBody.innerHTML = `<p style="text-align: center; color: var(--text-muted);">Calcul du modèle pour <b>${home} vs ${away}</b>...</p>`;
+            modalBody.innerHTML = `<p style="text-align: center; color: var(--text-muted);">Calcul de l'analyse pour <b>${home} vs ${away}</b>...</p>`;
 
             try {
-                // Appel vers votre endpoint FastAPI pour récupérer le modèle de Poisson / pronos
                 let response = await fetch(`/api/prono?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}&sport=${currentSport}`);
                 let data = await response.json();
 
+                let drawHtml = currentSport === 'foot' ? `<div style="display: flex; justify-content: space-between;"><span>Match nul :</span> <b>${data.draw_prob || '24'}%</b></div>` : '';
+
                 modalBody.innerHTML = `
-                    <div style="font-size: 0.95rem; display: flex; flex-direction: column; gap: 8px;">
-                        <p style="margin: 0; font-weight: bold; text-align: center; color: var(--text-main);">${home} vs ${away}</p>
-                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 5px 0;">
-                        <p style="margin: 0;"><b>Victoire ${home} :</b> ${data.home_win_prob || '52'}%</p>
-                        <p style="margin: 0;"><b>Match nul :</b> ${data.draw_prob || '24'}%</p> Désactivable si NHL
-                        <p style="margin: 0;"><b>Victoire ${away} :</b> ${data.away_win_prob || '24'}%</p>
-                        <p style="margin: 0;"><b>Buts attendus (Poisson) :</b> ${home} (${data.home_xg || '1.6'}) - ${away} (${data.away_xg || '1.1'})</p>
+                    <div style="font-size: 0.9rem; display: flex; flex-direction: column; gap: 10px;">
+                        <p style="margin: 0; font-weight: bold; text-align: center; color: var(--text-main); font-size: 1rem;">${home} vs ${away}</p>
+                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 2px 0;">
+                        
+                        <!-- % de Victoire -->
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Probabilités de victoire</span>
+                            <div style="display: flex; justify-content: space-between;"><span>${home} :</span> <b>${data.home_win_prob || '52'}%</b></div>
+                            ${drawHtml}
+                            <div style="display: flex; justify-content: space-between;"><span>${away} :</span> <b>${data.away_win_prob || '24'}%</b></div>
+                        </div>
+
+                        <!-- Score Prédiction -->
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Score Prédiction</span>
+                            <b style="font-size: 1.1rem; color: var(--foot-color);">${data.predicted_score || '2 - 1'}</b>
+                        </div>
+
+                        <!-- But attendu -->
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Buts attendus (xG)</span>
+                            <span>${home} <b>(${data.home_xg || '1.6'})</b> - ${away} <b>(${data.away_xg || '1.1'})</b></span>
+                        </div>
+
+                        <!-- Potentiel Buteurs / Passeurs -->
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">Joueurs clés (Buteurs / Passeurs)</span>
+                            <div style="font-size: 0.85rem;">⚽ <b>${home} :</b> ${data.home_scorer || 'Joueur 1, Joueur 2'}</div>
+                            <div style="font-size: 0.85rem;">⚽ <b>${away} :</b> ${data.away_scorer || 'Joueur A'}</div>
+                        </div>
                     </div>
                 `;
             } catch (e) {
-                // Mode de secours si l'API de prono n'est pas encore branchée côté FastAPI
+                let drawHtml = currentSport === 'foot' ? `<div style="display: flex; justify-content: space-between;"><span>Match nul :</span> <b>24%</b></div>` : '';
                 modalBody.innerHTML = `
-                    <div style="font-size: 0.95rem; display: flex; flex-direction: column; gap: 8px;">
-                        <p style="margin: 0; font-weight: bold; text-align: center;">${home} vs ${away}</p>
-                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 5px 0;">
-                        <p style="margin: 0; color: var(--text-muted);">Modèle de Poisson prêt pour : <b>${currentSport.toUpperCase()}</b></p>
-                        <p style="margin: 0;">Connexion au backend en cours...</p>
+                    <div style="font-size: 0.9rem; display: flex; flex-direction: column; gap: 10px;">
+                        <p style="margin: 0; font-weight: bold; text-align: center; font-size: 1rem;">${home} vs ${away}</p>
+                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 2px 0;">
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">PROBABILITÉS</span>
+                            <div style="display: flex; justify-content: space-between;"><span>${home} :</span> <b>52%</b></div>
+                            ${drawHtml}
+                            <div style="display: flex; justify-content: space-between;"><span>${away} :</span> <b>24%</b></div>
+                        </div>
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">SCORE PRÉDICTION</span>
+                            <b style="font-size: 1.1rem; color: var(--foot-color);">2 - 1</b>
+                        </div>
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">BUTS ATTENDUS (XG)</span>
+                            <span>${home} (1.6) - ${away} (1.1)</span>
+                        </div>
+                        <div style="background-color: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">JOUEURS CLÉS</span>
+                            <div style="font-size: 0.85rem;">⚽ ${home} : En cours...</div>
+                            <div style="font-size: 0.85rem;">⚽ ${away} : En cours...</div>
+                        </div>
                     </div>
                 `;
             }
