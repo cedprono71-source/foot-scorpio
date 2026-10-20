@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="Multi-IA Pronostics API", version="20.5")
+app = FastAPI(title="Multi-IA Pronostics API", version="20.6")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,7 +26,7 @@ class MatchRequest(BaseModel):
     away_id: int = None
 
 
-# --- Moteur Consensus 5 IA (Poisson/xG, ML, Streak, H2H, Fatigue) ---[span_2](start_span)[span_2](end_span)
+# --- Moteur Consensus 5 IA (Poisson/xG, ML, Streak, H2H, Fatigue) ---[span_1](start_span)[span_1](end_span)
 def ai_poisson_model(home_team, away_team): return {"home": 45.0, "draw": 25.0, "away": 30.0}
 def ai_machine_learning_model(home_team, away_team): return {"home": 48.0, "draw": 22.0, "away": 30.0}
 def ai_streak_model(home_team, away_team): return {"home": 42.0, "draw": 28.0, "away": 30.0}
@@ -51,7 +51,7 @@ def calculate_5_ai_consensus(home_team, away_team):
     }
 
 
-# --- ROUTE PRINCIPALE : Affiche votre interface (index.html) ---[span_3](start_span)[span_3](end_span)
+# --- ROUTE PRINCIPALE : Affiche votre interface (index.html) ---[span_2](start_span)[span_2](end_span)
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -64,7 +64,7 @@ def serve_home():
 # --- Système de Cache pour Football ---
 FOOTBALL_CACHE = {}
 
-# --- Route Football : Compétitions élargies (inclus EL/ECL pour les jeudis) ---
+# --- Route Football : Tous les championnats majeurs intégrés ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     if date in FOOTBALL_CACHE:
@@ -73,8 +73,8 @@ def get_foot_matches(date: str):
     headers = {"X-Auth-Token": API_KEY}
     formatted_matches = []
     
-    # Ajout de l'Europa League (EL) et Europa Conference League (ECL) pour couvrir les jeudis
-    competitions = ["CL", "PL", "SA", "PD", "FL1", "EL", "ECL"]
+    # Liste complète élargie pour couvrir un maximum de jours et de compétitions
+    competitions = ["CL", "PL", "SA", "PD", "BL1", "FL1", "EL", "ECL", "PPL", "DED"]
     
     try:
         for comp in competitions:
@@ -191,7 +191,7 @@ def fetch_nhl_roster(team_str: str):
     return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 65}]
 
 
-# --- Route NHL : API publique officielle[span_4](start_span)[span_4](end_span) ---
+# --- Route NHL : API publique officielle[span_3](start_span)[span_3](end_span) ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     url = f"https://api-web.nhle.com/v1/score/{date}"
