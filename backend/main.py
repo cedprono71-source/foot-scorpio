@@ -1,12 +1,11 @@
 import os
-import time
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="Multi-IA Pronostics API", version="20.8")
+app = FastAPI(title="Multi-IA Pronostics API", version="21.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,8 +15,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_KEY = os.getenv("API_KEY") or os.getenv("FOOTBALL_API_KEY") or os.getenv("FOOT_API_KEY") or "d005c..."
-
 class MatchRequest(BaseModel):
     home_team: str
     away_team: str
@@ -25,7 +22,7 @@ class MatchRequest(BaseModel):
     away_id: int = None
 
 
-# --- Moteur Consensus 5 IA ---[span_0](start_span)[span_0](end_span)
+# --- Moteur Consensus 5 IA ---
 def ai_poisson_model(home_team, away_team): return {"home": 45.0, "draw": 25.0, "away": 30.0}
 def ai_machine_learning_model(home_team, away_team): return {"home": 48.0, "draw": 22.0, "away": 30.0}
 def ai_streak_model(home_team, away_team): return {"home": 42.0, "draw": 28.0, "away": 30.0}
@@ -50,6 +47,7 @@ def calculate_5_ai_consensus(home_team, away_team):
     }
 
 
+# --- ROUTE PRINCIPALE ---
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -59,48 +57,61 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-FOOTBALL_CACHE = {}
-
-# --- Route Football : Filtrage par date avec correspondance exacte sur les vrais matchs ---
+# --- Route Football : Basée sur l'API publique ESPN (Couvre 7j/7 sans coupure) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
-    if date in FOOTBALL_CACHE:
-        return FOOTBALL_CACHE[date]
-
-    headers = {"X-Auth-Token": API_KEY}
+    # Transformation de la date (ex: 2026-10-22 en 20261022 pour ESPN)
+    espn_date = date.replace("-", "")
+    
+    # Ligues majeures suivies sur ESPN (Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League)
+    leagues = ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "uefa.champions", "uefa.europa"]
     formatted_matches = []
-    competitions = ["CL", "PL", "SA", "PD", "BL1", "FL1", "EL", "ECL"]
     
     try:
-        for comp in competitions:
-            # On interroge les matchs de la compétition pour la date ciblée
-            url = f"https://api.football-data.org/v4/competitions/{comp}/matches?dateFrom={date}&dateTo={date}"
-            response = requests.get(url, headers=headers)
+        for league in leagues:
+            url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={espn_date}"
+            response = requests.get(url, timeout=5)
             
             if response.status_code == 200:
                 data = response.json()
-                for m in data.get("matches", []):
-                    utc_date_str = m.get("utcDate", "")
-                    game_time = utc_date_str[11:16] if len(utc_date_str) >= 16 else ""
-                    status = m.get("status")
-                    game_state = "OFF" if status == "FINISHED" else game_time
+                for event in data.get("events", []):
+                    competitions = event.get("competitions", [])
+                    if not competitions:
+                        continue
+                    comp = competitions[0]
+                    
+                    status_type = comp.get("status", {}).get("type", {})
+                    state = status_type.get("state") # pre, in, post
+                    detail = status_type.get("detail", "")
+                    
+                    game_state = "OFF" if state == "post" else (detail if state == "in" else event.get("date", "")[11:16])
+
+                    competitors = comp.get("competitors", [])
+                    home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
+
+                    for team in competitors:
+                        if team.get("homeAway") == "home":
+                            home_team = team.get("team", {}).get("displayName", "Domicile")
+                            home_logo = team.get("team", {}).get("logo", "")
+                            home_score = team.get("score")
+                        else:
+                            away_team = team.get("team", {}).get("displayName", "Extérieur")
+                            away_logo = team.get("team", {}).get("logo", "")
+                            away_score = team.get("score")
 
                     formatted_matches.append({
-                        "home_team": m.get("homeTeam", {}).get("name", "Domicile"),
-                        "away_team": m.get("awayTeam", {}).get("name", "Extérieur"),
-                        "home_id": m.get("homeTeam", {}).get("id"),
-                        "away_id": m.get("awayTeam", {}).get("id"),
-                        "home_logo": m.get("homeTeam", {}).get("crest", ""),
-                        "away_logo": m.get("awayTeam", {}).get("crest", ""),
-                        "home_score": m.get("score", {}).get("fullTime", {}).get("home"),
-                        "away_score": m.get("score", {}).get("fullTime", {}).get("away"),
+                        "home_team": home_team,
+                        "away_team": away_team,
+                        "home_id": event.get("id"),
+                        "away_id": event.get("id"),
+                        "home_logo": home_logo,
+                        "away_logo": away_logo,
+                        "home_score": int(home_score) if home_score is not None and home_score.isdigit() else None,
+                        "away_score": int(away_score) if away_score is not None and away_score.isdigit() else None,
                         "game_state": game_state
                     })
-            time.sleep(0.1)
-            
-        result = {"date": date, "matches": formatted_matches}
-        FOOTBALL_CACHE[date] = result
-        return result
+                    
+        return {"date": date, "matches": formatted_matches}
     except Exception as e:
         return {"date": date, "matches": [], "error": str(e)}
 
