@@ -476,7 +476,7 @@
                             <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
                             <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
                         </div>
-                        <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}', ${m.home_id || 'null'}, ${m.away_id || 'null'})">⚡ PRONO</button>
+                        <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
                     `;
                     container.appendChild(card);
                 });
@@ -485,7 +485,7 @@
             }
         }
 
-        async function openFootProno(home, away, homeId, awayId) {
+        async function openFootProno(home, away) {
             const modal = document.getElementById('prono-modal');
             const title = document.getElementById('modal-match-title');
             const body = document.getElementById('modal-body');
@@ -498,7 +498,7 @@
                 const res = await fetch('/predict/match/foot', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ home_team: home, away_team: away, home_id: homeId, away_id: awayId })
+                    body: JSON.stringify({ home_team: home, away_team: away })
                 });
                 const data = await res.json();
                 const h = data.probabilities.home_win;
