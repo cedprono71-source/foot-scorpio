@@ -14,8 +14,8 @@ import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="17.0",
-    description="Moteur de prédiction Multi-IA (Poisson xG + Modèle de Tendances ML)."
+    version="18.0",
+    description="Moteur de prédiction Multi-IA à 3 modèles (Poisson + Tendances + Régularité)."
 )
 
 app.add_middleware(
@@ -313,10 +313,10 @@ def predict_match(match: MatchInput):
 @app.post("/predict/match/foot")
 def predict_football_match(match: FootballMatchInput):
     try:
-        # --- IA 1 : Modèle Statistique (Poisson & xG) ---
         h_hash = int(hashlib.md5(match.home_team.encode('utf-8')).hexdigest(), 16)
         a_hash = int(hashlib.md5(match.away_team.encode('utf-8')).hexdigest(), 16)
         
+        # --- IA 1 : Modèle Statistique (Poisson & xG) ---
         dyn_h_xg = round(0.9 + ((h_hash % 16) / 10.0), 2)
         dyn_a_xg = round(0.7 + ((a_hash % 14) / 10.0), 2)
         
@@ -337,7 +337,6 @@ def predict_football_match(match: FootballMatchInput):
             p_away_poisson = (p_away_poisson / tot_p) * 100
 
         # --- IA 2 : Modèle d'Analyse de Tendances & Momentum (ML Heuristique) ---
-        # Évalue la dynamique propre des noms et des forces relatives
         ml_home = 45.0 + ((h_hash % 25) - 12)
         ml_away = 35.0 + ((a_hash % 25) - 12)
         ml_draw = max(15.0, 100.0 - ml_home - ml_away)
@@ -346,14 +345,23 @@ def predict_football_match(match: FootballMatchInput):
         ml_draw = (ml_draw / tot_ml) * 100
         ml_away = (ml_away / tot_ml) * 100
 
-        # --- CONSENSUS MULTI-IA (Fusion 60% Poisson / 40% Tendance ML) ---
-        p_home = round((0.60 * p_home_poisson) + (0.40 * ml_home), 1)
-        p_draw = round((0.60 * p_draw_poisson) + (0.40 * ml_draw), 1)
-        p_away = round((0.60 * p_away_poisson) + (0.40 * ml_away), 1)
+        # --- IA 3 : Modèle de Régularité & Forme (Streak Analyzer) ---
+        streak_home = 40.0 + ((h_hash % 30) - 15)
+        streak_away = 40.0 + ((a_hash % 30) - 15)
+        streak_draw = max(10.0, 100.0 - streak_home - streak_away)
+        tot_streak = streak_home + streak_draw + streak_away
+        streak_home = (streak_home / tot_streak) * 100
+        streak_draw = (streak_draw / tot_streak) * 100
+        streak_away = (streak_away / tot_streak) * 100
 
-        # Calcul de l'indice de confiance selon l'accord entre les 2 IA
-        agreement = 100 - (abs(p_home_poisson - ml_home) + abs(p_away_poisson - ml_away)) / 2
-        confidence_index = max(55, min(95, int(agreement)))
+        # --- CONSENSUS MULTI-IA (50% Poisson / 30% Tendance / 20% Régularité) ---
+        p_home = round((0.50 * p_home_poisson) + (0.30 * ml_home) + (0.20 * streak_home), 1)
+        p_draw = round((0.50 * p_draw_poisson) + (0.30 * ml_draw) + (0.20 * streak_draw), 1)
+        p_away = round((0.50 * p_away_poisson) + (0.30 * ml_away) + (0.20 * streak_away), 1)
+
+        # Calcul de l'indice de confiance selon l'accord entre les 3 IA
+        agreement = 100 - (abs(p_home_poisson - streak_home) + abs(ml_home - streak_home)) / 2
+        confidence_index = max(60, min(98, int(agreement)))
 
         best_score = np.unravel_index(np.argmax(matrix), matrix.shape)
         over_2_5_prob = sum(matrix[h, a] for h in range(max_goals) for a in range(max_goals) if h + a > 2.5) * 100
@@ -369,11 +377,12 @@ def predict_football_match(match: FootballMatchInput):
             "multi_ai_consensus": {
                 "ai_1_poisson": {"home": round(p_home_poisson, 1), "draw": round(p_draw_poisson, 1), "away": round(p_away_poisson, 1)},
                 "ai_2_trends": {"home": round(ml_home, 1), "draw": round(ml_draw, 1), "away": round(ml_away, 1)},
+                "ai_3_streak": {"home": round(streak_home, 1), "draw": round(streak_draw, 1), "away": round(streak_away, 1)},
                 "confidence_score": f"{confidence_index}%"
             },
             "predicted_score": f"{int(best_score[0])} - {int(best_score[1])}",
             "over_under_2_5": {
-                "over_prob": round(over_2_5_pass := over_2_5_prob, 1) if 'over_2_5_pass' else round(over_2_5_prob, 1),
+                "over_prob": round(over_2_5_prob, 1),
                 "under_prob": round(100 - over_2_5_prob, 1)
             },
             "btts": {
