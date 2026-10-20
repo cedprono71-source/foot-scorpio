@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.19")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.20")
 
 app.add_middleware(
     CORSMiddleware,
@@ -93,7 +93,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (Gestion propre de "En cours" pour les matchs live) ---
+# --- Route Football : API ESPN (Tri par heure, filtre date UTC, avec nom de ligue inclus) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     try:
@@ -151,15 +151,14 @@ def get_foot_matches(date: str):
                             comp = competitions[0]
                             
                             status_type = comp.get("status", {}).get("type", {})
-                            state = status_type.get("state")  # 'pre', 'in', 'post'
+                            state = status_type.get("state")
                             
-                            # Détermination propre de l'état du match
                             if state == "post":
                                 game_state = "OFF"
                             elif state == "in":
                                 game_state = "En cours"
                             else:
-                                game_state = event_raw_date[11:16]  # Heure du coup d'envoi
+                                game_state = event_raw_date[11:16]
 
                             competitors = comp.get("competitors", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
@@ -190,9 +189,7 @@ def get_foot_matches(date: str):
             except Exception:
                 continue
     
-    # Tri global de tous les matchs par heure
     raw_matches.sort(key=lambda x: x["_sort_time"])
-    
     formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
                     
     return {"date": date, "matches": formatted_matches}
@@ -212,7 +209,6 @@ def predict_foot_match(req: MatchRequest):
 
         predicted_score = f"{home_goals} - {away_goals}"
 
-        # Logique Mi-Temps dynamique et cohérente
         ht_home = 1 if home_goals > 0 and (seed % 2 == 0 or home_goals >= 2) else 0
         if home_goals >= 3 and seed % 4 == 0:
             ht_home = 2
@@ -226,7 +222,6 @@ def predict_foot_match(req: MatchRequest):
         ht_score = f"{ht_home} - {ht_away}"
         ht_total_goals = ht_home + ht_away
 
-        # Synchronisation logique stricte anti-contradiction
         if ht_total_goals > 0:
             over_0_5_prob = round(70.0 + (seed % 25), 1)
             action_conseillee = "Plus de 0.5 but MT"
@@ -364,7 +359,13 @@ def get_nhl_matches(date: str):
             away_score = away_obj.get("score")
             
             state = game.get("gameState")
-            game_state = "OFF" if state in ["OFF", "FINAL"] else game.get("startTimeUTC", "")[11:16]
+            
+            if state in ["OFF", "FINAL"]:
+                game_state = "OFF"
+            elif state in ["CRIT", "LIVE", "IN"]:
+                game_state = "En cours"
+            else:
+                game_state = game.get("startTimeUTC", "")[11:16]
 
             formatted_matches.append({
                 "home_team": home_team,
@@ -386,11 +387,19 @@ def predict_nhl_match(req: MatchRequest):
     home_players = fetch_nhl_roster(req.home_team)
     away_players = fetch_nhl_roster(req.away_team)
     
+    # Calcul dynamique du score et de l'over en fonction des équipes (Seed MD5)
+    seed = get_team_seed(req.home_team, req.away_team)
+    home_goals = 2 + (seed % 3)  # Entre 2 et 4 buts
+    away_goals = 1 + ((seed // 3) % 3)  # Entre 1 et 3 buts
+    
+    total_goals = home_goals + away_goals
+    over_prob = round(40.0 + (seed % 45), 1)
+
     return {
         "match": f"{req.home_team} vs {req.away_team}",
         "probabilities": probs,
-        "predicted_score": "3 - 2",
-        "over_under_5_5": {"over_prob": 56.6},
+        "predicted_score": f"{home_goals} - {away_goals}",
+        "over_under_5_5": {"over_prob": over_prob},
         "home_players": home_players,
         "away_players": away_players
     }
