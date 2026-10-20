@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.16")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.18")
 
 app.add_middleware(
     CORSMiddleware,
@@ -93,11 +93,9 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (Avec correction anti-décalage horaire UTC) ---
+# --- Route Football : API ESPN (Tri par heure, filtre date UTC, avec nom de ligue inclus) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
-    # Pour contrer les décalages UTC d'ESPN sur les ligues internationales (Amériques, Moyen-Orient),
-    # on récupère une fenêtre de 3 jours (la veille, le jour J, le lendemain) et on filtre par la date réelle.
     try:
         req_date_obj = datetime.strptime(date, "%Y-%m-%d")
         dates_to_check = [
@@ -108,29 +106,42 @@ def get_foot_matches(date: str):
     except Exception:
         dates_to_check = [date.replace("-", "")]
 
-    leagues = [
-        "eng.1", "eng.2", "esp.1", "ita.1", "ger.1", "fra.1", 
-        "usa.1", "mex.1", "ecu.1", "col.1", "rou.1", 
-        "tur.1", "ksa.1", "uefa.champions", "uefa.europa",
-        "fifa.friendly", "fifa.world"
-    ]
-    
-    formatted_matches = []
+    league_names = {
+        "eng.1": "Premier League",
+        "eng.2": "EFL Championship",
+        "esp.1": "La Liga",
+        "ita.1": "Serie A",
+        "ger.1": "Bundesliga",
+        "fra.1": "Ligue 1",
+        "usa.1": "MLS",
+        "mex.1": "Liga MX",
+        "ecu.1": "Liga Pro Équateur",
+        "col.1": "Liga BetPlay Colombie",
+        "rou.1": "Liga I Roumanie",
+        "tur.1": "Süper Lig",
+        "ksa.1": "Saudi Pro League",
+        "uefa.champions": "UEFA Champions League",
+        "uefa.europa": "UEFA Europa League",
+        "fifa.friendly": "Matchs Amicaux",
+        "fifa.world": "Sélections Nationales"
+    }
+
+    raw_matches = []
     seen_event_ids = set()
     
-    for league in leagues:
+    for league_code, league_display_name in league_names.items():
         for espn_date in dates_to_check:
             try:
-                url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={espn_date}"
+                url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_code}/scoreboard?dates={espn_date}"
                 response = requests.get(url, timeout=4)
                 
                 if response.status_code == 200:
                     data = response.json()
                     for event in data.get("events", []):
                         event_id = str(event.get("id"))
-                        event_date_str = event.get("date", "")[:10]  # Format "YYYY-MM-DD" du match
+                        event_raw_date = event.get("date", "")
+                        event_date_str = event_raw_date[:10]
                         
-                        # On ne garde que les matchs qui appartiennent STRICTEMENT à la date demandée
                         if event_date_str == date and event_id not in seen_event_ids:
                             seen_event_ids.add(event_id)
                             
@@ -143,7 +154,7 @@ def get_foot_matches(date: str):
                             state = status_type.get("state")
                             detail = status_type.get("detail", "")
                             
-                            game_state = "OFF" if state == "post" else (detail if state == "in" else event.get("date", "")[11:16])
+                            game_state = "OFF" if state == "post" else (detail if state == "in" else event_raw_date[11:16])
 
                             competitors = comp.get("competitors", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
@@ -158,7 +169,9 @@ def get_foot_matches(date: str):
                                     away_logo = team.get("team", {}).get("logo", "")
                                     away_score = team.get("score")
 
-                            formatted_matches.append({
+                            raw_matches.append({
+                                "_sort_time": event_raw_date,
+                                "league": league_display_name,
                                 "home_team": home_team,
                                 "away_team": away_team,
                                 "home_id": event_id,
@@ -171,6 +184,12 @@ def get_foot_matches(date: str):
                             })
             except Exception:
                 continue
+    
+    # Tri global de tous les matchs par heure (du plus tôt au plus tard)
+    raw_matches.sort(key=lambda x: x["_sort_time"])
+    
+    # Nettoyage de la clé temporaire
+    formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
                     
     return {"date": date, "matches": formatted_matches}
 
