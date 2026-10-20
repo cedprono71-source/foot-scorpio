@@ -1,13 +1,14 @@
 import os
 import hashlib
 import requests
+from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.15")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.16")
 
 app.add_middleware(
     CORSMiddleware,
@@ -92,63 +93,84 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (Avec eng.2 pour l'EFL Championship) ---
+# --- Route Football : API ESPN (Avec correction anti-décalage horaire UTC) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
-    espn_date = date.replace("-", "")
+    # Pour contrer les décalages UTC d'ESPN sur les ligues internationales (Amériques, Moyen-Orient),
+    # on récupère une fenêtre de 3 jours (la veille, le jour J, le lendemain) et on filtre par la date réelle.
+    try:
+        req_date_obj = datetime.strptime(date, "%Y-%m-%d")
+        dates_to_check = [
+            (req_date_obj - timedelta(days=1)).strftime("%Y%m%d"),
+            req_date_obj.strftime("%Y%m%d"),
+            (req_date_obj + timedelta(days=1)).strftime("%Y%m%d")
+        ]
+    except Exception:
+        dates_to_check = [date.replace("-", "")]
+
     leagues = [
         "eng.1", "eng.2", "esp.1", "ita.1", "ger.1", "fra.1", 
         "usa.1", "mex.1", "ecu.1", "col.1", "rou.1", 
         "tur.1", "ksa.1", "uefa.champions", "uefa.europa",
         "fifa.friendly", "fifa.world"
     ]
+    
     formatted_matches = []
+    seen_event_ids = set()
     
     for league in leagues:
-        try:
-            url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={espn_date}"
-            response = requests.get(url, timeout=4)
-            
-            if response.status_code == 200:
-                data = response.json()
-                for event in data.get("events", []):
-                    competitions = event.get("competitions", [])
-                    if not competitions:
-                        continue
-                    comp = competitions[0]
-                    
-                    status_type = comp.get("status", {}).get("type", {})
-                    state = status_type.get("state")
-                    detail = status_type.get("detail", "")
-                    
-                    game_state = "OFF" if state == "post" else (detail if state == "in" else event.get("date", "")[11:16])
+        for espn_date in dates_to_check:
+            try:
+                url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={espn_date}"
+                response = requests.get(url, timeout=4)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    for event in data.get("events", []):
+                        event_id = str(event.get("id"))
+                        event_date_str = event.get("date", "")[:10]  # Format "YYYY-MM-DD" du match
+                        
+                        # On ne garde que les matchs qui appartiennent STRICTEMENT à la date demandée
+                        if event_date_str == date and event_id not in seen_event_ids:
+                            seen_event_ids.add(event_id)
+                            
+                            competitions = event.get("competitions", [])
+                            if not competitions:
+                                continue
+                            comp = competitions[0]
+                            
+                            status_type = comp.get("status", {}).get("type", {})
+                            state = status_type.get("state")
+                            detail = status_type.get("detail", "")
+                            
+                            game_state = "OFF" if state == "post" else (detail if state == "in" else event.get("date", "")[11:16])
 
-                    competitors = comp.get("competitors", [])
-                    home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
+                            competitors = comp.get("competitors", [])
+                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
 
-                    for team in competitors:
-                        if team.get("homeAway") == "home":
-                            home_team = team.get("team", {}).get("displayName", "Domicile")
-                            home_logo = team.get("team", {}).get("logo", "")
-                            home_score = team.get("score")
-                        else:
-                            away_team = team.get("team", {}).get("displayName", "Extérieur")
-                            away_logo = team.get("team", {}).get("logo", "")
-                            away_score = team.get("score")
+                            for team in competitors:
+                                if team.get("homeAway") == "home":
+                                    home_team = team.get("team", {}).get("displayName", "Domicile")
+                                    home_logo = team.get("team", {}).get("logo", "")
+                                    home_score = team.get("score")
+                                else:
+                                    away_team = team.get("team", {}).get("displayName", "Extérieur")
+                                    away_logo = team.get("team", {}).get("logo", "")
+                                    away_score = team.get("score")
 
-                    formatted_matches.append({
-                        "home_team": home_team,
-                        "away_team": away_team,
-                        "home_id": str(event.get("id")) if event.get("id") else None,
-                        "away_id": str(event.get("id")) if event.get("id") else None,
-                        "home_logo": home_logo,
-                        "away_logo": away_logo,
-                        "home_score": int(home_score) if home_score is not None and str(home_score).isdigit() else None,
-                        "away_score": int(away_score) if away_score is not None and str(away_score).isdigit() else None,
-                        "game_state": game_state
-                    })
-        except Exception:
-            continue
+                            formatted_matches.append({
+                                "home_team": home_team,
+                                "away_team": away_team,
+                                "home_id": event_id,
+                                "away_id": event_id,
+                                "home_logo": home_logo,
+                                "away_logo": away_logo,
+                                "home_score": int(home_score) if home_score is not None and str(home_score).isdigit() else None,
+                                "away_score": int(away_score) if away_score is not None and str(away_score).isdigit() else None,
+                                "game_state": game_state
+                            })
+            except Exception:
+                continue
                     
     return {"date": date, "matches": formatted_matches}
 
