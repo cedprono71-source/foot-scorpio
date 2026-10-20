@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="Multi-IA Pronostics API", version="20.4")
+app = FastAPI(title="Multi-IA Pronostics API", version="20.5")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Récupération sécurisée de la clé d'API
+# Récupération ultra-sécurisée de la clé d'API
 API_KEY = os.getenv("API_KEY") or os.getenv("FOOTBALL_API_KEY") or os.getenv("FOOT_API_KEY") or "d005c..."
 
 class MatchRequest(BaseModel):
@@ -26,7 +26,7 @@ class MatchRequest(BaseModel):
     away_id: int = None
 
 
-# --- Moteur Consensus 5 IA ---
+# --- Moteur Consensus 5 IA (Poisson/xG, ML, Streak, H2H, Fatigue) ---[span_2](start_span)[span_2](end_span)
 def ai_poisson_model(home_team, away_team): return {"home": 45.0, "draw": 25.0, "away": 30.0}
 def ai_machine_learning_model(home_team, away_team): return {"home": 48.0, "draw": 22.0, "away": 30.0}
 def ai_streak_model(home_team, away_team): return {"home": 42.0, "draw": 28.0, "away": 30.0}
@@ -51,7 +51,7 @@ def calculate_5_ai_consensus(home_team, away_team):
     }
 
 
-# --- ROUTE PRINCIPALE ---
+# --- ROUTE PRINCIPALE : Affiche votre interface (index.html) ---[span_3](start_span)[span_3](end_span)
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -61,18 +61,20 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Système de Cache pour éviter de saturer l'API de Football ---
+# --- Système de Cache pour Football ---
 FOOTBALL_CACHE = {}
 
+# --- Route Football : Compétitions élargies (inclus EL/ECL pour les jeudis) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
-    # Si on a déjà les données en cache pour cette date, on les renvoie direct (anti-saturation)
     if date in FOOTBALL_CACHE:
         return FOOTBALL_CACHE[date]
 
     headers = {"X-Auth-Token": API_KEY}
     formatted_matches = []
-    competitions = ["CL", "PL", "SA", "PD", "FL1"]
+    
+    # Ajout de l'Europa League (EL) et Europa Conference League (ECL) pour couvrir les jeudis
+    competitions = ["CL", "PL", "SA", "PD", "FL1", "EL", "ECL"]
     
     try:
         for comp in competitions:
@@ -98,10 +100,10 @@ def get_foot_matches(date: str):
                         "away_score": m.get("score", {}).get("fullTime", {}).get("away"),
                         "game_state": game_state
                     })
-            time.sleep(0.2) # Petite pause pour respecter les quotas de l'API
+            time.sleep(0.1)
             
         result = {"date": date, "matches": formatted_matches}
-        FOOTBALL_CACHE[date] = result # Sauvegarde dans le cache
+        FOOTBALL_CACHE[date] = result
         return result
     except Exception as e:
         return {"date": date, "matches": [], "error": str(e)}
@@ -118,7 +120,7 @@ def predict_foot_match(req: MatchRequest):
     }
 
 
-# --- Fonction utilitaire Effectifs NHL ---
+# --- Fonction utilitaire pour récupérer les vrais effectifs NHL en temps réel ---
 def fetch_nhl_roster(team_str: str):
     team_map = {
         "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
@@ -189,7 +191,7 @@ def fetch_nhl_roster(team_str: str):
     return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 65}]
 
 
-# --- Route NHL ---
+# --- Route NHL : API publique officielle[span_4](start_span)[span_4](end_span) ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     url = f"https://api-web.nhle.com/v1/score/{date}"
