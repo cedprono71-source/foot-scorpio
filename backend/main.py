@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.4")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.15")
 
 app.add_middleware(
     CORSMiddleware,
@@ -92,17 +92,22 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (MLS incluse) ---
+# --- Route Football : API ESPN (Avec eng.2 pour l'EFL Championship) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     espn_date = date.replace("-", "")
-    leagues = ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "usa.1", "uefa.champions", "uefa.europa"]
+    leagues = [
+        "eng.1", "eng.2", "esp.1", "ita.1", "ger.1", "fra.1", 
+        "usa.1", "mex.1", "ecu.1", "col.1", "rou.1", 
+        "tur.1", "ksa.1", "uefa.champions", "uefa.europa",
+        "fifa.friendly", "fifa.world"
+    ]
     formatted_matches = []
     
-    try:
-        for league in leagues:
+    for league in leagues:
+        try:
             url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={espn_date}"
-            response = requests.get(url, timeout=5)
+            response = requests.get(url, timeout=4)
             
             if response.status_code == 200:
                 data = response.json()
@@ -142,10 +147,10 @@ def get_foot_matches(date: str):
                         "away_score": int(away_score) if away_score is not None and str(away_score).isdigit() else None,
                         "game_state": game_state
                     })
+        except Exception:
+            continue
                     
-        return {"date": date, "matches": formatted_matches}
-    except Exception as e:
-        return {"date": date, "matches": [], "error": str(e)}
+    return {"date": date, "matches": formatted_matches}
 
 @app.post("/predict/match/foot")
 def predict_foot_match(req: MatchRequest):
@@ -162,7 +167,7 @@ def predict_foot_match(req: MatchRequest):
 
         predicted_score = f"{home_goals} - {away_goals}"
 
-        # Logique Mi-Temps dynamique
+        # Logique Mi-Temps dynamique et cohérente
         ht_home = 1 if home_goals > 0 and (seed % 2 == 0 or home_goals >= 2) else 0
         if home_goals >= 3 and seed % 4 == 0:
             ht_home = 2
@@ -176,7 +181,7 @@ def predict_foot_match(req: MatchRequest):
         ht_score = f"{ht_home} - {ht_away}"
         ht_total_goals = ht_home + ht_away
 
-        # Synchronisation logique : si 0-0 à la mi-temps, proba basse et observation ; sinon forte proba et over 0.5
+        # Synchronisation logique stricte anti-contradiction
         if ht_total_goals > 0:
             over_0_5_prob = round(70.0 + (seed % 25), 1)
             action_conseillee = "Plus de 0.5 but MT"
