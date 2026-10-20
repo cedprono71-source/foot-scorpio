@@ -15,7 +15,7 @@ import atexit
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
     version="15.0",
-    description="Moteur de prédiction LNH & Football avec calendrier direct."
+    description="Moteur de prédiction LNH & Football avec calendrier élargi."
 )
 
 app.add_middleware(
@@ -427,7 +427,13 @@ def get_football_matches(date: str = "now"):
         if api_token:
             try:
                 headers = {"X-Auth-Token": api_token}
-                url = f"https://api.football-data.org/v4/matches?dateFrom={target_date_str}&dateTo={target_date_str}"
+                target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
+                
+                # Fenêtre élargie de +/- 2 jours pour capturer les matchs de la semaine
+                date_from = (target_dt - timedelta(days=2)).strftime("%Y-%m-%d")
+                date_to = (target_dt + timedelta(days=2)).strftime("%Y-%m-%d")
+                
+                url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
                 response = requests.get(url, headers=headers, timeout=5)
                 
                 if response.status_code == 200:
@@ -447,20 +453,22 @@ def get_football_matches(date: str = "now"):
                         status = g.get("status", "SCHEDULED")
                         score = g.get("score", {}).get("fullTime", {})
                         
-                        matches.append({
-                            "id": g.get("id"),
-                            "date": api_date,
-                            "home_team": home_team,
-                            "away_team": away_team,
-                            "home_id": home_team_obj.get("id"),
-                            "away_id": away_team_obj.get("id"),
-                            "home_logo": home_team_obj.get("crest", ""),
-                            "away_logo": away_team_obj.get("crest", ""),
-                            "time": utc_date_str,
-                            "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
-                            "home_score": score.get("home"),
-                            "away_score": score.get("away")
-                        })
+                        match_id = g.get("id")
+                        if not any(m["id"] == match_id for m in matches):
+                            matches.append({
+                                "id": match_id,
+                                "date": api_date,
+                                "home_team": home_team,
+                                "away_team": away_team,
+                                "home_id": home_team_obj.get("id"),
+                                "away_id": away_team_obj.get("id"),
+                                "home_logo": home_team_obj.get("crest", ""),
+                                "away_logo": away_team_obj.get("crest", ""),
+                                "time": utc_date_str,
+                                "game_state": "OFF" if status in ["FINISHED", "FT"] else "FUT",
+                                "home_score": score.get("home"),
+                                "away_score": score.get("away")
+                            })
             except Exception:
                 pass
 
