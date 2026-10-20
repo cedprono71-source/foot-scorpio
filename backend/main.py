@@ -15,7 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Votre clé d'API Football-Data (ou récupérée via les variables d'environnement de Render)
+# Votre clé d'API Football-Data
 API_KEY = os.getenv("API_KEY", "VOTRE_CLE_FOOTBALL_DATA")
 
 class MatchRequest(BaseModel):
@@ -25,7 +25,7 @@ class MatchRequest(BaseModel):
     away_id: int = None
 
 
-# --- Moteur Consensus 5 IA (Poisson/xG, ML, Streak, H2H, Fatigue) ---
+# --- Moteur Consensus 5 IA ---
 def ai_poisson_model(home_team, away_team): return {"home": 45.0, "draw": 25.0, "away": 30.0}
 def ai_machine_learning_model(home_team, away_team): return {"home": 48.0, "draw": 22.0, "away": 30.0}
 def ai_streak_model(home_team, away_team): return {"home": 42.0, "draw": 28.0, "away": 30.0}
@@ -50,7 +50,7 @@ def calculate_5_ai_consensus(home_team, away_team):
     }
 
 
-# --- ROUTE PRINCIPALE : Affiche votre interface (index.html) ---
+# --- ROUTE PRINCIPALE ---
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -60,7 +60,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football connectée à Football-Data.org ---
+# --- Route Football ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     url = f"https://api.football-data.org/v4/matches?date={date}"
@@ -69,7 +69,7 @@ def get_foot_matches(date: str):
     try:
         response = requests.get(url, headers=headers)
         if response.status_code != 200:
-            return {"date": date, "matches": [], "error": f"Erreur API: {response.status_code}"}
+            return {"date": date, "matches": [], "error": f"Erreur API ({response.status_code})" }
         
         data = response.json()
         formatted_matches = []
@@ -108,7 +108,7 @@ def predict_foot_match(req: MatchRequest):
     }
 
 
-# --- Route NHL connectée à l'API officielle NHL (sans clé) ---
+# --- Route NHL (Corrigée pour récupérer les vrais noms d'équipes) ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     url = f"https://api-web.nhle.com/v1/score/{date}"
@@ -121,13 +121,26 @@ def get_nhl_matches(date: str):
         formatted_matches = []
         
         for game in data.get("games", []):
-            home_team = game.get("homeTeam", {}).get("commonName", {}).get("default", "Home")
-            away_team = game.get("awayTeam", {}).get("commonName", {}).get("default", "Away")
-            home_logo = game.get("homeTeam", {}).get("logo", "")
-            away_logo = game.get("awayTeam", {}).get("logo", "")
+            home_obj = game.get("homeTeam", {})
+            away_obj = game.get("awayTeam", {})
             
-            home_score = game.get("homeTeam", {}).get("score")
-            away_score = game.get("awayTeam", {}).get("score")
+            # Récupération sécurisée du nom ou de l'abréviation de l'équipe
+            home_team = home_obj.get("placeName", {}).get("default") or home_obj.get("abbrev") or "Home"
+            away_team = away_obj.get("placeName", {}).get("default") or away_obj.get("abbrev") or "Away"
+            
+            # Si on a un nom de ville, on ajoute le nom usuel si possible
+            home_common = home_obj.get("commonName", {}).get("default", "")
+            away_common = away_obj.get("commonName", {}).get("default", "")
+            if home_common:
+                home_team = f"{home_team} {home_common}"
+            if away_common:
+                away_team = f"{away_team} {away_common}"
+
+            home_logo = home_obj.get("logo", "")
+            away_logo = away_obj.get("logo", "")
+            
+            home_score = home_obj.get("score")
+            away_score = away_obj.get("score")
             
             state = game.get("gameState")
             game_state = "OFF" if state in ["OFF", "FINAL"] else game.get("startTimeUTC", "")[11:16]
