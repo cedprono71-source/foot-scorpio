@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.3")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.4")
 
 app.add_middleware(
     CORSMiddleware,
@@ -174,6 +174,15 @@ def predict_foot_match(req: MatchRequest):
         ht_away = min(ht_away, away_goals)
 
         ht_score = f"{ht_home} - {ht_away}"
+        ht_total_goals = ht_home + ht_away
+
+        # Synchronisation logique : si 0-0 à la mi-temps, proba basse et observation ; sinon forte proba et over 0.5
+        if ht_total_goals > 0:
+            over_0_5_prob = round(70.0 + (seed % 25), 1)
+            action_conseillee = "Plus de 0.5 but MT"
+        else:
+            over_0_5_prob = round(20.0 + (seed % 30), 1)
+            action_conseillee = "Observation en 1ère MT"
 
         btts_prob = round(50.0 + (seed % 35), 1) if home_goals > 0 and away_goals > 0 else round(25.0 + (seed % 20), 1)
         over_25_prob = round(40.0 + (seed % 40), 1) if (home_goals + away_goals) >= 3 else round(30.0 + (seed % 25), 1)
@@ -186,9 +195,9 @@ def predict_foot_match(req: MatchRequest):
             "btts": {"yes_prob": btts_prob},
             "over_under_2_5": {"over_prob": over_25_prob},
             "first_half": {
-                "over_0_5_prob": round(65.0 + (seed % 25), 1),
+                "over_0_5_prob": over_0_5_prob,
                 "predicted_ht_score": ht_score,
-                "action_conseillee": "Plus de 0.5 but MT" if (ht_home + ht_away) > 0 else "Observation en 1ère MT"
+                "action_conseillee": action_conseillee
             },
             "yellow_cards": {
                 "expected_total": round(base_cards, 1),
