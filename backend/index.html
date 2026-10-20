@@ -177,7 +177,7 @@
             gap: 5px;
         }
 
-        /* --- STYLE DE LA FENÊTRE MODALE (POPUP) --- */
+        /* --- FENÊTRE MODALE --- */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -279,33 +279,6 @@
             border-radius: 3px;
         }
 
-        /* Grille gardiens */
-        .goalies-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        .goalie-card {
-            background: #161b22;
-            border: 1px solid var(--border-color);
-            padding: 8px 10px;
-            border-radius: 8px;
-        }
-
-        .goalie-name {
-            font-size: 0.85em;
-            font-weight: bold;
-            color: var(--text-color);
-            margin-bottom: 2px;
-        }
-
-        .goalie-stats {
-            font-size: 0.75em;
-            color: var(--text-muted);
-        }
-
-        /* Onglets équipe modale (NHL) */
         .team-tabs {
             display: flex;
             background: #161b22;
@@ -344,6 +317,26 @@
         .player-row-modal:last-child {
             border-bottom: none;
         }
+
+        /* Bouton Fermer en bas */
+        .modal-close-bottom-btn {
+            width: 100%;
+            background-color: #21262d;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 0.95em;
+            cursor: pointer;
+            margin-top: 5px;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+        }
+
+        .modal-close-bottom-btn:hover {
+            background-color: #30363d;
+        }
     </style>
 </head>
 <body>
@@ -381,6 +374,7 @@
             <div id="modal-body">
                 <!-- Contenu injecté dynamiquement -->
             </div>
+            <button class="modal-close-bottom-btn" onclick="closeModal()">Fermer</button>
         </div>
     </div>
 
@@ -617,20 +611,6 @@
                     <div class="modal-section">
                         <div class="modal-section-title">🏒 Total Buts (Over / Under 5.5)</div>
                         <div class="prob-info-row"><span>Plus de 5.5 buts</span><strong style="color: var(--accent-color);">${data.over_under_5_5.over_prob}%</strong></div>
-                    </div>
-
-                    <div class="modal-section">
-                        <div class="modal-section-title">🥅 Gardiens Titulaires</div>
-                        <div class="goalies-grid">
-                            <div class="goalie-card">
-                                <div class="goalie-name">${data.goalies.home.name}</div>
-                                <div class="goalie-stats">SV%: ${data.goalies.home.save_pct * 100}%</div>
-                            </div>
-                            <div class="goalie-card">
-                                <div class="goalie-name">${data.goalies.away.name}</div>
-                                <div class="goalie-stats">SV%: ${data.goalies.away.save_pct * 100}%</div>
-                            </div>
-                        </div>
                     </div>
 
                     <div class="modal-section">
