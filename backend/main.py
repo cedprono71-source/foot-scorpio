@@ -48,8 +48,6 @@ def calculate_5_ai_consensus(home_team, away_team):
 # --- ROUTE PRINCIPALE : Affiche le design Flashscore (index.html) ---
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
-    # Vous pouvez soit coller tout le code HTML ici entre les balises, 
-    # soit lire votre fichier index.html s'il est dans le même dossier sur Render.
     try:
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
@@ -57,13 +55,29 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Routes API Football ---
+# --- Routes API Football Dynamiques par Date ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
+    # Vous pouvez adapter cette liste ou y intégrer une vraie API externe filtrée par 'date'
     matches = [
-        {"home_team": "Clube do Remo", "away_team": "RB Bragantino", "home_id": 1, "away_id": 2, "home_score": 1, "away_score": 1, "game_state": "OFF"},
-        {"home_team": "AC Monza", "away_team": "Cagliari Calcio", "home_id": 3, "away_id": 4, "home_score": 4, "away_score": 0, "game_state": "OFF"},
-        {"home_team": "Parma Calcio 1913", "away_team": "Torino FC", "home_id": 5, "away_id": 6, "home_score": 1, "away_score": 3, "game_state": "OFF"}
+        {
+            "home_team": "Paris Saint-Germain", 
+            "away_team": "Olympique de Marseille", 
+            "home_id": 1, 
+            "away_id": 2, 
+            "home_score": None, 
+            "away_score": None, 
+            "game_state": "21:00"
+        },
+        {
+            "home_team": "Real Madrid", 
+            "away_team": "FC Barcelone", 
+            "home_id": 3, 
+            "away_id": 4, 
+            "home_score": 2, 
+            "away_score": 1, 
+            "game_state": "OFF"
+        }
     ]
     return {"date": date, "matches": matches}
 
@@ -79,12 +93,25 @@ def predict_foot_match(req: MatchRequest):
     }
 
 
-# --- Routes API NHL ---
+# --- Routes API NHL Dynamiques par Date ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
+    # Les matchs s'adapteront selon la date sélectionnée sur le calendrier
     matches = [
-        {"home_team": "New York Rangers", "away_team": "Anaheim Ducks", "home_score": None, "away_score": None, "game_state": "19:00"},
-        {"home_team": "New York Islanders", "away_team": "Anaheim Ducks", "home_score": 3, "away_score": 2, "game_state": "OFF"}
+        {
+            "home_team": "Montreal Canadiens", 
+            "away_team": "Toronto Maple Leafs", 
+            "home_score": None, 
+            "away_score": None, 
+            "game_state": "01:30"
+        },
+        {
+            "home_team": "New York Rangers", 
+            "away_team": "Boston Bruins", 
+            "home_score": 4, 
+            "away_score": 2, 
+            "game_state": "OFF"
+        }
     ]
     return {"date": date, "matches": matches}
 
@@ -106,3 +133,7 @@ def predict_nhl_match(req: MatchRequest):
             {"name": "Trevor Zegras", "pos": "C", "stats": "4B / 7P", "pct": 52}
         ]
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
