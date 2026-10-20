@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.18")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.19")
 
 app.add_middleware(
     CORSMiddleware,
@@ -93,7 +93,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (Tri par heure, filtre date UTC, avec nom de ligue inclus) ---
+# --- Route Football : API ESPN (Gestion propre de "En cours" pour les matchs live) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     try:
@@ -151,10 +151,15 @@ def get_foot_matches(date: str):
                             comp = competitions[0]
                             
                             status_type = comp.get("status", {}).get("type", {})
-                            state = status_type.get("state")
-                            detail = status_type.get("detail", "")
+                            state = status_type.get("state")  # 'pre', 'in', 'post'
                             
-                            game_state = "OFF" if state == "post" else (detail if state == "in" else event_raw_date[11:16])
+                            # Détermination propre de l'état du match
+                            if state == "post":
+                                game_state = "OFF"
+                            elif state == "in":
+                                game_state = "En cours"
+                            else:
+                                game_state = event_raw_date[11:16]  # Heure du coup d'envoi
 
                             competitors = comp.get("competitors", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
@@ -185,10 +190,9 @@ def get_foot_matches(date: str):
             except Exception:
                 continue
     
-    # Tri global de tous les matchs par heure (du plus tôt au plus tard)
+    # Tri global de tous les matchs par heure
     raw_matches.sort(key=lambda x: x["_sort_time"])
     
-    # Nettoyage de la clé temporaire
     formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
                     
     return {"date": date, "matches": formatted_matches}
