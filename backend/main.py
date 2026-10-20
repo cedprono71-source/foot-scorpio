@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.2")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -161,8 +161,18 @@ def predict_foot_match(req: MatchRequest):
             away_goals = 1
 
         predicted_score = f"{home_goals} - {away_goals}"
-        ht_home = 0 if home_goals == 0 else (1 if home_goals >= 2 and seed % 2 == 0 else 0)
-        ht_away = 0 if away_goals == 0 else (1 if away_goals >= 2 and seed % 3 == 0 else 0)
+
+        # Logique Mi-Temps dynamique
+        ht_home = 1 if home_goals > 0 and (seed % 2 == 0 or home_goals >= 2) else 0
+        if home_goals >= 3 and seed % 4 == 0:
+            ht_home = 2
+        ht_home = min(ht_home, home_goals)
+
+        ht_away = 1 if away_goals > 0 and (seed % 3 == 0 or away_goals >= 2) else 0
+        if away_goals >= 3 and seed % 5 == 0:
+            ht_away = 2
+        ht_away = min(ht_away, away_goals)
+
         ht_score = f"{ht_home} - {ht_away}"
 
         btts_prob = round(50.0 + (seed % 35), 1) if home_goals > 0 and away_goals > 0 else round(25.0 + (seed % 20), 1)
