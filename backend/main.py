@@ -7,15 +7,14 @@ from scipy.stats import poisson
 import requests
 import os
 import json
-import hashlib
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
 app = FastAPI(
     title="Multi-IA NHL & Football Dashboard API",
-    version="15.0",
-    description="Moteur de prédiction LNH & Football avec calendrier synchronisé."
+    version="16.0",
+    description="Moteur de prédiction LNH & Football de haute précision."
 )
 
 app.add_middleware(
@@ -69,7 +68,7 @@ class FootballMatchInput(BaseModel):
     away_team: str
     home_id: int = None
     away_id: int = None
-    home_expected_goals: float = 1.4
+    home_expected_goals: float = 1.5
     away_expected_goals: float = 1.1
     home_odds: float = 0.0
     away_odds: float = 0.0
@@ -313,14 +312,12 @@ def predict_match(match: MatchInput):
 @app.post("/predict/match/foot")
 def predict_football_match(match: FootballMatchInput):
     try:
-        h_hash = int(hashlib.md5(match.home_team.encode('utf-8')).hexdigest(), 16)
-        a_hash = int(hashlib.md5(match.away_team.encode('utf-8')).hexdigest(), 16)
-        
-        dyn_home_xg = round(1.0 + ((h_hash % 14) / 10.0), 2)
-        dyn_away_xg = round(0.8 + ((a_hash % 13) / 10.0), 2)
+        # Moteur de prédiction amelioré : Utilisation directe des xG configurés + Avantage terrain standard (+10% pour l'équipe à domicile)
+        h_xg = max(0.4, match.home_expected_goals * 1.1)
+        a_xg = max(0.4, match.away_expected_goals)
         
         max_goals = 6
-        matrix = calculate_poisson_matrix(dyn_home_xg, dyn_away_xg, max_goals=max_goals)
+        matrix = calculate_poisson_matrix(h_xg, a_xg, max_goals=max_goals)
             
         p_home = float(np.sum(np.tril(matrix, -1))) * 100
         p_away = float(np.sum(np.triu(matrix, 1))) * 100
@@ -429,7 +426,6 @@ def get_football_matches(date: str = "now"):
                 headers = {"X-Auth-Token": api_token}
                 target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
                 
-                # Fenêtre élargie pour interroger l'API sans rater de matchs
                 date_from = (target_dt - timedelta(days=2)).strftime("%Y-%m-%d")
                 date_to = (target_dt + timedelta(days=2)).strftime("%Y-%m-%d")
                 
@@ -445,7 +441,6 @@ def get_football_matches(date: str = "now"):
                         else:
                             api_date = target_date_str
 
-                        # FILTRAGE STRICT : On n'ajoute le match que s'il correspond exactement à la date demandée
                         if api_date == target_date_str:
                             home_team_obj = g.get("homeTeam", {})
                             away_team_obj = g.get("awayTeam", {})
