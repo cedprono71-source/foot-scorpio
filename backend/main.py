@@ -1,3 +1,5 @@
+import os
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -12,6 +14,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Votre clé d'API Football-Data (ou récupérée via les variables d'environnement de Render)
+API_KEY = os.getenv("API_KEY", "VOTRE_CLE_FOOTBALL_DATA")
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -45,7 +50,7 @@ def calculate_5_ai_consensus(home_team, away_team):
     }
 
 
-# --- ROUTE PRINCIPALE : Affiche le design Flashscore (index.html) ---
+# --- ROUTE PRINCIPALE : Affiche votre interface (index.html) ---
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -55,31 +60,48 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Routes API Football Dynamiques par Date ---
+# --- Route Football connectée à Football-Data.org ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
-    # Vous pouvez adapter cette liste ou y intégrer une vraie API externe filtrée par 'date'
-    matches = [
-        {
-            "home_team": "Paris Saint-Germain", 
-            "away_team": "Olympique de Marseille", 
-            "home_id": 1, 
-            "away_id": 2, 
-            "home_score": None, 
-            "away_score": None, 
-            "game_state": "21:00"
-        },
-        {
-            "home_team": "Real Madrid", 
-            "away_team": "FC Barcelone", 
-            "home_id": 3, 
-            "away_id": 4, 
-            "home_score": 2, 
-            "away_score": 1, 
-            "game_state": "OFF"
-        }
-    ]
-    return {"date": date, "matches": matches}
+    url = f"https://api.football-data.org/v4/matches?date={date}"
+    headers = {"X-Auth-Token": API_KEY}
+    
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            return {"date": date, "matches": [], "error": "Erreur d'accès à l'API"}
+        
+        data = response.json()
+        formatted_matches = []
+        
+        for m in data.get("matches", []):
+            home_team = m.get("homeTeam", {}).get("name", "Domicile")
+            away_team = m.get("awayTeam", {}).get("name", "Extérieur")
+            home_logo = m.get("homeTeam", {}).get("crest", "")
+            away_logo = m.get("awayTeam", {}).get("crest", "")
+            
+            score = m.get("score", {}).get("fullTime", {})
+            home_score = score.get("home")
+            away_score = score.get("away")
+            
+            status = m.get("status")
+            game_state = "OFF" if status == "FINISHED" else m.get("utcDate", "")[11:16]
+
+            formatted_matches.append({
+                "home_team": home_team,
+                "away_team": away_team,
+                "home_id": m.get("homeTeam", {}).get("id"),
+                "away_id": m.get("awayTeam", {}).get("id"),
+                "home_logo": home_logo,
+                "away_logo": away_logo,
+                "home_score": home_score,
+                "away_score": away_score,
+                "game_state": game_state
+            })
+            
+        return {"date": date, "matches": formatted_matches}
+    except Exception as e:
+        return {"date": date, "matches": [], "error": str(e)}
 
 @app.post("/predict/match/foot")
 def predict_foot_match(req: MatchRequest):
@@ -93,10 +115,9 @@ def predict_foot_match(req: MatchRequest):
     }
 
 
-# --- Routes API NHL Dynamiques par Date ---
+# --- Routes API NHL ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
-    # Les matchs s'adapteront selon la date sélectionnée sur le calendrier
     matches = [
         {
             "home_team": "Montreal Canadiens", 
@@ -104,13 +125,6 @@ def get_nhl_matches(date: str):
             "home_score": None, 
             "away_score": None, 
             "game_state": "01:30"
-        },
-        {
-            "home_team": "New York Rangers", 
-            "away_team": "Boston Bruins", 
-            "home_score": 4, 
-            "away_score": 2, 
-            "game_state": "OFF"
         }
     ]
     return {"date": date, "matches": matches}
@@ -124,13 +138,10 @@ def predict_nhl_match(req: MatchRequest):
         "predicted_score": "3 - 2",
         "over_under_5_5": {"over_prob": 56.6},
         "home_players": [
-            {"name": "Artemi Panarin", "pos": "LW", "stats": "7B / 11P", "pct": 64},
-            {"name": "Mika Zibanejad", "pos": "C", "stats": "5B / 9P", "pct": 58},
-            {"name": "Adam Fox", "pos": "D", "stats": "2B / 10P", "pct": 53}
+            {"name": "Artemi Panarin", "pos": "LW", "stats": "7B / 11P", "pct": 64}
         ],
         "away_players": [
-            {"name": "Troy Terry", "pos": "RW", "stats": "6B / 8P", "pct": 60},
-            {"name": "Trevor Zegras", "pos": "C", "stats": "4B / 7P", "pct": 52}
+            {"name": "Troy Terry", "pos": "RW", "stats": "6B / 8P", "pct": 60}
         ]
     }
 
