@@ -8,12 +8,12 @@
         :root {
             --bg-color: #0b0e14;
             --card-bg: #161b22;
-            --accent-color: #ff4757; /* Rouge/Orange vif comme sur la capture */
+            --accent-color: #ff4757;
             --accent-hover: #ff6b81;
             --text-color: #ffffff;
             --text-muted: #8b949e;
             --border-color: #30363d;
-            --home-color: #2ecc71;
+            --home-color: #3498db;
             --draw-color: #f1c40f;
             --away-color: #ff4757;
         }
@@ -38,13 +38,8 @@
             color: var(--text-color);
             margin: 0;
             font-size: 1.4em;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
         }
 
-        /* Onglets Sports (Style gros boutons arrondis) */
         .sports-tabs {
             display: flex;
             gap: 10px;
@@ -71,7 +66,6 @@
             color: var(--text-color);
         }
 
-        /* Calendrier Horizontal type Flashscore */
         .flashscore-calendar {
             display: flex;
             gap: 6px;
@@ -114,7 +108,6 @@
             margin-top: 2px;
         }
 
-        /* Liste des matchs */
         .tab-content {
             display: none;
         }
@@ -129,7 +122,6 @@
             border-radius: 12px;
             padding: 12px 15px;
             margin-bottom: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
         }
 
         .match-card-header {
@@ -140,7 +132,6 @@
             text-transform: uppercase;
             margin-bottom: 8px;
             font-weight: bold;
-            letter-spacing: 0.5px;
         }
 
         .match-row {
@@ -169,7 +160,6 @@
             font-size: 1.05em;
         }
 
-        /* Bouton PRONO rouge/orange */
         .prono-btn {
             width: 100%;
             background-color: var(--accent-color);
@@ -181,90 +171,178 @@
             font-size: 0.9em;
             cursor: pointer;
             margin-top: 10px;
-            transition: background 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 5px;
         }
 
-        .prono-btn:hover {
-            background-color: var(--accent-hover);
+        /* --- STYLE DE LA FENÊTRE MODALE (POPUP) --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(11, 14, 20, 0.85);
+            backdrop-filter: blur(5px);
+            display: none;
+            justify-content: center;
+            align-items: flex-end;
+            z-index: 1000;
         }
 
-        /* Panneau de résultats du pronostic intégré */
-        .prediction-panel {
-            background-color: #0d1117;
+        .modal-container {
+            background-color: var(--card-bg);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 12px;
-            margin-top: 10px;
-            font-size: 0.85em;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            width: 100%;
+            max-width: 480px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 20px;
+            box-sizing: border-box;
+            animation: slideUp 0.3s ease-out;
         }
 
-        .pred-header {
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+
+        .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
             border-bottom: 1px solid var(--border-color);
-            padding-bottom: 6px;
+            padding-bottom: 12px;
+            margin-bottom: 15px;
         }
 
-        .pred-score-badge {
-            background: #21262d;
-            border: 1px solid var(--accent-color);
-            color: var(--accent-color);
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-weight: bold;
-        }
-
-        .prob-bar-bg {
-            background-color: #21262d;
-            height: 6px;
-            border-radius: 3px;
-            display: flex;
-            overflow: hidden;
-            gap: 2px;
-            margin: 6px 0 10px 0;
-        }
-
-        .prob-segment {
-            height: 100%;
-        }
-
-        .stats-row {
-            display: flex;
-            gap: 6px;
-            margin-bottom: 8px;
-        }
-
-        .stat-badge {
-            background: #161b22;
-            border: 1px solid var(--border-color);
-            padding: 4px 8px;
-            border-radius: 6px;
-            flex: 1;
-            text-align: center;
-            font-size: 0.8em;
-            color: var(--text-muted);
-        }
-        .stat-badge strong {
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.1em;
             color: var(--text-color);
         }
 
-        .players-box {
-            border-top: 1px solid var(--border-color);
-            padding-top: 6px;
-            margin-top: 6px;
+        .close-modal-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.4em;
+            cursor: pointer;
         }
-        .player-line {
+
+        .modal-section {
+            background-color: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 15px;
+            margin-bottom: 12px;
+        }
+
+        .modal-section-title {
+            font-size: 0.8em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+
+        .prob-bar-container {
+            margin-bottom: 10px;
+        }
+
+        .prob-bar-container:last-child {
+            margin-bottom: 0;
+        }
+
+        .prob-info-row {
             display: flex;
             justify-content: space-between;
-            font-size: 0.78em;
-            padding: 2px 0;
+            font-size: 0.85em;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .custom-progress-bg {
+            background-color: #21262d;
+            height: 6px;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .custom-progress-fill {
+            height: 100%;
+            border-radius: 3px;
+        }
+
+        /* Grille gardiens */
+        .goalies-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .goalie-card {
+            background: #161b22;
+            border: 1px solid var(--border-color);
+            padding: 8px 10px;
+            border-radius: 8px;
+        }
+
+        .goalie-name {
+            font-size: 0.85em;
+            font-weight: bold;
+            color: var(--text-color);
+            margin-bottom: 2px;
+        }
+
+        .goalie-stats {
+            font-size: 0.75em;
             color: var(--text-muted);
+        }
+
+        /* Onglets équipe modale (NHL) */
+        .team-tabs {
+            display: flex;
+            background: #161b22;
+            border-radius: 8px;
+            padding: 3px;
+            margin-bottom: 10px;
+            border: 1px solid var(--border-color);
+        }
+
+        .team-tab-btn {
+            flex: 1;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            padding: 6px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .team-tab-btn.active {
+            background-color: var(--accent-color);
+            color: #fff;
+        }
+
+        .player-row-modal {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.82em;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .player-row-modal:last-child {
+            border-bottom: none;
         }
     </style>
 </head>
@@ -274,25 +352,35 @@
         <h1>⚡ Multi-IA Pronostics</h1>
     </header>
 
-    <!-- Onglets Sports -->
     <div class="sports-tabs">
         <button id="btn-tab-nhl" class="sport-btn" onclick="switchSport('nhl', event)">🏒 NHL</button>
         <button id="btn-tab-foot" class="sport-btn active" onclick="switchSport('foot', event)">⚽ Football</button>
     </div>
 
-    <!-- ONGLET FOOTBALL -->
     <div id="sport-foot" class="tab-content active">
         <div id="foot-calendar" class="flashscore-calendar"></div>
         <div id="foot-matches">
-            <p style="text-align: center; color: var(--text-muted);">Chargement des matchs...</p>
+            <p style="text-align: center; color: var(--text-muted);">Chargement...</p>
         </div>
     </div>
 
-    <!-- ONGLET NHL -->
     <div id="sport-nhl" class="tab-content">
         <div id="nhl-calendar" class="flashscore-calendar"></div>
         <div id="nhl-matches">
-            <p style="text-align: center; color: var(--text-muted);">Chargement des matchs...</p>
+            <p style="text-align: center; color: var(--text-muted);">Chargement...</p>
+        </div>
+    </div>
+
+    <!-- FENÊTRE MODALE -->
+    <div id="prono-modal" class="modal-overlay" onclick="closeModalOnOutside(event)">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2 id="modal-match-title">Analyse Match</h2>
+                <button class="close-modal-btn" onclick="closeModal()">×</button>
+            </div>
+            <div id="modal-body">
+                <!-- Contenu injecté dynamiquement -->
+            </div>
         </div>
     </div>
 
@@ -303,7 +391,6 @@
         function switchSport(sport, event) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.sport-btn').forEach(el => el.classList.remove('active'));
-
             document.getElementById('sport-' + sport).classList.add('active');
             document.getElementById('btn-tab-' + sport).classList.add('active');
         }
@@ -343,26 +430,32 @@
                     }
                     buildCalendar(sport);
                 };
-
                 container.appendChild(btn);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('prono-modal').style.display = 'none';
+        }
+
+        function closeModalOnOutside(event) {
+            if (event.target.id === 'prono-modal') {
+                closeModal();
             }
         }
 
         async function loadFootMatches() {
             const container = document.getElementById('foot-matches');
             container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
-
             try {
                 const res = await fetch(`/api/matches/foot?date=${selectedFootDate}`);
                 const data = await res.json();
-                
                 if (!data.matches || data.matches.length === 0) {
                     container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match de football trouvé.</p>';
                     return;
                 }
-
                 container.innerHTML = '';
-                data.matches.forEach((m, index) => {
+                data.matches.forEach(m => {
                     const card = document.createElement('div');
                     card.className = 'match-card';
                     card.innerHTML = `
@@ -371,23 +464,14 @@
                             <span>${m.game_state === 'OFF' ? 'TERMINÉ' : 'À VENIR'}</span>
                         </div>
                         <div class="match-row">
-                            <div class="team-info">
-                                <img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'">
-                                <span>${m.home_team}</span>
-                            </div>
+                            <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
                             <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
                         </div>
                         <div class="match-row">
-                            <div class="team-info">
-                                <img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'">
-                                <span>${m.away_team}</span>
-                            </div>
+                            <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
                             <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
                         </div>
-                        <button class="prono-btn" onclick="toggleFootProno('${m.home_team}', '${m.away_team}', ${m.home_id || 'null'}, ${m.away_id || 'null'}, 'foot-pred-${index}')">
-                            ⚡ PRONO
-                        </button>
-                        <div id="foot-pred-${index}" style="display:none;"></div>
+                        <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}', ${m.home_id || 'null'}, ${m.away_id || 'null'})">⚡ PRONO</button>
                     `;
                     container.appendChild(card);
                 });
@@ -396,15 +480,14 @@
             }
         }
 
-        async function toggleFootProno(home, away, homeId, awayId, containerId) {
-            const box = document.getElementById(containerId);
-            if (box.style.display === 'block') {
-                box.style.display = 'none';
-                return;
-            }
+        async function openFootProno(home, away, homeId, awayId) {
+            const modal = document.getElementById('prono-modal');
+            const title = document.getElementById('modal-match-title');
+            const body = document.getElementById('modal-body');
 
-            box.style.display = 'block';
-            box.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 0.85em;">Analyse Multi-IA en cours...</p>';
+            title.innerText = `${home} vs ${away}`;
+            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse Multi-IA en cours...</p>';
+            modal.style.display = 'flex';
 
             try {
                 const res = await fetch('/predict/match/foot', {
@@ -413,53 +496,49 @@
                     body: JSON.stringify({ home_team: home, away_team: away, home_id: homeId, away_id: awayId })
                 });
                 const data = await res.json();
-
                 const h = data.probabilities.home_win;
                 const d = data.probabilities.draw;
                 const a = data.probabilities.away_win;
 
-                box.innerHTML = `
-                    <div class="prediction-panel">
-                        <div class="pred-header">
-                            <strong>1N2 & Probabilités</strong>
-                            <div class="pred-score-badge">Score : ${data.predicted_score}</div>
+                body.innerHTML = `
+                    <div class="modal-section">
+                        <div class="modal-section-title">📊 Probabilités Multi-IA (Score : ${data.predicted_score})</div>
+                        <div class="prob-bar-container">
+                            <div class="prob-info-row"><span>Victoire ${home}</span><span>${h}%</span></div>
+                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${h}%; background-color: var(--home-color);"></div></div>
                         </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold;">
-                            <span style="color: var(--home-color);">1: ${h}%</span>
-                            <span style="color: var(--draw-color);">X: ${d}%</span>
-                            <span style="color: var(--away-color);">2: ${a}%</span>
+                        <div class="prob-bar-container" style="margin-top: 8px;">
+                            <div class="prob-info-row"><span>Match Nul</span><span>${d}%</span></div>
+                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${d}%; background-color: var(--draw-color);"></div></div>
                         </div>
-                        <div class="prob-bar-bg">
-                            <div class="prob-segment" style="width: ${h}%; background-color: var(--home-color);"></div>
-                            <div class="prob-segment" style="width: ${d}%; background-color: var(--draw-color);"></div>
-                            <div class="prob-segment" style="width: ${a}%; background-color: var(--away-color);"></div>
+                        <div class="prob-bar-container" style="margin-top: 8px;">
+                            <div class="prob-info-row"><span>Victoire ${away}</span><span>${a}%</span></div>
+                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${a}%; background-color: var(--away-color);"></div></div>
                         </div>
-                        <div class="stats-row">
-                            <div class="stat-badge">BTTS : <strong>${data.btts.yes_prob}%</strong></div>
-                            <div class="stat-badge">Over 2.5 : <strong>${data.over_under_2_5.over_prob}%</strong></div>
-                        </div>
+                    </div>
+                    <div class="modal-section">
+                        <div class="modal-section-title">⚽ Options de Paris</div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>BTTS (Les deux équipes marquent)</span><strong>${data.btts.yes_prob}%</strong></div>
+                        <div class="prob-info-row"><span>Plus de 2.5 buts (Over)</span><strong>${data.over_under_2_5.over_prob}%</strong></div>
                     </div>
                 `;
             } catch (err) {
-                box.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de prédiction.</p>';
+                body.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur lors du chargement des pronostics.</p>';
             }
         }
 
         async function loadNhlMatches() {
             const container = document.getElementById('nhl-matches');
             container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
-
             try {
                 const res = await fetch(`/api/matches/nhl?date=${selectedNhlDate}`);
                 const data = await res.json();
-                
                 if (!data.matches || data.matches.length === 0) {
                     container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match NHL trouvé.</p>';
                     return;
                 }
-
                 container.innerHTML = '';
-                data.matches.forEach((m, index) => {
+                data.matches.forEach(m => {
                     const card = document.createElement('div');
                     card.className = 'match-card';
                     card.innerHTML = `
@@ -468,23 +547,14 @@
                             <span>${m.game_state === 'OFF' ? 'TERMINÉ' : m.game_state}</span>
                         </div>
                         <div class="match-row">
-                            <div class="team-info">
-                                <img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'">
-                                <span>${m.home_team}</span>
-                            </div>
+                            <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
                             <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
                         </div>
                         <div class="match-row">
-                            <div class="team-info">
-                                <img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'">
-                                <span>${m.away_team}</span>
-                            </div>
+                            <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
                             <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
                         </div>
-                        <button class="prono-btn" onclick="toggleNhlProno('${m.home_team}', '${m.away_team}', 'nhl-pred-${index}')">
-                            ⚡ PRONO
-                        </button>
-                        <div id="nhl-pred-${index}" style="display:none;"></div>
+                        <button class="prono-btn" onclick="openNhlProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
                     `;
                     container.appendChild(card);
                 });
@@ -493,15 +563,14 @@
             }
         }
 
-        async function toggleNhlProno(home, away, containerId) {
-            const box = document.getElementById(containerId);
-            if (box.style.display === 'block') {
-                box.style.display = 'none';
-                return;
-            }
+        async function openNhlProno(home, away) {
+            const modal = document.getElementById('prono-modal');
+            const title = document.getElementById('modal-match-title');
+            const body = document.getElementById('modal-body');
 
-            box.style.display = 'block';
-            box.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 0.85em;">Analyse LNH en cours...</p>';
+            title.innerText = `${home} vs ${away}`;
+            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse LNH en cours...</p>';
+            modal.style.display = 'flex';
 
             try {
                 const res = await fetch('/predict/match', {
@@ -510,47 +579,94 @@
                     body: JSON.stringify({ home_team: home, away_team: away })
                 });
                 const data = await res.json();
-
                 const h = data.probabilities.home_win;
                 const d = data.probabilities.draw;
                 const a = data.probabilities.away_win;
 
-                let playersHtml = '';
-                if (data.home_players && data.away_players) {
-                    playersHtml = `
-                        <div class="players-box">
-                            <div style="font-size: 0.78em; font-weight: bold; color: var(--accent-color); margin-bottom: 3px;">🎯 Buteurs & Passeurs Clés</div>
-                            <div class="player-line"><span>${data.home_players[0].name} (${data.home_players[0].pos})</span><strong>${data.home_players[0].stats}</strong></div>
-                            <div class="player-line"><span>${data.away_players[0].name} (${data.away_players[0].pos})</span><strong>${data.away_players[0].stats}</strong></div>
-                        </div>
-                    `;
+                let playersHomeHtml = '';
+                let playersAwayHtml = '';
+
+                if (data.home_players) {
+                    data.home_players.forEach(p => {
+                        playersHomeHtml += `<div class="player-row-modal"><span>${p.name} (${p.pos})</span><span>${p.stats}</span><strong>${p.pct}%</strong></div>`;
+                    });
+                }
+                if (data.away_players) {
+                    data.away_players.forEach(p => {
+                        playersAwayHtml += `<div class="player-row-modal"><span>${p.name} (${p.pos})</span><span>${p.stats}</span><strong>${p.pct}%</strong></div>`;
+                    });
                 }
 
-                box.innerHTML = `
-                    <div class="prediction-panel">
-                        <div class="pred-header">
-                            <strong>Victoire / Nul (OT)</strong>
-                            <div class="pred-score-badge">Score : ${data.predicted_score}</div>
+                body.innerHTML = `
+                    <div class="modal-section">
+                        <div class="modal-section-title">📊 Probabilités Multi-IA (Score : ${data.predicted_score})</div>
+                        <div class="prob-bar-container">
+                            <div class="prob-info-row"><span>Victoire ${home}</span><span>${h}%</span></div>
+                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${h}%; background-color: var(--home-color);"></div></div>
                         </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold;">
-                            <span style="color: var(--home-color);">1: ${h}%</span>
-                            <span style="color: var(--draw-color);">OT: ${d}%</span>
-                            <span style="color: var(--away-color);">2: ${a}%</span>
+                        <div class="prob-bar-container" style="margin-top: 8px;">
+                            <div class="prob-info-row"><span>Match Nul / Prolongations</span><span>${d}%</span></div>
+                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${d}%; background-color: var(--draw-color);"></div></div>
                         </div>
-                        <div class="prob-bar-bg">
-                            <div class="prob-segment" style="width: ${h}%; background-color: var(--home-color);"></div>
-                            <div class="prob-segment" style="width: ${d}%; background-color: var(--draw-color);"></div>
-                            <div class="prob-segment" style="width: ${a}%; background-color: var(--away-color);"></div>
+                        <div class="prob-bar-container" style="margin-top: 8px;">
+                            <div class="prob-info-row"><span>Victoire ${away}</span><span>${a}%</span></div>
+                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${a}%; background-color: var(--away-color);"></div></div>
                         </div>
-                        <div class="stats-row">
-                            <div class="stat-badge">Over 5.5 : <strong>${data.over_under_5_5.over_prob}%</strong></div>
-                            <div class="stat-badge">Gardiens : <strong>${data.goalies.home.name.split(' ').pop()} vs ${data.goalies.away.name.split(' ').pop()}</strong></div>
+                    </div>
+
+                    <div class="modal-section">
+                        <div class="modal-section-title">🏒 Total Buts (Over / Under 5.5)</div>
+                        <div class="prob-info-row"><span>Plus de 5.5 buts</span><strong style="color: var(--accent-color);">${data.over_under_5_5.over_prob}%</strong></div>
+                    </div>
+
+                    <div class="modal-section">
+                        <div class="modal-section-title">🥅 Gardiens Titulaires</div>
+                        <div class="goalies-grid">
+                            <div class="goalie-card">
+                                <div class="goalie-name">${data.goalies.home.name}</div>
+                                <div class="goalie-stats">SV%: ${data.goalies.home.save_pct * 100}%</div>
+                            </div>
+                            <div class="goalie-card">
+                                <div class="goalie-name">${data.goalies.away.name}</div>
+                                <div class="goalie-stats">SV%: ${data.goalies.away.save_pct * 100}%</div>
+                            </div>
                         </div>
-                        ${playersHtml}
+                    </div>
+
+                    <div class="modal-section">
+                        <div class="modal-section-title">👤 Projections Joueurs (Point %)</div>
+                        <div class="team-tabs">
+                            <button id="tab-p-home" class="team-tab-btn active" onclick="switchModalTeam('home')">${home}</button>
+                            <button id="tab-p-away" class="team-tab-btn" onclick="switchModalTeam('away')">${away}</button>
+                        </div>
+                        <div id="modal-players-content">
+                            <div style="font-size: 0.78em; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Joueur</span><span>Stats</span><span>Point %</span></div>
+                            <div id="list-players-home">${playersHomeHtml}</div>
+                            <div id="list-players-away" style="display:none;">${playersAwayHtml}</div>
+                        </div>
                     </div>
                 `;
             } catch (err) {
-                box.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de prédiction.</p>';
+                body.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur lors du chargement des pronostics LNH.</p>';
+            }
+        }
+
+        function switchModalTeam(team) {
+            const homeList = document.getElementById('list-players-home');
+            const awayList = document.getElementById('list-players-away');
+            const btnHome = document.getElementById('tab-p-home');
+            const btnAway = document.getElementById('tab-p-away');
+
+            if (team === 'home') {
+                homeList.style.display = 'block';
+                awayList.style.display = 'none';
+                btnHome.classList.add('active');
+                btnAway.classList.remove('active');
+            } else {
+                homeList.style.display = 'none';
+                awayList.style.display = 'block';
+                btnAway.classList.add('active');
+                btnHome.classList.remove('active');
             }
         }
 
