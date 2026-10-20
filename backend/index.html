@@ -3,80 +3,118 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-IA NHL & Football Dashboard v19.0</title>
+    <title>Multi-IA Pronostics</title>
     <style>
         :root {
-            --bg-color: #0f111a;
-            --card-bg: #1e1e2f;
-            --accent-color: #4ecca3;
-            --accent-hover: #45b393;
+            --bg-color: #0b0e14;
+            --card-bg: #161b22;
+            --accent-color: #ff4757; /* Rouge/Orange vif comme sur la capture */
+            --accent-hover: #ff6b81;
             --text-color: #ffffff;
-            --text-muted: #a0a0c0;
-            --border-color: #2f2f45;
-            --home-color: #4ecca3;
-            --draw-color: #f39c12;
-            --away-color: #e74c3c;
+            --text-muted: #8b949e;
+            --border-color: #30363d;
+            --home-color: #2ecc71;
+            --draw-color: #f1c40f;
+            --away-color: #ff4757;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 20px;
+            padding: 12px;
+            max-width: 480px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         header {
             text-align: center;
-            margin-bottom: 25px;
+            margin-bottom: 20px;
         }
 
         header h1 {
-            color: var(--accent-color);
-            margin-bottom: 5px;
-        }
-
-        header p {
-            color: var(--text-muted);
-            margin-top: 0;
-        }
-
-        /* Style des onglets principaux */
-        .tabs-nav {
+            color: var(--text-color);
+            margin: 0;
+            font-size: 1.4em;
             display: flex;
+            align-items: center;
             justify-content: center;
-            gap: 15px;
-            margin-bottom: 25px;
+            gap: 6px;
         }
 
-        .tab-btn {
+        /* Onglets Sports (Style gros boutons arrondis) */
+        .sports-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .sport-btn {
+            flex: 1;
             background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
+            border: 2px solid var(--border-color);
             color: var(--text-muted);
-            padding: 10px 24px;
-            border-radius: 8px;
+            padding: 12px;
+            border-radius: 14px;
             cursor: pointer;
-            font-weight: 600;
-            font-size: 1em;
+            font-weight: bold;
+            font-size: 0.95em;
+            text-align: center;
             transition: all 0.2s;
         }
 
-        .tab-btn:hover {
+        .sport-btn.active {
+            background-color: var(--card-bg);
             border-color: var(--accent-color);
             color: var(--text-color);
         }
 
-        .tab-btn.active {
+        /* Calendrier Horizontal type Flashscore */
+        .flashscore-calendar {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+            scrollbar-width: none;
+        }
+        .flashscore-calendar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .cal-day-btn {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 8px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            text-align: center;
+            min-width: 55px;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+
+        .cal-day-btn.active {
             background-color: var(--accent-color);
-            color: #0f111a;
             border-color: var(--accent-color);
+            color: #fff;
+            font-weight: bold;
         }
 
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
+        .cal-day-name {
+            font-size: 0.7em;
+            text-transform: uppercase;
         }
 
+        .cal-day-date {
+            font-size: 0.9em;
+            margin-top: 2px;
+        }
+
+        /* Liste des matchs */
         .tab-content {
             display: none;
         }
@@ -85,330 +123,288 @@
             display: block;
         }
 
-        .panel {
+        .match-card {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            padding: 12px 15px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
         }
 
-        .panel h2 {
-            margin-top: 0;
-            border-bottom: 2px solid var(--border-color);
-            padding-bottom: 10px;
-            color: var(--accent-color);
-            font-size: 1.3em;
+        .match-card-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
         }
 
-        /* Barre de calendrier rapide */
-        .calendar-bar {
+        .match-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 0.95em;
+            font-weight: 500;
+        }
+
+        .team-info {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 15px;
-            background: var(--bg-color);
-            padding: 8px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
         }
 
-        .cal-btn {
-            background: #25283c;
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 0.85em;
-            cursor: pointer;
-            transition: background 0.2s;
+        .team-logo {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
         }
 
-        .cal-btn:hover {
-            background: var(--border-color);
-        }
-
-        input[type="date"] {
-            background-color: var(--bg-color);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            padding: 6px 10px;
-            border-radius: 6px;
-            cursor: pointer;
-            flex-grow: 1;
-        }
-
-        .action-btn {
-            background-color: var(--accent-color);
-            color: #0f111a;
+        .match-score {
             font-weight: bold;
-            border: none;
-            padding: 7px 14px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.2s;
+            font-size: 1.05em;
         }
 
-        .action-btn:hover {
+        /* Bouton PRONO rouge/orange */
+        .prono-btn {
+            width: 100%;
+            background-color: var(--accent-color);
+            color: #fff;
+            border: none;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 0.9em;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .prono-btn:hover {
             background-color: var(--accent-hover);
         }
 
-        .match-list {
-            max-height: 380px;
-            overflow-y: auto;
-            margin-bottom: 20px;
-            padding-right: 5px;
-        }
-
-        .match-item {
-            background-color: rgba(255, 255, 255, 0.03);
+        /* Panneau de résultats du pronostic intégré */
+        .prediction-panel {
+            background-color: #0d1117;
             border: 1px solid var(--border-color);
-            padding: 12px;
             border-radius: 8px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .match-item:hover {
-            border-color: var(--accent-color);
-            background-color: rgba(78, 204, 163, 0.05);
-        }
-
-        .match-teams {
-            font-weight: 600;
-        }
-
-        .match-time {
+            padding: 12px;
+            margin-top: 10px;
             font-size: 0.85em;
-            color: var(--text-muted);
         }
 
-        .prediction-box {
-            background-color: var(--bg-color);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 18px;
-            margin-top: 15px;
-        }
-
-        .prediction-header {
+        .pred-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 8px;
             border-bottom: 1px solid var(--border-color);
-            padding-bottom: 10px;
-            margin-bottom: 15px;
+            padding-bottom: 6px;
         }
 
-        .prediction-header h3 {
-            margin: 0;
-            color: var(--accent-color);
-            font-size: 1.1em;
-        }
-
-        .score-badge {
-            background: #25283c;
+        .pred-score-badge {
+            background: #21262d;
             border: 1px solid var(--accent-color);
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-weight: bold;
             color: var(--accent-color);
-        }
-
-        .prob-container {
-            margin-bottom: 15px;
-        }
-
-        .prob-labels {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.9em;
-            margin-bottom: 5px;
-            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: bold;
         }
 
         .prob-bar-bg {
-            background-color: #2f2f45;
-            height: 10px;
-            border-radius: 5px;
+            background-color: #21262d;
+            height: 6px;
+            border-radius: 3px;
             display: flex;
             overflow: hidden;
             gap: 2px;
+            margin: 6px 0 10px 0;
         }
 
         .prob-segment {
             height: 100%;
-            transition: width 0.5s ease;
         }
 
-        .badge-stats {
+        .stats-row {
             display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
+            gap: 6px;
+            margin-bottom: 8px;
         }
 
-        .stat-pill {
-            background: rgba(255, 255, 255, 0.05);
+        .stat-badge {
+            background: #161b22;
             border: 1px solid var(--border-color);
-            padding: 6px 12px;
+            padding: 4px 8px;
             border-radius: 6px;
-            font-size: 0.85em;
-            color: var(--text-muted);
             flex: 1;
             text-align: center;
+            font-size: 0.8em;
+            color: var(--text-muted);
         }
-
-        .stat-pill strong {
+        .stat-badge strong {
             color: var(--text-color);
         }
 
-        .multi-ai-card {
-            background: #151722;
-            padding: 14px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
+        .players-box {
+            border-top: 1px solid var(--border-color);
+            padding-top: 6px;
+            margin-top: 6px;
         }
-
-        .ai-row {
+        .player-line {
             display: flex;
             justify-content: space-between;
-            font-size: 0.85em;
-            padding: 4px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-        }
-
-        .ai-row:last-child {
-            border-bottom: none;
+            font-size: 0.78em;
+            padding: 2px 0;
+            color: var(--text-muted);
         }
     </style>
 </head>
 <body>
 
     <header>
-        <h1>🏒⚽ Multi-IA Dashboard (v19.0)</h1>
-        <p>Moteur de prédiction unifié - Poisson, Machine Learning & Régularité</p>
+        <h1>⚡ Multi-IA Pronostics</h1>
     </header>
 
-    <!-- Navigation par Onglets -->
-    <div class="tabs-nav">
-        <button class="tab-btn active" onclick="switchTab('foot', event)">⚽ Football</button>
-        <button class="tab-btn" onclick="switchTab('nhl', event)">🏒 LNH / NHL</button>
+    <!-- Onglets Sports -->
+    <div class="sports-tabs">
+        <button id="btn-tab-nhl" class="sport-btn" onclick="switchSport('nhl', event)">🏒 NHL</button>
+        <button id="btn-tab-foot" class="sport-btn active" onclick="switchSport('foot', event)">⚽ Football</button>
     </div>
 
-    <div class="container">
-        <!-- ONGLET FOOTBALL -->
-        <div id="tab-foot" class="tab-content active">
-            <div class="panel">
-                <h2>⚽ Calendrier & Matchs de Football</h2>
-                <!-- Barre Calendrier Intégrée -->
-                <div class="calendar-bar">
-                    <button class="cal-btn" onclick="changeDate('foot', -1)">◀ Hier</button>
-                    <button class="cal-btn" onclick="changeDate('foot', 0)">Aujourd'hui</button>
-                    <button class="cal-btn" onclick="changeDate('foot', 1)">Demain ▶</button>
-                    <input type="date" id="foot-date" onchange="loadFootMatches()">
-                    <button class="action-btn" onclick="loadFootMatches()">Filtrer</button>
-                </div>
-                <div id="foot-matches" class="match-list">
-                    <p style="color: var(--text-muted); text-align: center;">Sélectionnez une date pour afficher les matchs.</p>
-                </div>
-                <div id="foot-result" class="prediction-box" style="display:none;"></div>
-            </div>
+    <!-- ONGLET FOOTBALL -->
+    <div id="sport-foot" class="tab-content active">
+        <div id="foot-calendar" class="flashscore-calendar"></div>
+        <div id="foot-matches">
+            <p style="text-align: center; color: var(--text-muted);">Chargement des matchs...</p>
         </div>
+    </div>
 
-        <!-- ONGLET NHL -->
-        <div id="tab-nhl" class="tab-content">
-            <div class="panel">
-                <h2>🏒 Calendrier & Matchs LNH / NHL</h2>
-                <!-- Barre Calendrier Intégrée -->
-                <div class="calendar-bar">
-                    <button class="cal-btn" onclick="changeDate('nhl', -1)">◀ Hier</button>
-                    <button class="cal-btn" onclick="changeDate('nhl', 0)">Aujourd'hui</button>
-                    <button class="cal-btn" onclick="changeDate('nhl', 1)">Demain ▶</button>
-                    <input type="date" id="nhl-date" onchange="loadNhlMatches()">
-                    <button class="action-btn" onclick="loadNhlMatches()">Filtrer</button>
-                </div>
-                <div id="nhl-matches" class="match-list">
-                    <p style="color: var(--text-muted); text-align: center;">Sélectionnez une date pour afficher les matchs.</p>
-                </div>
-                <div id="nhl-result" class="prediction-box" style="display:none;"></div>
-            </div>
+    <!-- ONGLET NHL -->
+    <div id="sport-nhl" class="tab-content">
+        <div id="nhl-calendar" class="flashscore-calendar"></div>
+        <div id="nhl-matches">
+            <p style="text-align: center; color: var(--text-muted);">Chargement des matchs...</p>
         </div>
     </div>
 
     <script>
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('foot-date').value = today;
-        document.getElementById('nhl-date').value = today;
+        let selectedFootDate = new Date().toISOString().split('T')[0];
+        let selectedNhlDate = new Date().toISOString().split('T')[0];
 
-        // Gestion des onglets
-        function switchTab(tabName, event) {
+        function switchSport(sport, event) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.sport-btn').forEach(el => el.classList.remove('active'));
 
-            document.getElementById('tab-' + tabName).classList.add('active');
-            event.currentTarget.classList.add('active');
+            document.getElementById('sport-' + sport).classList.add('active');
+            document.getElementById('btn-tab-' + sport).classList.add('active');
         }
 
-        // Navigation rapide par jour (Calendrier)
-        function changeDate(sport, daysOffset) {
-            const inputId = sport === 'foot' ? 'foot-date' : 'nhl-date';
-            const dateInput = document.getElementById(inputId);
-            
-            let currentDate = dateInput.value ? new Date(dateInput.value) : new Date();
-            
-            if (daysOffset === 0) {
-                currentDate = new Date();
-            } else {
-                currentDate.setDate(currentDate.getDate() + daysOffset);
-            }
+        function buildCalendar(sport) {
+            const containerId = sport === 'foot' ? 'foot-calendar' : 'nhl-calendar';
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
 
-            dateInput.value = currentDate.toISOString().split('T')[0];
+            const today = new Date();
+            for (let i = -3; i <= 3; i++) {
+                const d = new Date(today);
+                d.setDate(today.getDate() + i);
+                const dateStr = d.toISOString().split('T')[0];
 
-            if (sport === 'foot') {
-                loadFootMatches();
-            } else {
-                loadNhlMatches();
+                const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
+                const dayDate = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
+
+                const btn = document.createElement('button');
+                btn.className = 'cal-day-btn';
+                if (dateStr === (sport === 'foot' ? selectedFootDate : selectedNhlDate)) {
+                    btn.classList.add('active');
+                }
+
+                btn.innerHTML = `
+                    <div class="cal-day-name">${i === 0 ? 'AJD' : dayName}</div>
+                    <div class="cal-day-date">${dayDate}</div>
+                `;
+
+                btn.onclick = () => {
+                    if (sport === 'foot') {
+                        selectedFootDate = dateStr;
+                        loadFootMatches();
+                    } else {
+                        selectedNhlDate = dateStr;
+                        loadNhlMatches();
+                    }
+                    buildCalendar(sport);
+                };
+
+                container.appendChild(btn);
             }
         }
 
         async function loadFootMatches() {
-            const date = document.getElementById('foot-date').value;
             const container = document.getElementById('foot-matches');
-            container.innerHTML = '<p style="text-align: center;">Chargement...</p>';
+            container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
 
             try {
-                const res = await fetch(`/api/matches/foot?date=${date}`);
+                const res = await fetch(`/api/matches/foot?date=${selectedFootDate}`);
                 const data = await res.json();
                 
                 if (!data.matches || data.matches.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match trouvé pour cette date.</p>';
+                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match de football trouvé.</p>';
                     return;
                 }
 
                 container.innerHTML = '';
-                data.matches.forEach(m => {
-                    const div = document.createElement('div');
-                    div.className = 'match-item';
-                    div.innerHTML = `
-                        <div class="match-teams">${m.home_team} vs ${m.away_team}</div>
-                        <div class="match-time">${m.game_state === 'OFF' ? 'Terminé' : 'À venir'}</div>
+                data.matches.forEach((m, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'match-card';
+                    card.innerHTML = `
+                        <div class="match-card-header">
+                            <span>FOOTBALL</span>
+                            <span>${m.game_state === 'OFF' ? 'TERMINÉ' : 'À VENIR'}</span>
+                        </div>
+                        <div class="match-row">
+                            <div class="team-info">
+                                <img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'">
+                                <span>${m.home_team}</span>
+                            </div>
+                            <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
+                        </div>
+                        <div class="match-row">
+                            <div class="team-info">
+                                <img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'">
+                                <span>${m.away_team}</span>
+                            </div>
+                            <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
+                        </div>
+                        <button class="prono-btn" onclick="toggleFootProno('${m.home_team}', '${m.away_team}', ${m.home_id || 'null'}, ${m.away_id || 'null'}, 'foot-pred-${index}')">
+                            ⚡ PRONO
+                        </button>
+                        <div id="foot-pred-${index}" style="display:none;"></div>
                     `;
-                    div.onclick = () => predictFootMatch(m.home_team, m.away_team, m.home_id, m.away_id);
-                    container.appendChild(div);
+                    container.appendChild(card);
                 });
             } catch (err) {
-                container.innerHTML = '<p style="color: #ff6b6b; text-align: center;">Erreur de chargement des matchs.</p>';
+                container.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de chargement.</p>';
             }
         }
 
-        async function predictFootMatch(home, away, homeId, awayId) {
-            const resultBox = document.getElementById('foot-result');
-            resultBox.style.display = 'block';
-            resultBox.innerHTML = '<p style="text-align: center;">Analyse Multi-IA en cours...</p>';
+        async function toggleFootProno(home, away, homeId, awayId, containerId) {
+            const box = document.getElementById(containerId);
+            if (box.style.display === 'block') {
+                box.style.display = 'none';
+                return;
+            }
+
+            box.style.display = 'block';
+            box.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 0.85em;">Analyse Multi-IA en cours...</p>';
 
             try {
                 const res = await fetch('/predict/match/foot', {
@@ -418,104 +414,94 @@
                 });
                 const data = await res.json();
 
-                const hProb = data.probabilities.home_win;
-                const dProb = data.probabilities.draw;
-                const aProb = data.probabilities.away_win;
+                const h = data.probabilities.home_win;
+                const d = data.probabilities.draw;
+                const a = data.probabilities.away_win;
 
-                let consensusHtml = '';
-                if (data.multi_ai_consensus) {
-                    const conf = data.multi_ai_consensus.confidence_score;
-                    const ai1 = data.multi_ai_consensus.ai_1_poisson;
-                    const ai2 = data.multi_ai_consensus.ai_2_trends;
-                    const ai3 = data.multi_ai_consensus.ai_3_streak;
-                    
-                    consensusHtml = `
-                        <div class="multi-ai-card">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                <strong style="color: var(--accent-color);">🧠 Consensus Multi-IA</strong>
-                                <span style="font-size: 0.85em; background: rgba(78,204,163,0.1); color: var(--accent-color); padding: 2px 8px; border-radius: 4px;">Confiance : ${conf}</span>
-                            </div>
-                            <div class="ai-row">
-                                <span>IA 1 (Poisson / xG - 50%)</span>
-                                <span>1: <strong>${ai1.home}%</strong> | X: <strong>${ai1.draw}%</strong> | 2: <strong>${ai1.away}%</strong></span>
-                            </div>
-                            <div class="ai-row">
-                                <span>IA 2 (Machine Learning - 30%)</span>
-                                <span>1: <strong>${ai2.home}%</strong> | X: <strong>${ai2.draw}%</strong> | 2: <strong>${ai2.away}%</strong></span>
-                            </div>
-                            <div class="ai-row">
-                                <span>IA 3 (Régularité - 20%)</span>
-                                <span>1: <strong>${ai3.home}%</strong> | X: <strong>${ai3.draw}%</strong> | 2: <strong>${ai3.away}%</strong></span>
-                            </div>
+                box.innerHTML = `
+                    <div class="prediction-panel">
+                        <div class="pred-header">
+                            <strong>1N2 & Probabilités</strong>
+                            <div class="pred-score-badge">Score : ${data.predicted_score}</div>
                         </div>
-                    `;
-                }
-
-                resultBox.innerHTML = `
-                    <div class="prediction-header">
-                        <h3>${data.match}</h3>
-                        <div class="score-badge">Score : ${data.predicted_score}</div>
-                    </div>
-
-                    <div class="prob-container">
-                        <div class="prob-labels">
-                            <span style="color: var(--home-color);">Domicile (${hProb}%)</span>
-                            <span style="color: var(--draw-color);">Nul (${dProb}%)</span>
-                            <span style="color: var(--away-color);">Extérieur (${aProb}%)</span>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold;">
+                            <span style="color: var(--home-color);">1: ${h}%</span>
+                            <span style="color: var(--draw-color);">X: ${d}%</span>
+                            <span style="color: var(--away-color);">2: ${a}%</span>
                         </div>
                         <div class="prob-bar-bg">
-                            <div class="prob-segment" style="width: ${hProb}%; background-color: var(--home-color);"></div>
-                            <div class="prob-segment" style="width: ${dProb}%; background-color: var(--draw-color);"></div>
-                            <div class="prob-segment" style="width: ${aProb}%; background-color: var(--away-color);"></div>
+                            <div class="prob-segment" style="width: ${h}%; background-color: var(--home-color);"></div>
+                            <div class="prob-segment" style="width: ${d}%; background-color: var(--draw-color);"></div>
+                            <div class="prob-segment" style="width: ${a}%; background-color: var(--away-color);"></div>
+                        </div>
+                        <div class="stats-row">
+                            <div class="stat-badge">BTTS : <strong>${data.btts.yes_prob}%</strong></div>
+                            <div class="stat-badge">Over 2.5 : <strong>${data.over_under_2_5.over_prob}%</strong></div>
                         </div>
                     </div>
-
-                    <div class="badge-stats">
-                        <div class="stat-pill">Over 2.5 : <strong>${data.over_under_2_5.over_prob}%</strong></div>
-                        <div class="stat-pill">BTTS : <strong>${data.btts.yes_prob}%</strong></div>
-                    </div>
-
-                    ${consensusHtml}
                 `;
             } catch (err) {
-                resultBox.innerHTML = '<p style="color: #ff6b6b;">Erreur lors du calcul de la prédiction.</p>';
+                box.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de prédiction.</p>';
             }
         }
 
         async function loadNhlMatches() {
-            const date = document.getElementById('nhl-date').value;
             const container = document.getElementById('nhl-matches');
-            container.innerHTML = '<p style="text-align: center;">Chargement...</p>';
+            container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
 
             try {
-                const res = await fetch(`/api/matches/nhl?date=${date}`);
+                const res = await fetch(`/api/matches/nhl?date=${selectedNhlDate}`);
                 const data = await res.json();
                 
                 if (!data.matches || data.matches.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match NHL trouvé pour cette date.</p>';
+                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match NHL trouvé.</p>';
                     return;
                 }
 
                 container.innerHTML = '';
-                data.matches.forEach(m => {
-                    const div = document.createElement('div');
-                    div.className = 'match-item';
-                    div.innerHTML = `
-                        <div class="match-teams">${m.home_team} vs ${m.away_team}</div>
-                        <div class="match-time">${m.game_state}</div>
+                data.matches.forEach((m, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'match-card';
+                    card.innerHTML = `
+                        <div class="match-card-header">
+                            <span>LNH / NHL</span>
+                            <span>${m.game_state === 'OFF' ? 'TERMINÉ' : m.game_state}</span>
+                        </div>
+                        <div class="match-row">
+                            <div class="team-info">
+                                <img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'">
+                                <span>${m.home_team}</span>
+                            </div>
+                            <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
+                        </div>
+                        <div class="match-row">
+                            <div class="team-info">
+                                <img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'">
+                                <span>${m.away_team}</span>
+                            </div>
+                            <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
+                        </div>
+                        <button class="prono-btn" onclick="toggleNhlProno('${m.home_team}', '${m.away_team}', 'nhl-pred-${index}')">
+                            ⚡ PRONO
+                        </button>
+                        <div id="nhl-pred-${index}" style="display:none;"></div>
                     `;
-                    div.onclick = () => predictNhlMatch(m.home_team, m.away_team);
-                    container.appendChild(div);
+                    container.appendChild(card);
                 });
             } catch (err) {
-                container.innerHTML = '<p style="color: #ff6b6b; text-align: center;">Erreur de chargement.</p>';
+                container.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de chargement.</p>';
             }
         }
 
-        async function predictNhlMatch(home, away) {
-            const resultBox = document.getElementById('nhl-result');
-            resultBox.style.display = 'block';
-            resultBox.innerHTML = '<p style="text-align: center;">Analyse LNH en cours...</p>';
+        async function toggleNhlProno(home, away, containerId) {
+            const box = document.getElementById(containerId);
+            if (box.style.display === 'block') {
+                box.style.display = 'none';
+                return;
+            }
+
+            box.style.display = 'block';
+            box.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 0.85em;">Analyse LNH en cours...</p>';
 
             try {
                 const res = await fetch('/predict/match', {
@@ -525,40 +511,52 @@
                 });
                 const data = await res.json();
 
-                const hProb = data.probabilities.home_win;
-                const dProb = data.probabilities.draw;
-                const aProb = data.probabilities.away_win;
+                const h = data.probabilities.home_win;
+                const d = data.probabilities.draw;
+                const a = data.probabilities.away_win;
 
-                resultBox.innerHTML = `
-                    <div class="prediction-header">
-                        <h3>${data.match}</h3>
-                        <div class="score-badge">Score : ${data.predicted_score}</div>
-                    </div>
+                let playersHtml = '';
+                if (data.home_players && data.away_players) {
+                    playersHtml = `
+                        <div class="players-box">
+                            <div style="font-size: 0.78em; font-weight: bold; color: var(--accent-color); margin-bottom: 3px;">🎯 Buteurs & Passeurs Clés</div>
+                            <div class="player-line"><span>${data.home_players[0].name} (${data.home_players[0].pos})</span><strong>${data.home_players[0].stats}</strong></div>
+                            <div class="player-line"><span>${data.away_players[0].name} (${data.away_players[0].pos})</span><strong>${data.away_players[0].stats}</strong></div>
+                        </div>
+                    `;
+                }
 
-                    <div class="prob-container">
-                        <div class="prob-labels">
-                            <span style="color: var(--home-color);">Domicile (${hProb}%)</span>
-                            <span style="color: var(--draw-color);">Nul/OT (${dProb}%)</span>
-                            <span style="color: var(--away-color);">Extérieur (${aProb}%)</span>
+                box.innerHTML = `
+                    <div class="prediction-panel">
+                        <div class="pred-header">
+                            <strong>Victoire / Nul (OT)</strong>
+                            <div class="pred-score-badge">Score : ${data.predicted_score}</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold;">
+                            <span style="color: var(--home-color);">1: ${h}%</span>
+                            <span style="color: var(--draw-color);">OT: ${d}%</span>
+                            <span style="color: var(--away-color);">2: ${a}%</span>
                         </div>
                         <div class="prob-bar-bg">
-                            <div class="prob-segment" style="width: ${hProb}%; background-color: var(--home-color);"></div>
-                            <div class="prob-segment" style="width: ${dProb}%; background-color: var(--draw-color);"></div>
-                            <div class="prob-segment" style="width: ${aProb}%; background-color: var(--away-color);"></div>
+                            <div class="prob-segment" style="width: ${h}%; background-color: var(--home-color);"></div>
+                            <div class="prob-segment" style="width: ${d}%; background-color: var(--draw-color);"></div>
+                            <div class="prob-segment" style="width: ${a}%; background-color: var(--away-color);"></div>
                         </div>
-                    </div>
-
-                    <div class="badge-stats">
-                        <div class="stat-pill">Over 5.5 : <strong>${data.over_under_5_5.over_prob}%</strong></div>
-                        <div class="stat-pill">Gardien : <strong>${data.goalies.home.name.split(' ').pop()} vs ${data.goalies.away.name.split(' ').pop()}</strong></div>
+                        <div class="stats-row">
+                            <div class="stat-badge">Over 5.5 : <strong>${data.over_under_5_5.over_prob}%</strong></div>
+                            <div class="stat-badge">Gardiens : <strong>${data.goalies.home.name.split(' ').pop()} vs ${data.goalies.away.name.split(' ').pop()}</strong></div>
+                        </div>
+                        ${playersHtml}
                     </div>
                 `;
             } catch (err) {
-                resultBox.innerHTML = '<p style="color: #ff6b6b;">Erreur de prédiction.</p>';
+                box.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de prédiction.</p>';
             }
         }
 
         window.onload = () => {
+            buildCalendar('foot');
+            buildCalendar('nhl');
             loadFootMatches();
             loadNhlMatches();
         };
