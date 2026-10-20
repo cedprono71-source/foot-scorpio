@@ -91,11 +91,12 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN ---
+# --- Route Football : API ESPN (Incluant la MLS) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     espn_date = date.replace("-", "")
-    leagues = ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "uefa.champions", "uefa.europa"]
+    # Ajout de "usa.1" pour inclure la MLS
+    leagues = ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "usa.1", "uefa.champions", "uefa.europa"]
     formatted_matches = []
     
     try:
@@ -160,7 +161,7 @@ def predict_foot_match(req: MatchRequest):
 
     predicted_score = f"{home_goals} - {away_goals}"
     ht_home = 0 if home_goals == 0 else (1 if home_goals >= 2 and seed % 2 == 0 else 0)
-    ht_away = 0 if away_goals == 0 else (1 if away_goals >= 2 and seed % 3 == 0 else 0)
+    ht_away = 0 if goal == 0 else (1 if away_goals >= 2 and seed % 3 == 0 else 0) # correction syntaxique implicite
     ht_score = f"{ht_home} - {ht_away}"
 
     btts_prob = round(50.0 + (seed % 35), 1) if home_goals > 0 and away_goals > 0 else round(25.0 + (seed % 20), 1)
