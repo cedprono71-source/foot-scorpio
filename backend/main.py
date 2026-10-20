@@ -5,8 +5,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.0")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,8 +20,8 @@ app.add_middleware(
 class MatchRequest(BaseModel):
     home_team: str
     away_team: str
-    home_id: int = None
-    away_id: int = None
+    home_id: Optional[str] = None
+    away_id: Optional[str] = None
 
 
 # --- Moteur Consensus 5 IA Dynamique ---
@@ -91,11 +92,10 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (Incluant la MLS) ---
+# --- Route Football : API ESPN (MLS incluse) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     espn_date = date.replace("-", "")
-    # Ajout de "usa.1" pour inclure la MLS
     leagues = ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "usa.1", "uefa.champions", "uefa.europa"]
     formatted_matches = []
     
@@ -134,12 +134,12 @@ def get_foot_matches(date: str):
                     formatted_matches.append({
                         "home_team": home_team,
                         "away_team": away_team,
-                        "home_id": event.get("id"),
-                        "away_id": event.get("id"),
+                        "home_id": str(event.get("id")) if event.get("id") else None,
+                        "away_id": str(event.get("id")) if event.get("id") else None,
                         "home_logo": home_logo,
                         "away_logo": away_logo,
-                        "home_score": int(home_score) if home_score is not None and home_score.isdigit() else None,
-                        "away_score": int(away_score) if away_score is not None and away_score.isdigit() else None,
+                        "home_score": int(home_score) if home_score is not None and str(home_score).isdigit() else None,
+                        "away_score": int(away_score) if away_score is not None and str(away_score).isdigit() else None,
                         "game_state": game_state
                     })
                     
@@ -149,43 +149,46 @@ def get_foot_matches(date: str):
 
 @app.post("/predict/match/foot")
 def predict_foot_match(req: MatchRequest):
-    probs = calculate_5_ai_consensus(req.home_team, req.away_team)
-    seed = get_team_seed(req.home_team, req.away_team)
-    
-    home_goals = 0 if probs["home_win"] < 30 else (1 if probs["home_win"] < 55 else (2 if seed % 3 == 0 else 3))
-    away_goals = 0 if probs["away_win"] < 30 else (1 if probs["away_win"] < 55 else (1 if seed % 2 == 0 else 2))
-    
-    if probs["draw"] > 35:
-        home_goals = 1
-        away_goals = 1
+    try:
+        probs = calculate_5_ai_consensus(req.home_team, req.away_team)
+        seed = get_team_seed(req.home_team, req.away_team)
+        
+        home_goals = 0 if probs["home_win"] < 30 else (1 if probs["home_win"] < 55 else (2 if seed % 3 == 0 else 3))
+        away_goals = 0 if probs["away_win"] < 30 else (1 if probs["away_win"] < 55 else (1 if seed % 2 == 0 else 2))
+        
+        if probs["draw"] > 35:
+            home_goals = 1
+            away_goals = 1
 
-    predicted_score = f"{home_goals} - {away_goals}"
-    ht_home = 0 if home_goals == 0 else (1 if home_goals >= 2 and seed % 2 == 0 else 0)
-    ht_away = 0 if goal == 0 else (1 if away_goals >= 2 and seed % 3 == 0 else 0) # correction syntaxique implicite
-    ht_score = f"{ht_home} - {ht_away}"
+        predicted_score = f"{home_goals} - {away_goals}"
+        ht_home = 0 if home_goals == 0 else (1 if home_goals >= 2 and seed % 2 == 0 else 0)
+        ht_away = 0 if away_goals == 0 else (1 if away_goals >= 2 and seed % 3 == 0 else 0)
+        ht_score = f"{ht_home} - {ht_away}"
 
-    btts_prob = round(50.0 + (seed % 35), 1) if home_goals > 0 and away_goals > 0 else round(25.0 + (seed % 20), 1)
-    over_25_prob = round(40.0 + (seed % 40), 1) if (home_goals + away_goals) >= 3 else round(30.0 + (seed % 25), 1)
-    base_cards = 3.2 + (seed % 5) * 0.4
+        btts_prob = round(50.0 + (seed % 35), 1) if home_goals > 0 and away_goals > 0 else round(25.0 + (seed % 20), 1)
+        over_25_prob = round(40.0 + (seed % 40), 1) if (home_goals + away_goals) >= 3 else round(30.0 + (seed % 25), 1)
+        base_cards = 3.2 + (seed % 5) * 0.4
 
-    return {
-        "match": f"{req.home_team} vs {req.away_team}",
-        "probabilities": probs,
-        "predicted_score": predicted_score,
-        "btts": {"yes_prob": btts_prob},
-        "over_under_2_5": {"over_prob": over_25_prob},
-        "first_half": {
-            "over_0_5_prob": round(65.0 + (seed % 25), 1),
-            "predicted_ht_score": ht_score,
-            "action_conseillee": "Plus de 0.5 but MT" if (ht_home + ht_away) > 0 else "Observation en 1ère MT"
-        },
-        "yellow_cards": {
-            "expected_total": round(base_cards, 1),
-            "over_4_5_prob": round(50.0 + (seed % 30), 1),
-            "home_team_avg": round(base_cards * 0.52, 1),
-            "away_team_avg": round(base_cards * 0.48, 1)
+        return {
+            "match": f"{req.home_team} vs {req.away_team}",
+            "probabilities": probs,
+            "predicted_score": predicted_score,
+            "btts": {"yes_prob": btts_prob},
+            "over_under_2_5": {"over_prob": over_25_prob},
+            "first_half": {
+                "over_0_5_prob": round(65.0 + (seed % 25), 1),
+                "predicted_ht_score": ht_score,
+                "action_conseillee": "Plus de 0.5 but MT" if (ht_home + ht_away) > 0 else "Observation en 1ère MT"
+            },
+            "yellow_cards": {
+                "expected_total": round(base_cards, 1),
+                "over_4_5_prob": round(50.0 + (seed % 30), 1),
+                "home_team_avg": round(base_cards * 0.52, 1),
+                "away_team_avg": round(base_cards * 0.48, 1)
+            }
         }
-    }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Fonction utilitaire Effectifs NHL ---
