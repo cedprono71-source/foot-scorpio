@@ -318,6 +318,17 @@
             border-bottom: none;
         }
 
+        .badge-conseil {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.78em;
+            margin-top: 6px;
+            font-weight: bold;
+        }
+
         /* Bouton Fermer en bas */
         .modal-close-bottom-btn {
             width: 100%;
@@ -510,10 +521,27 @@
                             <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${a}%; background-color: var(--away-color);"></div></div>
                         </div>
                     </div>
+
                     <div class="modal-section">
                         <div class="modal-section-title">⚽ Options de Paris</div>
                         <div class="prob-info-row" style="margin-bottom: 6px;"><span>BTTS (Les deux équipes marquent)</span><strong>${data.btts.yes_prob}%</strong></div>
                         <div class="prob-info-row"><span>Plus de 2.5 buts (Over)</span><strong>${data.over_under_2_5.over_prob}%</strong></div>
+                    </div>
+
+                    <div class="modal-section">
+                        <div class="modal-section-title">⏱️ 1ère Mi-Temps</div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Score HT estimé</span><strong>${data.first_half.predicted_ht_score}</strong></div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité But MT (>0.5)</span><strong>${data.first_half.over_0_5_prob}%</strong></div>
+                        <div><span class="badge-conseil">${data.first_half.action_conseillee}</span></div>
+                    </div>
+
+                    <div class="modal-section">
+                        <div class="modal-section-title">🟨 Cartons Jaunes</div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Total attendu</span><strong>${data.yellow_cards.expected_total} cartons</strong></div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité > 4.5 cartons</span><strong>${data.yellow_cards.over_4_5_prob}%</strong></div>
+                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                            Moyenne Domicile : ${data.yellow_cards.home_team_avg} | Extérieur : ${data.yellow_cards.away_team_avg}
+                        </div>
                     </div>
                 `;
             } catch (err) {
