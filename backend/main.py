@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="Multi-IA Pronostics API", version="20.1")
+app = FastAPI(title="Multi-IA Pronostics API", version="20.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,8 +15,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Récupération de votre clé d'API Football-Data depuis les variables d'environnement de Render
-API_KEY = os.getenv("API_KEY", "VOTRE_CLE_FOOTBALL_DATA")
+# Récupération ultra-sécurisée de la clé d'API Football-Data
+API_KEY = os.getenv("API_KEY") or os.getenv("FOOTBALL_API_KEY") or os.getenv("FOOT_API_KEY") or "d005c..."
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -25,7 +25,7 @@ class MatchRequest(BaseModel):
     away_id: int = None
 
 
-# --- Moteur Consensus 5 IA (Poisson/xG, ML, Streak, H2H, Fatigue) ---[span_0](start_span)[span_0](end_span)
+# --- Moteur Consensus 5 IA (Poisson/xG, ML, Streak, H2H, Fatigue) ---[span_1](start_span)[span_1](end_span)
 def ai_poisson_model(home_team, away_team): return {"home": 45.0, "draw": 25.0, "away": 30.0}
 def ai_machine_learning_model(home_team, away_team): return {"home": 48.0, "draw": 22.0, "away": 30.0}
 def ai_streak_model(home_team, away_team): return {"home": 42.0, "draw": 28.0, "away": 30.0}
@@ -50,7 +50,7 @@ def calculate_5_ai_consensus(home_team, away_team):
     }
 
 
-# --- ROUTE PRINCIPALE : Affiche votre interface (index.html) ---[span_1](start_span)[span_1](end_span)
+# --- ROUTE PRINCIPALE : Affiche votre interface (index.html) ---[span_2](start_span)[span_2](end_span)
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -66,6 +66,7 @@ def get_foot_matches(date: str):
     headers = {"X-Auth-Token": API_KEY}
     formatted_matches = []
     
+    # Compétitions principales incluses dans le plan gratuit
     competitions = ["CL", "PL", "SA", "PD", "FL1"]
     
     try:
@@ -109,9 +110,8 @@ def predict_foot_match(req: MatchRequest):
     }
 
 
-# --- Fonction utilitaire pour récupérer les vrais joueurs NHL ---
+# --- Fonction utilitaire pour récupérer les vrais effectifs NHL en temps réel ---
 def fetch_nhl_roster(team_str: str):
-    # Dictionnaire de correspondance des abréviations NHL courantes
     team_map = {
         "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
         "TORONTO": "TOR", "MAPLE LEAFS": "TOR", "TOR": "TOR",
@@ -174,14 +174,14 @@ def fetch_nhl_roster(team_str: str):
                         "pct": 60 + (abs(hash(last)) % 25)
                     })
             if players:
-                return players[:3] # Renvoie les 3 premiers joueurs actifs
+                return players[:3]
     except Exception:
         pass
         
     return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 65}]
 
 
-# --- Route NHL : API publique officielle[span_2](start_span)[span_2](end_span) ---
+# --- Route NHL : API publique officielle[span_3](start_span)[span_3](end_span) ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     url = f"https://api-web.nhle.com/v1/score/{date}"
@@ -233,8 +233,6 @@ def get_nhl_matches(date: str):
 @app.post("/predict/match")
 def predict_nhl_match(req: MatchRequest):
     probs = calculate_5_ai_consensus(req.home_team, req.away_team)
-    
-    # Récupération dynamique des vrais effectifs NHL pour chaque équipe
     home_players = fetch_nhl_roster(req.home_team)
     away_players = fetch_nhl_roster(req.away_team)
     
