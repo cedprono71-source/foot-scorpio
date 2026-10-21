@@ -356,7 +356,6 @@
             font-weight: bold;
         }
 
-        /* Bouton Fermer en bas (dynamique) */
         .modal-close-bottom-btn {
             width: 100%;
             color: #ffffff;
@@ -374,6 +373,18 @@
         .modal-close-bottom-btn:hover {
             opacity: 0.9;
         }
+
+        /* --- Animation Squelette de chargement --- */
+        @keyframes pulseSkeleton {
+            0% { opacity: 0.4; }
+            50% { opacity: 0.8; }
+            100% { opacity: 0.4; }
+        }
+        .skeleton {
+            background-color: #21262d;
+            border-radius: 6px;
+            animation: pulseSkeleton 1.5s infinite ease-in-out;
+        }
     </style>
 </head>
 <body>
@@ -389,16 +400,12 @@
 
     <div id="sport-foot" class="tab-content active">
         <div id="foot-calendar" class="flashscore-calendar"></div>
-        <div id="foot-matches">
-            <p style="text-align: center; color: var(--text-muted);">Chargement...</p>
-        </div>
+        <div id="foot-matches"></div>
     </div>
 
     <div id="sport-nhl" class="tab-content">
         <div id="nhl-calendar" class="flashscore-calendar"></div>
-        <div id="nhl-matches">
-            <p style="text-align: center; color: var(--text-muted);">Chargement...</p>
-        </div>
+        <div id="nhl-matches"></div>
     </div>
 
     <!-- FENÊTRE MODALE -->
@@ -408,9 +415,7 @@
                 <h2 id="modal-match-title">Analyse Match</h2>
                 <button class="close-modal-btn" onclick="closeModal()">×</button>
             </div>
-            <div id="modal-body">
-                <!-- Contenu injecté dynamiquement -->
-            </div>
+            <div id="modal-body"></div>
             <button id="modal-close-btn" class="modal-close-bottom-btn" onclick="closeModal()">Fermer</button>
         </div>
     </div>
@@ -418,12 +423,22 @@
     <script>
         let selectedFootDate = new Date().toISOString().split('T')[0];
         let selectedNhlDate = new Date().toISOString().split('T')[0];
+        let cachedFootMatches = {};
+        let cachedNhlMatches = {};
+        let activeSport = 'foot';
 
         function switchSport(sport, event) {
+            activeSport = sport;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.sport-btn').forEach(el => el.classList.remove('active'));
             document.getElementById('sport-' + sport).classList.add('active');
             document.getElementById('btn-tab-' + sport).classList.add('active');
+            
+            if (sport === 'foot') {
+                renderFootMatches();
+            } else {
+                renderNhlMatches();
+            }
         }
 
         function buildCalendar(sport) {
@@ -475,40 +490,72 @@
             }
         }
 
+        // --- SQUELETTES DE CHARGEMENT ---
+        function renderSkeletons(containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const card = document.createElement('div');
+                card.className = 'match-card';
+                card.innerHTML = `
+                    <div class="match-card-header"><div class="skeleton" style="width: 80px; height: 10px;"></div><div class="skeleton" style="width: 40px; height: 10px;"></div></div>
+                    <div class="match-row"><div class="team-info"><div class="skeleton" style="width: 32px; height: 32px; border-radius: 50%;"></div><div class="skeleton" style="width: 120px; height: 14px;"></div></div><div class="skeleton" style="width: 25px; height: 20px;"></div></div>
+                    <div class="match-row"><div class="team-info"><div class="skeleton" style="width: 32px; height: 32px; border-radius: 50%;"></div><div class="skeleton" style="width: 120px; height: 14px;"></div></div><div class="skeleton" style="width: 25px; height: 20px;"></div></div>
+                    <div class="skeleton" style="width: 100%; height: 36px; margin-top: 10px; border-radius: 8px;"></div>
+                `;
+                container.appendChild(card);
+            }
+        }
+
         async function loadFootMatches() {
-            const container = document.getElementById('foot-matches');
-            container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
+            if (!cachedFootMatches[selectedFootDate]) {
+                renderSkeletons('foot-matches');
+            }
             try {
                 const res = await fetch(`/api/matches/foot?date=${selectedFootDate}`);
                 const data = await res.json();
-                if (!data.matches || data.matches.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match de football trouvé.</p>';
-                    return;
-                }
-                container.innerHTML = '';
-                data.matches.forEach(m => {
-                    const card = document.createElement('div');
-                    card.className = 'match-card';
-                    card.innerHTML = `
-                        <div class="match-card-header">
-                            <span>${m.league || 'FOOTBALL'}</span>
-                            <span>${m.game_state}</span>
-                        </div>
-                        <div class="match-row">
-                            <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
-                            <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
-                        </div>
-                        <div class="match-row">
-                            <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
-                            <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
-                        </div>
-                        <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
-                    `;
-                    container.appendChild(card);
-                });
+                cachedFootMatches[selectedFootDate] = data.matches || [];
             } catch (err) {
-                container.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de chargement.</p>';
+                cachedFootMatches[selectedFootDate] = [];
             }
+            if (activeSport === 'foot') renderFootMatches();
+        }
+
+        function renderFootMatches() {
+            const container = document.getElementById('foot-matches');
+            const matches = cachedFootMatches[selectedFootDate];
+
+            if (!matches) {
+                loadFootMatches();
+                return;
+            }
+
+            if (matches.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Aucun match de football trouvé.</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+            matches.forEach(m => {
+                const card = document.createElement('div');
+                card.className = 'match-card';
+                card.innerHTML = `
+                    <div class="match-card-header">
+                        <span>${m.league || 'FOOTBALL'}</span>
+                        <span>${m.game_state}</span>
+                    </div>
+                    <div class="match-row">
+                        <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
+                        <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
+                    </div>
+                    <div class="match-row">
+                        <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
+                        <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
+                    </div>
+                    <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
+                `;
+                container.appendChild(card);
+            });
         }
 
         async function openFootProno(home, away) {
@@ -578,39 +625,54 @@
         }
 
         async function loadNhlMatches() {
-            const container = document.getElementById('nhl-matches');
-            container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
+            if (!cachedNhlMatches[selectedNhlDate]) {
+                renderSkeletons('nhl-matches');
+            }
             try {
                 const res = await fetch(`/api/matches/nhl?date=${selectedNhlDate}`);
                 const data = await res.json();
-                if (!data.matches || data.matches.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match NHL trouvé.</p>';
-                    return;
-                }
-                container.innerHTML = '';
-                data.matches.forEach(m => {
-                    const card = document.createElement('div');
-                    card.className = 'match-card';
-                    card.innerHTML = `
-                        <div class="match-card-header">
-                            <span>LNH / NHL</span>
-                            <span>${m.game_state}</span>
-                        </div>
-                        <div class="match-row">
-                            <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
-                            <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
-                        </div>
-                        <div class="match-row">
-                            <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
-                            <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
-                        </div>
-                        <button class="prono-btn" onclick="openNhlProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
-                    `;
-                    container.appendChild(card);
-                });
+                cachedNhlMatches[selectedNhlDate] = data.matches || [];
             } catch (err) {
-                container.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de chargement.</p>';
+                cachedNhlMatches[selectedNhlDate] = [];
             }
+            if (activeSport === 'nhl') renderNhlMatches();
+        }
+
+        function renderNhlMatches() {
+            const container = document.getElementById('nhl-matches');
+            const matches = cachedNhlMatches[selectedNhlDate];
+
+            if (!matches) {
+                loadNhlMatches();
+                return;
+            }
+
+            if (matches.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Aucun match NHL trouvé.</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+            matches.forEach(m => {
+                const card = document.createElement('div');
+                card.className = 'match-card';
+                card.innerHTML = `
+                    <div class="match-card-header">
+                        <span>LNH / NHL</span>
+                        <span>${m.game_state}</span>
+                    </div>
+                    <div class="match-row">
+                        <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
+                        <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
+                    </div>
+                    <div class="match-row">
+                        <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
+                        <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
+                    </div>
+                    <button class="prono-btn" onclick="openNhlProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
+                `;
+                container.appendChild(card);
+            });
         }
 
         async function openNhlProno(home, away) {
@@ -638,7 +700,6 @@
                 let playersHomeHtml = '';
                 let playersAwayHtml = '';
 
-                // --- TRI AUTOMATIQUE DES JOUEURS PAR % DÉCROISSANT ---
                 if (data.home_players) {
                     data.home_players.sort((x, y) => y.pct - x.pct);
                     data.home_players.forEach(p => {
