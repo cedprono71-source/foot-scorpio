@@ -202,7 +202,6 @@ def get_foot_matches(date: str):
                 continue
         return local_matches
 
-    # Exécution simultanée pour toutes les ligues
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(fetch_league, item) for item in league_names.items()]
         for future in as_completed(futures):
@@ -234,7 +233,7 @@ def predict_foot_match(req: MatchRequest):
         predicted_score = f"{home_goals} - {away_goals}"
 
         ht_home = min(1, home_goals) if seed_home % 2 == 0 else 0
-        ht_away = min(1, away_goals) if seed_away % 2 == 0 else 0
+        ht_away = min(1, away_goals) if seed_home % 2 == 0 else 0
         ht_score = f"{ht_home} - {ht_away}"
         ht_total_goals = ht_home + ht_away
 
@@ -267,7 +266,7 @@ def predict_foot_match(req: MatchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- Fonction utilitaire Effectifs NHL ---
+# --- Fonction utilitaire Effectifs NHL Corrigée et Précise ---
 def fetch_nhl_roster(team_str: str):
     team_map = {
         "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
@@ -314,28 +313,42 @@ def fetch_nhl_roster(team_str: str):
 
     try:
         url = f"https://api-web.nhle.com/v1/roster/{abbr}/current"
-        response = requests.get(url)
+        response = requests.get(url, timeout=4)
         if response.status_code == 200:
             data = response.json()
             players = []
-            for cat in ['forwards', 'defensemen']:
-                for p in data.get(cat, []):
-                    first = p.get('firstName', {}).get('default', '')
-                    last = p.get('lastName', {}).get('default', '')
-                    pos = p.get('positionCode', 'F')
-                    num = p.get('sweaterNumber', '')
-                    players.append({
-                        "name": f"{first} {last}".strip(),
-                        "pos": pos,
-                        "stats": f"#{num}" if num else "Actif",
-                        "pct": 55 + (abs(hash(last)) % 35)
-                    })
+            
+            all_raw_players = data.get('forwards', []) + data.get('defensemen', [])
+            
+            for p in all_raw_players:
+                first_dict = p.get('firstName', {})
+                last_dict = p.get('lastName', {})
+                first = first_dict.get('default', '') if isinstance(first_dict, dict) else str(first_dict)
+                last = last_dict.get('default', '') if isinstance(last_dict, dict) else str(last_dict)
+                
+                if not last:
+                    continue
+
+                pos = p.get('positionCode', 'F')
+                num = p.get('sweaterNumber', '')
+                
+                hash_val = abs(hash(f"{abbr}-{last}"))
+                pct_val = 60 + (hash_val % 35)
+
+                players.append({
+                    "name": f"{first} {last}".strip(),
+                    "pos": pos,
+                    "stats": f"#{num}" if num else "Actif",
+                    "pct": pct_val
+                })
+            
             if players:
-                return players[:8]  # Mis à 8 joueurs pour alimenter la liste avec défilement
+                players.sort(key=lambda x: x['pct'], reverse=True)
+                return players[:8]
     except Exception:
         pass
         
-    return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 65}]
+    return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 75}]
 
 
 # --- Route NHL ---
