@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.24")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.25")
 
 app.add_middleware(
     CORSMiddleware,
@@ -344,70 +344,97 @@ def fetch_nhl_roster(team_str: str):
     return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 65}]
 
 
-# --- Route NHL (Avec l'attribut "league": "NHL" pour le style patinoire) ---
+# --- Route NHL (Avec alignement sur la date française / 3 jours de vérification) ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
-    url = f"https://api-web.nhle.com/v1/score/{date}"
     try:
-        response = requests.get(url)
-        if response.status_code != 200:
-            return {"date": date, "matches": []}
-            
-        data = response.json()
-        formatted_matches = []
-        
-        for game in data.get("games", []):
-            home_obj = game.get("homeTeam", {})
-            away_obj = game.get("awayTeam", {})
-            
-            home_team = home_obj.get("placeName", {}).get("default") or home_obj.get("abbrev") or "Home"
-            away_team = away_obj.get("placeName", {}).get("default") or away_obj.get("abbrev") or "Away"
-            
-            home_common = home_obj.get("commonName", {}).get("default", "")
-            away_common = away_obj.get("commonName", {}).get("default", "")
-            if home_common:
-                home_team = f"{home_team} {home_common}"
-            if away_common:
-                away_team = f"{away_team} {away_common}"
+        req_date_obj = datetime.strptime(date, "%Y-%m-%d")
+        dates_to_check = [
+            (req_date_obj - timedelta(days=1)).strftime("%Y-%m-%d"),
+            req_date_obj.strftime("%Y-%m-%d"),
+            (req_date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
+        ]
+    except Exception:
+        dates_to_check = [date]
 
-            home_logo = home_obj.get("logo", "")
-            away_logo = away_obj.get("logo", "")
+    formatted_matches = []
+    seen_game_ids = set()
+
+    for nhl_date in dates_to_check:
+        url = f"https://api-web.nhle.com/v1/score/{nhl_date}"
+        try:
+            response = requests.get(url, timeout=4)
+            if response.status_code != 200:
+                continue
+                
+            data = response.json()
             
-            home_score = home_obj.get("score")
-            away_score = away_score = away_obj.get("score")
-            
-            state = str(game.get("gameState", "")).upper()
-            start_utc = game.get("startTimeUTC", "")
-            
-            if state in ["OFF", "FINAL"]:
-                game_state = "OFF"
-            elif state in ["CRIT", "LIVE", "IN"]:
-                game_state = "En cours"
-            elif start_utc:
+            for game in data.get("games", []):
+                game_id = str(game.get("id"))
+                if game_id in seen_game_ids:
+                    continue
+
+                start_utc = game.get("startTimeUTC", "")
+                if not start_utc:
+                    continue
+
                 try:
                     dt_utc = datetime.fromisoformat(start_utc.replace("Z", "+00:00"))
                     dt_france = dt_utc.astimezone(paris_tz)
-                    game_state = dt_france.strftime("%H:%M")
+                    match_date_str = dt_france.strftime("%Y-%m-%d")
                 except Exception:
-                    game_state = start_utc[11:16]
-            else:
-                game_state = "--:--"
+                    continue
 
-            formatted_matches.append({
-                "league": "NHL",  # Permet au frontend d'appliquer un style bleu glace / patinoire
-                "home_team": home_team,
-                "away_team": away_team,
-                "home_score": home_score,
-                "away_score": away_score,
-                "home_logo": home_logo,
-                "away_logo": away_logo,
-                "game_state": game_state
-            })
+                if match_date_str == date:
+                    seen_game_ids.add(game_id)
+
+                    home_obj = game.get("homeTeam", {})
+                    away_obj = game.get("awayTeam", {})
+                    
+                    home_team = home_obj.get("placeName", {}).get("default") or home_obj.get("abbrev") or "Home"
+                    away_team = away_obj.get("placeName", {}).get("default") or away_obj.get("abbrev") or "Away"
+                    
+                    home_common = home_obj.get("commonName", {}).get("default", "")
+                    away_common = away_obj.get("commonName", {}).get("default", "")
+                    if home_common:
+                        home_team = f"{home_team} {home_common}"
+                    if away_common:
+                        away_team = f"{away_team} {away_common}"
+
+                    home_logo = home_obj.get("logo", "")
+                    away_logo = away_obj.get("logo", "")
+                    
+                    home_score = home_obj.get("score")
+                    away_score = away_obj.get("score")
+                    
+                    state = str(game.get("gameState", "")).upper()
+                    
+                    if state in ["OFF", "FINAL"]:
+                        game_state = "OFF"
+                    elif state in ["CRIT", "LIVE", "IN"]:
+                        game_state = "En cours"
+                    else:
+                        game_state = dt_france.strftime("%H:%M")
+
+                    formatted_matches.append({
+                        "_sort_time": start_utc,
+                        "league": "NHL",
+                        "home_team": home_team,
+                        "away_team": away_team,
+                        "home_score": home_score,
+                        "away_score": away_score,
+                        "home_logo": home_logo,
+                        "away_logo": away_logo,
+                        "game_state": game_state
+                    })
+        except Exception:
+            continue
             
-        return {"date": date, "matches": formatted_matches}
-    except Exception as e:
-        return {"date": date, "matches": [], "error": str(e)}
+    formatted_matches.sort(key=lambda x: x["_sort_time"])
+    final_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in formatted_matches]
+
+    return {"date": date, "matches": final_matches}
 
 @app.post("/predict/match")
 def predict_nhl_match(req: MatchRequest):
