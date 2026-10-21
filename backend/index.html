@@ -16,6 +16,10 @@
             --home-color: #3498db;
             --draw-color: #f1c40f;
             --away-color: #ff4757;
+            /* Thème Patinoire NHL */
+            --nhl-accent: #0284c7;
+            --nhl-card-bg: #0c1929;
+            --nhl-border: #0369a1;
         }
 
         body {
@@ -66,6 +70,10 @@
             color: var(--text-color);
         }
 
+        #btn-tab-nhl.active {
+            border-color: var(--nhl-accent);
+        }
+
         .flashscore-calendar {
             display: flex;
             gap: 6px;
@@ -98,6 +106,12 @@
             font-weight: bold;
         }
 
+        /* Actif calendrier NHL en bleu patinoire */
+        #sport-nhl .cal-day-btn.active {
+            background-color: var(--nhl-accent);
+            border-color: var(--nhl-accent);
+        }
+
         .cal-day-name {
             font-size: 0.7em;
             text-transform: uppercase;
@@ -122,6 +136,18 @@
             border-radius: 12px;
             padding: 12px 15px;
             margin-bottom: 12px;
+        }
+
+        /* --- Adaptation Thème Glace / Patinoire pour la NHL --- */
+        #sport-nhl .match-card {
+            border-color: var(--nhl-border);
+            background: linear-gradient(135deg, var(--card-bg) 0%, var(--nhl-card-bg) 100%);
+        }
+        #sport-nhl .prono-btn {
+            background-color: var(--nhl-accent);
+        }
+        #sport-nhl .prono-btn:hover {
+            background-color: var(--nhl-border);
         }
 
         .match-card-header {
@@ -465,8 +491,8 @@
                     card.className = 'match-card';
                     card.innerHTML = `
                         <div class="match-card-header">
-                            <span>FOOTBALL</span>
-                            <span>${m.game_state === 'OFF' ? 'TERMINÉ' : 'À VENIR'}</span>
+                            <span>${m.league || 'FOOTBALL'}</span>
+                            <span>${m.game_state}</span>
                         </div>
                         <div class="match-row">
                             <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
@@ -566,7 +592,7 @@
                     card.innerHTML = `
                         <div class="match-card-header">
                             <span>LNH / NHL</span>
-                            <span>${m.game_state === 'OFF' ? 'TERMINÉ' : m.game_state}</span>
+                            <span>${m.game_state}</span>
                         </div>
                         <div class="match-row">
                             <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
@@ -638,7 +664,7 @@
 
                     <div class="modal-section">
                         <div class="modal-section-title">🏒 Total Buts (Over / Under 5.5)</div>
-                        <div class="prob-info-row"><span>Plus de 5.5 buts</span><strong style="color: var(--accent-color);">${data.over_under_5_5.over_prob}%</strong></div>
+                        <div class="prob-info-row"><span>Plus de 5.5 buts</span><strong style="color: var(--nhl-accent);">${data.over_under_5_5.over_prob}%</strong></div>
                     </div>
 
                     <div class="modal-section">
