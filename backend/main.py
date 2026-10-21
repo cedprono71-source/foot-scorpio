@@ -2,13 +2,14 @@ import os
 import hashlib
 import requests
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.20")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.22")
 
 app.add_middleware(
     CORSMiddleware,
@@ -93,9 +94,10 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (Tri par heure, filtre date UTC, avec nom de ligue inclus) ---
+# --- Route Football : API ESPN (Conversion automatique à l'heure de France) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
+    paris_tz = ZoneInfo("Europe/Paris")
     try:
         req_date_obj = datetime.strptime(date, "%Y-%m-%d")
         dates_to_check = [
@@ -140,9 +142,18 @@ def get_foot_matches(date: str):
                     for event in data.get("events", []):
                         event_id = str(event.get("id"))
                         event_raw_date = event.get("date", "")
-                        event_date_str = event_raw_date[:10]
                         
-                        if event_date_str == date and event_id not in seen_event_ids:
+                        if not event_raw_date:
+                            continue
+                            
+                        try:
+                            dt_utc = datetime.fromisoformat(event_raw_date.replace("Z", "+00:00"))
+                            dt_france = dt_utc.astimezone(paris_tz)
+                            match_date_str = dt_france.strftime("%Y-%m-%d")
+                        except Exception:
+                            match_date_str = event_raw_date[:10]
+                        
+                        if match_date_str == date and event_id not in seen_event_ids:
                             seen_event_ids.add(event_id)
                             
                             competitions = event.get("competitions", [])
@@ -158,7 +169,7 @@ def get_foot_matches(date: str):
                             elif state == "in":
                                 game_state = "En cours"
                             else:
-                                game_state = event_raw_date[11:16]
+                                game_state = dt_france.strftime("%H:%M")
 
                             competitors = comp.get("competitors", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
@@ -326,9 +337,10 @@ def fetch_nhl_roster(team_str: str):
     return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 65}]
 
 
-# --- Route NHL ---
+# --- Route NHL (Convertie à l'heure de France) ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
+    paris_tz = ZoneInfo("Europe/Paris")
     url = f"https://api-web.nhle.com/v1/score/{date}"
     try:
         response = requests.get(url)
@@ -359,13 +371,21 @@ def get_nhl_matches(date: str):
             away_score = away_obj.get("score")
             
             state = game.get("gameState")
+            start_utc = game.get("startTimeUTC", "")
             
             if state in ["OFF", "FINAL"]:
                 game_state = "OFF"
             elif state in ["CRIT", "LIVE", "IN"]:
                 game_state = "En cours"
+            elif start_utc:
+                try:
+                    dt_utc = datetime.fromisoformat(start_utc.replace("Z", "+00:00"))
+                    dt_france = dt_utc.astimezone(paris_tz)
+                    game_state = dt_france.strftime("%H:%M")
+                except Exception:
+                    game_state = start_utc[11:16]
             else:
-                game_state = game.get("startTimeUTC", "")[11:16]
+                game_state = "--:--"
 
             formatted_matches.append({
                 "home_team": home_team,
@@ -387,12 +407,10 @@ def predict_nhl_match(req: MatchRequest):
     home_players = fetch_nhl_roster(req.home_team)
     away_players = fetch_nhl_roster(req.away_team)
     
-    # Calcul dynamique du score et de l'over en fonction des équipes (Seed MD5)
     seed = get_team_seed(req.home_team, req.away_team)
-    home_goals = 2 + (seed % 3)  # Entre 2 et 4 buts
-    away_goals = 1 + ((seed // 3) % 3)  # Entre 1 et 3 buts
+    home_goals = 2 + (seed % 3)
+    away_goals = 1 + ((seed // 3) % 3)
     
-    total_goals = home_goals + away_goals
     over_prob = round(40.0 + (seed % 45), 1)
 
     return {
