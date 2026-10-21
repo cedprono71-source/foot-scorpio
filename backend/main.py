@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.23")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.24")
 
 app.add_middleware(
     CORSMiddleware,
@@ -94,7 +94,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (Correction date ligues américaines + Détection Live élargie) ---
+# --- Route Football : API ESPN ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
@@ -148,15 +148,12 @@ def get_foot_matches(date: str):
                             
                         try:
                             dt_utc = datetime.fromisoformat(event_raw_date.replace("Z", "+00:00"))
-                            # Alignement de la date selon la région pour éviter le saut de jour
                             if league_code in ["usa.1", "mex.1", "ecu.1", "col.1"]:
-                                dt_local_region = dt_utc - timedelta(hours=6) # Heure locale Amériques
+                                dt_local_region = dt_utc - timedelta(hours=6)
                             else:
                                 dt_local_region = dt_utc
                                 
                             match_date_str = dt_local_region.strftime("%Y-%m-%d")
-                            
-                            # Heure d'affichage en France
                             dt_france = dt_utc.astimezone(paris_tz)
                         except Exception:
                             match_date_str = event_raw_date[:10]
@@ -174,7 +171,6 @@ def get_foot_matches(date: str):
                             state = str(status_type.get("state", "")).lower()
                             status_name = str(status_type.get("name", "")).upper()
                             
-                            # Détection robuste des matchs en cours
                             if state == "post" or status_name == "STATUS_FINAL":
                                 game_state = "OFF"
                             elif state in ["in", "live"] or "IN_PROGRESS" in status_name or "LIVE" in status_name:
@@ -348,7 +344,7 @@ def fetch_nhl_roster(team_str: str):
     return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 65}]
 
 
-# --- Route NHL ---
+# --- Route NHL (Avec l'attribut "league": "NHL" pour le style patinoire) ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
@@ -379,7 +375,7 @@ def get_nhl_matches(date: str):
             away_logo = away_obj.get("logo", "")
             
             home_score = home_obj.get("score")
-            away_score = away_obj.get("score")
+            away_score = away_score = away_obj.get("score")
             
             state = str(game.get("gameState", "")).upper()
             start_utc = game.get("startTimeUTC", "")
@@ -399,6 +395,7 @@ def get_nhl_matches(date: str):
                 game_state = "--:--"
 
             formatted_matches.append({
+                "league": "NHL",  # Permet au frontend d'appliquer un style bleu glace / patinoire
                 "home_team": home_team,
                 "away_team": away_team,
                 "home_score": home_score,
