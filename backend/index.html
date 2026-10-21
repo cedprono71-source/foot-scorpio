@@ -3,719 +3,333 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-IA Pronostics</title>
+    <title>Multi-IA Sports Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --bg-color: #0b0e14;
-            --card-bg: #161b22;
-            --accent-color: #ff4757;
-            --accent-hover: #ff6b81;
-            --text-color: #ffffff;
-            --text-muted: #8b949e;
-            --border-color: #30363d;
-            --home-color: #3498db;
-            --draw-color: #f1c40f;
-            --away-color: #ff4757;
-            /* Thème Patinoire NHL */
-            --nhl-accent: #0284c7;
-            --nhl-card-bg: #0c1929;
-            --nhl-border: #0369a1;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 12px;
-            max-width: 480px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        header {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-
-        header h1 {
-            color: var(--text-color);
-            margin: 0;
-            font-size: 1.4em;
-        }
-
-        .sports-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .sport-btn {
-            flex: 1;
-            background-color: var(--card-bg);
-            border: 2px solid var(--border-color);
-            color: var(--text-muted);
-            padding: 12px;
-            border-radius: 14px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 0.95em;
-            text-align: center;
-            transition: all 0.2s;
-        }
-
-        .sport-btn.active {
-            background-color: var(--card-bg);
-            border-color: var(--accent-color);
-            color: var(--text-color);
-        }
-
-        #btn-tab-nhl.active {
-            border-color: var(--nhl-accent);
-        }
-
-        .flashscore-calendar {
-            display: flex;
-            gap: 6px;
-            overflow-x: auto;
-            padding-bottom: 8px;
-            margin-bottom: 15px;
-            scrollbar-width: none;
-        }
-        .flashscore-calendar::-webkit-scrollbar {
-            display: none;
-        }
-
-        .cal-day-btn {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            padding: 8px 10px;
-            border-radius: 10px;
-            cursor: pointer;
-            text-align: center;
-            min-width: 55px;
-            flex-shrink: 0;
-            transition: all 0.2s;
-        }
-
-        .cal-day-btn.active {
-            background-color: var(--accent-color);
-            border-color: var(--accent-color);
-            color: #fff;
-            font-weight: bold;
-        }
-
-        /* Actif calendrier NHL en bleu patinoire */
-        #sport-nhl .cal-day-btn.active {
-            background-color: var(--nhl-accent);
-            border-color: var(--nhl-accent);
-        }
-
-        .cal-day-name {
-            font-size: 0.7em;
-            text-transform: uppercase;
-        }
-
-        .cal-day-date {
-            font-size: 0.9em;
-            margin-top: 2px;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .match-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 12px 15px;
-            margin-bottom: 12px;
-        }
-
-        /* --- Adaptation Thème Glace / Patinoire pour la NHL --- */
-        #sport-nhl .match-card {
-            border-color: var(--nhl-border);
-            background: linear-gradient(135deg, var(--card-bg) 0%, var(--nhl-card-bg) 100%);
-        }
-        #sport-nhl .prono-btn {
-            background-color: var(--nhl-accent);
-        }
-        #sport-nhl .prono-btn:hover {
-            background-color: var(--nhl-border);
-        }
-
-        .match-card-header {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.75em;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            margin-bottom: 8px;
-            font-weight: bold;
-        }
-
-        .match-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 0;
-            font-size: 0.95em;
-            font-weight: 500;
-        }
-
-        .team-info {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .team-logo {
-            width: 32px;
-            height: 32px;
-            object-fit: contain;
-            flex-shrink: 0;
-        }
-
-        .match-score {
-            font-weight: bold;
-            font-size: 1.15em;
-        }
-
-        .prono-btn {
-            width: 100%;
-            background-color: var(--accent-color);
-            color: #fff;
-            border: none;
-            padding: 10px;
-            border-radius: 8px;
-            font-weight: bold;
-            font-size: 0.9em;
-            cursor: pointer;
-            margin-top: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-        }
-
-        /* --- FENÊTRE MODALE --- */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(11, 14, 20, 0.85);
-            backdrop-filter: blur(5px);
-            display: none;
-            justify-content: center;
-            align-items: flex-end;
-            z-index: 1000;
-        }
-
-        .modal-container {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-top-left-radius: 20px;
-            border-top-right-radius: 20px;
-            width: 100%;
-            max-width: 480px;
-            max-height: 85vh;
-            overflow-y: auto;
-            padding: 20px;
-            box-sizing: border-box;
-            animation: slideUp 0.3s ease-out;
-        }
-
-        @keyframes slideUp {
-            from { transform: translateY(100%); }
-            to { transform: translateY(0); }
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 12px;
-            margin-bottom: 15px;
-        }
-
-        .modal-header h2 {
-            margin: 0;
-            font-size: 1.1em;
-            color: var(--text-color);
-        }
-
-        .close-modal-btn {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            font-size: 1.4em;
-            cursor: pointer;
-        }
-
-        .modal-section {
-            background-color: #0d1117;
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 12px 15px;
-            margin-bottom: 12px;
-        }
-
-        .modal-section-title {
-            font-size: 0.8em;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-            font-weight: bold;
-            letter-spacing: 0.5px;
-        }
-
-        .prob-bar-container {
-            margin-bottom: 10px;
-        }
-
-        .prob-bar-container:last-child {
-            margin-bottom: 0;
-        }
-
-        .prob-info-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.85em;
-            margin-bottom: 4px;
-            font-weight: 500;
-        }
-
-        .custom-progress-bg {
-            background-color: #21262d;
-            height: 6px;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-
-        .custom-progress-fill {
-            height: 100%;
-            border-radius: 3px;
-        }
-
-        .team-tabs {
-            display: flex;
-            background: #161b22;
-            border-radius: 8px;
-            padding: 3px;
-            margin-bottom: 10px;
-            border: 1px solid var(--border-color);
-        }
-
-        .team-tab-btn {
-            flex: 1;
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            padding: 6px;
-            border-radius: 6px;
-            font-size: 0.8em;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .team-tab-btn.active {
-            background-color: var(--accent-color);
-            color: #fff;
-        }
-
-        .player-row-modal {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.82em;
-            padding: 6px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-        }
-
-        .player-row-modal:last-child {
-            border-bottom: none;
-        }
-
-        .badge-conseil {
-            display: inline-block;
-            background: #10b981;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.78em;
-            margin-top: 6px;
-            font-weight: bold;
-        }
-
-        /* Bouton Fermer en bas (dynamique) */
-        .modal-close-bottom-btn {
-            width: 100%;
-            color: #ffffff;
-            border: none;
-            padding: 12px;
-            border-radius: 10px;
-            font-weight: bold;
-            font-size: 0.95em;
-            cursor: pointer;
-            margin-top: 5px;
-            margin-bottom: 10px;
-            transition: opacity 0.2s;
-        }
-
-        .modal-close-bottom-btn:hover {
-            opacity: 0.9;
-        }
+        body { font-family: 'Outfit', sans-serif; }
+        .card-foot:hover { border-color: #ef4444; }
+        .card-nhl:hover { border-color: #3b82f6; }
+        /* Masquer la scrollbar pour un design propre sur mobile */
+        .scrollbar-none::-webkit-scrollbar { display: none; }
+        .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body>
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-12">
 
-    <header>
-        <h1>⚡ Multi-IA Pronostics</h1>
+    <!-- HEADER / SWITCHER DE SPORT -->
+    <header class="w-full py-6 px-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <span id="app-icon" class="text-3xl">⚽</span>
+                <div>
+                    <h1 id="app-title" class="text-xl font-bold tracking-tight">Football Pronostics IA</h1>
+                    <p class="text-xs text-slate-400">Moteur Consensus 5 Modèles</p>
+                </div>
+            </div>
+            
+            <div class="flex bg-slate-800 p-1 rounded-xl gap-1">
+                <button onclick="switchSport('foot')" id="btn-foot" class="px-5 py-2 rounded-lg text-sm font-semibold transition-all bg-red-600 text-white shadow-lg">⚽ Football</button>
+                <button onclick="switchSport('nhl')" id="btn-nhl" class="px-5 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white">🏒 NHL</button>
+            </div>
+        </div>
     </header>
 
-    <div class="sports-tabs">
-        <button id="btn-tab-nhl" class="sport-btn" onclick="switchSport('nhl', event)">🏒 NHL</button>
-        <button id="btn-tab-foot" class="sport-btn active" onclick="switchSport('foot', event)">⚽ Football</button>
-    </div>
-
-    <div id="sport-foot" class="tab-content active">
-        <div id="foot-calendar" class="flashscore-calendar"></div>
-        <div id="foot-matches">
-            <p style="text-align: center; color: var(--text-muted);">Chargement...</p>
+    <!-- CALENDRIER DES JOURS & MATCHS -->
+    <main class="max-w-4xl mx-auto px-4 mt-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 id="calendar-title" class="text-sm font-semibold uppercase tracking-wider text-slate-400">Calendrier</h2>
+            <span id="current-date-label" class="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-300"></span>
         </div>
-    </div>
+        <div id="calendar-strip" class="flex gap-2 overflow-x-auto pb-2 scrollbar-none"></div>
 
-    <div id="sport-nhl" class="tab-content">
-        <div id="nhl-calendar" class="flashscore-calendar"></div>
-        <div id="nhl-matches">
-            <p style="text-align: center; color: var(--text-muted);">Chargement...</p>
+        <!-- LISTE DES MATCHS -->
+        <div class="mt-8">
+            <div class="flex items-center justify-between mb-4">
+                <h3 id="matches-section-title" class="text-lg font-bold">Matchs du jour</h3>
+                <span id="match-count" class="text-xs text-slate-400">Chargement...</span>
+            </div>
+            <div id="matches-container" class="space-y-3">
+                <div class="text-center py-12 text-slate-500">Chargement des matchs en cours...</div>
+            </div>
         </div>
-    </div>
+    </main>
 
-    <!-- FENÊTRE MODALE -->
-    <div id="prono-modal" class="modal-overlay" onclick="closeModalOnOutside(event)">
-        <div class="modal-container">
-            <div class="modal-header">
-                <h2 id="modal-match-title">Analyse Match</h2>
-                <button class="close-modal-btn" onclick="closeModal()">×</button>
-            </div>
-            <div id="modal-body">
-                <!-- Contenu injecté dynamiquement -->
-            </div>
-            <button id="modal-close-btn" class="modal-close-bottom-btn" onclick="closeModal()">Fermer</button>
+    <!-- MODALE DES PRONOSTICS -->
+    <div id="prediction-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+        <div id="modal-content-box" class="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 relative shadow-2xl my-8">
+            <button onclick="closeModal()" id="modal-close-btn" class="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-slate-800">✕</button>
+            <div id="modal-body"></div>
         </div>
     </div>
 
     <script>
-        let selectedFootDate = new Date().toISOString().split('T')[0];
-        let selectedNhlDate = new Date().toISOString().split('T')[0];
+        let currentSport = 'foot';
+        let selectedDate = new Date().toISOString().split('T')[0];
+        let cachedMatches = { foot: {}, nhl: {} };
 
-        function switchSport(sport, event) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.sport-btn').forEach(el => el.classList.remove('active'));
-            document.getElementById('sport-' + sport).classList.add('active');
-            document.getElementById('btn-tab-' + sport).classList.add('active');
+        window.onload = () => {
+            buildCalendar('foot');
+            buildCalendar('nhl');
+            // Chargement simultané optimisé pour la vitesse
+            Promise.all([
+                loadFootMatches(),
+                loadNhlMatches()
+            ]);
+        };
+
+        function switchSport(sport) {
+            currentSport = sport;
+            const isFoot = (sport === 'foot');
+            
+            document.getElementById('app-icon').innerText = isFoot ? '⚽' : '🏒';
+            document.getElementById('app-title').innerText = isFoot ? 'Football Pronostics IA' : 'NHL Pronostics IA';
+            
+            const btnFoot = document.getElementById('btn-foot');
+            const btnNhl = document.getElementById('btn-nhl');
+            
+            if (isFoot) {
+                btnFoot.className = "px-5 py-2 rounded-lg text-sm font-semibold transition-all bg-red-600 text-white shadow-lg";
+                btnNhl.className = "px-5 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white";
+            } else {
+                btnNhl.className = "px-5 py-2 rounded-lg text-sm font-semibold transition-all bg-blue-600 text-white shadow-lg";
+                btnFoot.className = "px-5 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white";
+            }
+
+            buildCalendar(sport);
+            renderMatches();
         }
 
         function buildCalendar(sport) {
-            const containerId = sport === 'foot' ? 'foot-calendar' : 'nhl-calendar';
-            const container = document.getElementById(containerId);
-            container.innerHTML = '';
+            const strip = document.getElementById('calendar-strip');
+            if (sport !== currentSport) return;
+            strip.innerHTML = '';
 
             const today = new Date();
             for (let i = -3; i <= 3; i++) {
                 const d = new Date(today);
                 d.setDate(today.getDate() + i);
                 const dateStr = d.toISOString().split('T')[0];
+                
+                const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short' });
+                const dayNum = d.getDate();
+                const monthName = d.toLocaleDateString('fr-FR', { month: 'short' });
 
-                const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
-                const dayDate = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
+                const isSelected = (dateStr === selectedDate);
+                const activeClass = isSelected 
+                    ? (currentSport === 'foot' ? 'bg-red-600 text-white border-red-500 shadow-lg' : 'bg-blue-600 text-white border-blue-500 shadow-lg')
+                    : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:border-slate-700';
 
                 const btn = document.createElement('button');
-                btn.className = 'cal-day-btn';
-                if (dateStr === (sport === 'foot' ? selectedFootDate : selectedNhlDate)) {
-                    btn.classList.add('active');
-                }
-
+                btn.className = `flex flex-col items-center justify-center min-w-[70px] py-3 rounded-xl border transition-all ${activeClass}`;
                 btn.innerHTML = `
-                    <div class="cal-day-name">${i === 0 ? 'AJD' : dayName}</div>
-                    <div class="cal-day-date">${dayDate}</div>
+                    <span class="text-[10px] uppercase font-medium">${dayName}</span>
+                    <span class="text-lg font-bold">${dayNum}</span>
+                    <span class="text-[10px]">${monthName}</span>
                 `;
-
                 btn.onclick = () => {
-                    if (sport === 'foot') {
-                        selectedFootDate = dateStr;
-                        loadFootMatches();
-                    } else {
-                        selectedNhlDate = dateStr;
-                        loadNhlMatches();
-                    }
-                    buildCalendar(sport);
+                    selectedDate = dateStr;
+                    buildCalendar(currentSport);
+                    renderMatches();
                 };
-                container.appendChild(btn);
+                strip.appendChild(btn);
+            }
+            document.getElementById('current-date-label').innerText = selectedDate;
+        }
+
+        async function loadFootMatches() {
+            try {
+                const res = await fetch(`/api/matches/foot?date=${selectedDate}`);
+                const data = await res.json();
+                cachedMatches.foot[selectedDate] = data.matches || [];
+            } catch (e) {
+                cachedMatches.foot[selectedDate] = [];
+            }
+            if (currentSport === 'foot') renderMatches();
+        }
+
+        async function loadNhlMatches() {
+            try {
+                const res = await fetch(`/api/matches/nhl?date=${selectedDate}`);
+                const data = await res.json();
+                cachedMatches.nhl[selectedDate] = data.matches || [];
+            } catch (e) {
+                cachedMatches.nhl[selectedDate] = [];
+            }
+            if (currentSport === 'nhl') renderMatches();
+        }
+
+        function renderMatches() {
+            const container = document.getElementById('matches-container');
+            container.innerHTML = '';
+
+            if (!cachedMatches[currentSport][selectedDate]) {
+                container.innerHTML = `<div class="text-center py-12 text-slate-500">Chargement...</div>`;
+                if (currentSport === 'foot') loadFootMatches();
+                else loadNhlMatches();
+                return;
+            }
+
+            const matches = cachedMatches[currentSport][selectedDate];
+            document.getElementById('match-count').innerText = `${matches.length} match(s) trouvé(s)`;
+
+            if (matches.length === 0) {
+                container.innerHTML = `<div class="text-center py-12 text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800/60">Aucun match programmé pour cette date.</div>`;
+                return;
+            }
+
+            matches.forEach(m => {
+                const card = document.createElement('div');
+                const hoverBorder = currentSport === 'foot' ? 'card-foot' : 'card-nhl';
+                card.className = `bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${hoverBorder}`;
+                
+                const scoreDisplay = (m.home_score !== null && m.away_score !== null)
+                    ? `<span class="text-xl font-black px-3 py-1 bg-slate-800 rounded-lg">${m.home_score} - ${m.away_score}</span>`
+                    : `<span class="text-sm font-semibold text-slate-400 bg-slate-800/60 px-3 py-1 rounded-lg">${m.game_state}</span>`;
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-4 w-full sm:w-2/5 justify-end">
+                        <span class="font-semibold text-right text-sm sm:text-base">${m.home_team}</span>
+                        <img src="${m.home_logo || 'https://via.placeholder.com/32'}" class="w-8 h-8 object-contain" onerror="this.src='https://via.placeholder.com/32'">
+                    </div>
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="text-[10px] text-slate-500 uppercase font-bold">${m.league}</span>
+                        ${scoreDisplay}
+                    </div>
+                    <div class="flex items-center gap-4 w-full sm:w-2/5 justify-start">
+                        <img src="${m.away_logo || 'https://via.placeholder.com/32'}" class="w-8 h-8 object-contain" onerror="this.src='https://via.placeholder.com/32'">
+                        <span class="font-semibold text-sm sm:text-base">${m.away_team}</span>
+                    </div>
+                    <button onclick='openPrediction(${JSON.stringify(m)})' class="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold transition-all ${currentSport === 'foot' ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/20' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20'}">
+                        ⚡ PRONO
+                    </button>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        async function openPrediction(match) {
+            const modal = document.getElementById('prediction-modal');
+            const modalBody = document.getElementById('modal-body');
+            const closeBtn = document.getElementById('modal-close-btn');
+            
+            modal.classList.remove('hidden');
+            modalBody.innerHTML = `<div class="text-center py-12 text-slate-400 animate-pulse">Analyse des 5 modèles IA en cours...</div>`;
+
+            // Bouton de fermeture thématisé
+            if (currentSport === 'foot') {
+                closeBtn.className = "absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-red-600/20 hover:bg-red-600";
+            } else {
+                closeBtn.className = "absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-blue-600/20 hover:bg-blue-600";
+            }
+
+            try {
+                const endpoint = (currentSport === 'foot') ? '/predict/match/foot' : '/predict/match';
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ home_team: match.home_team, away_team: match.away_team })
+                });
+                const data = await res.json();
+                renderModalContent(data);
+            } catch (e) {
+                modalBody.innerHTML = `<div class="text-center py-12 text-red-500">Erreur lors du calcul des pronostics.</div>`;
+            }
+        }
+
+        function renderModalContent(data) {
+            const modalBody = document.getElementById('modal-body');
+            const p = data.probabilities;
+            
+            if (currentSport === 'foot') {
+                modalBody.innerHTML = `
+                    <div class="text-center mb-6">
+                        <span class="text-xs font-bold text-red-500 uppercase tracking-wider">Consensus 5 IA • Football</span>
+                        <h3 class="text-xl font-bold mt-1">${data.match}</h3>
+                    </div>
+                    <div class="grid grid-cols-3 gap-3 mb-6 text-center">
+                        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                            <span class="text-xs text-slate-400 block">1 (Domicile)</span>
+                            <span class="text-lg font-black text-red-400">${p.home_win}%</span>
+                        </div>
+                        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                            <span class="text-xs text-slate-400 block">Nul</span>
+                            <span class="text-lg font-black text-slate-300">${p.draw}%</span>
+                        </div>
+                        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                            <span class="text-xs text-slate-400 block">2 (Extérieur)</span>
+                            <span class="text-lg font-black text-red-400">${p.away_win}%</span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800 space-y-3 mb-6">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Score Prédit :</span>
+                            <span class="font-bold text-white">${data.predicted_score}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Les 2 marquent (BTTS) :</span>
+                            <span class="font-bold text-white">${data.btts.yes_prob}%</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Plus de 2.5 buts :</span>
+                            <span class="font-bold text-white">${data.over_under_2_5.over_prob}%</span>
+                        </div>
+                    </div>
+                    <div class="bg-red-950/30 border border-red-900/30 p-4 rounded-xl">
+                        <span class="text-xs font-bold text-red-400 block mb-1">Conseil 1ère Mi-Temps</span>
+                        <p class="text-sm text-slate-300">${data.first_half.action_conseillee} (Prob. >0.5 : ${data.first_half.over_0_5_prob}%)</p>
+                    </div>
+                `;
+            } else {
+                let playersHtml = '';
+                if (data.home_players) {
+                    data.home_players.forEach(pl => {
+                        playersHtml += `<div class="flex justify-between text-xs py-1 border-b border-slate-800"><span class="text-slate-300">${pl.name} (${pl.pos})</span><span class="font-bold text-blue-400">${pl.stats}</span></div>`;
+                    });
+                }
+                modalBody.innerHTML = `
+                    <div class="text-center mb-6">
+                        <span class="text-xs font-bold text-blue-400 uppercase tracking-wider">Consensus 5 IA • NHL</span>
+                        <h3 class="text-xl font-bold mt-1">${data.match}</h3>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mb-6 text-center">
+                        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                            <span class="text-xs text-slate-400 block">Victoire Domicile</span>
+                            <span class="text-lg font-black text-blue-400">${p.home_win}%</span>
+                        </div>
+                        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                            <span class="text-xs text-slate-400 block">Victoire Extérieur</span>
+                            <span class="text-lg font-black text-blue-400">${p.away_win}%</span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800 space-y-3 mb-6">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Score Prédit :</span>
+                            <span class="font-bold text-white">${data.predicted_score}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Plus de 5.5 buts :</span>
+                            <span class="font-bold text-white">${data.over_under_5_5.over_prob}%</span>
+                        </div>
+                    </div>
+                    <div class="bg-blue-950/30 border border-blue-900/30 p-4 rounded-xl">
+                        <span class="text-xs font-bold text-blue-400 block mb-2">Joueurs Clés & Effectif</span>
+                        <div class="space-y-1">${playersHtml}</div>
+                    </div>
+                `;
             }
         }
 
         function closeModal() {
-            document.getElementById('prono-modal').style.display = 'none';
+            document.getElementById('prediction-modal').classList.add('hidden');
         }
 
-        function closeModalOnOutside(event) {
-            if (event.target.id === 'prono-modal') {
+        window.onclick = function(event) {
+            const modal = document.getElementById('prediction-modal');
+            if (event.target === modal) {
                 closeModal();
             }
         }
-
-        async function loadFootMatches() {
-            const container = document.getElementById('foot-matches');
-            container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
-            try {
-                const res = await fetch(`/api/matches/foot?date=${selectedFootDate}`);
-                const data = await res.json();
-                if (!data.matches || data.matches.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match de football trouvé.</p>';
-                    return;
-                }
-                container.innerHTML = '';
-                data.matches.forEach(m => {
-                    const card = document.createElement('div');
-                    card.className = 'match-card';
-                    card.innerHTML = `
-                        <div class="match-card-header">
-                            <span>${m.league || 'FOOTBALL'}</span>
-                            <span>${m.game_state}</span>
-                        </div>
-                        <div class="match-row">
-                            <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
-                            <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
-                        </div>
-                        <div class="match-row">
-                            <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
-                            <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
-                        </div>
-                        <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
-                    `;
-                    container.appendChild(card);
-                });
-            } catch (err) {
-                container.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de chargement.</p>';
-            }
-        }
-
-        async function openFootProno(home, away) {
-            const modal = document.getElementById('prono-modal');
-            const title = document.getElementById('modal-match-title');
-            const body = document.getElementById('modal-body');
-            
-            // Bouton fermer en ROUGE pour le foot
-            document.getElementById('modal-close-btn').style.backgroundColor = 'var(--accent-color)';
-
-            title.innerText = `${home} vs ${away}`;
-            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse Multi-IA (5 modèles) en cours...</p>';
-            modal.style.display = 'flex';
-
-            try {
-                const res = await fetch('/predict/match/foot', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ home_team: home, away_team: away })
-                });
-                const data = await res.json();
-                const h = data.probabilities.home_win;
-                const d = data.probabilities.draw;
-                const a = data.probabilities.away_win;
-
-                body.innerHTML = `
-                    <div class="modal-section">
-                        <div class="modal-section-title">📊 Probabilités Multi-IA (Score : ${data.predicted_score})</div>
-                        <div class="prob-bar-container">
-                            <div class="prob-info-row"><span>Victoire ${home}</span><span>${h}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${h}%; background-color: var(--home-color);"></div></div>
-                        </div>
-                        <div class="prob-bar-container" style="margin-top: 8px;">
-                            <div class="prob-info-row"><span>Match Nul</span><span>${d}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${d}%; background-color: var(--draw-color);"></div></div>
-                        </div>
-                        <div class="prob-bar-container" style="margin-top: 8px;">
-                            <div class="prob-info-row"><span>Victoire ${away}</span><span>${a}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${a}%; background-color: var(--away-color);"></div></div>
-                        </div>
-                    </div>
-
-                    <div class="modal-section">
-                        <div class="modal-section-title">⚽ Options de Paris</div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>BTTS (Les deux équipes marquent)</span><strong>${data.btts.yes_prob}%</strong></div>
-                        <div class="prob-info-row"><span>Plus de 2.5 buts (Over)</span><strong>${data.over_under_2_5.over_prob}%</strong></div>
-                    </div>
-
-                    <div class="modal-section">
-                        <div class="modal-section-title">⏱️ 1ère Mi-Temps</div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Score HT estimé</span><strong>${data.first_half.predicted_ht_score}</strong></div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité But MT (>0.5)</span><strong>${data.first_half.over_0_5_prob}%</strong></div>
-                        <div><span class="badge-conseil">${data.first_half.action_conseillee}</span></div>
-                    </div>
-
-                    <div class="modal-section">
-                        <div class="modal-section-title">🟨 Cartons Jaunes</div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Total attendu</span><strong>${data.yellow_cards.expected_total} cartons</strong></div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité > 4.5 cartons</span><strong>${data.yellow_cards.over_4_5_prob}%</strong></div>
-                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
-                            Moyenne Domicile : ${data.yellow_cards.home_team_avg} | Extérieur : ${data.yellow_cards.away_team_avg}
-                        </div>
-                    </div>
-                `;
-            } catch (err) {
-                body.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur lors du chargement des pronostics.</p>';
-            }
-        }
-
-        async function loadNhlMatches() {
-            const container = document.getElementById('nhl-matches');
-            container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
-            try {
-                const res = await fetch(`/api/matches/nhl?date=${selectedNhlDate}`);
-                const data = await res.json();
-                if (!data.matches || data.matches.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Aucun match NHL trouvé.</p>';
-                    return;
-                }
-                container.innerHTML = '';
-                data.matches.forEach(m => {
-                    const card = document.createElement('div');
-                    card.className = 'match-card';
-                    card.innerHTML = `
-                        <div class="match-card-header">
-                            <span>LNH / NHL</span>
-                            <span>${m.game_state}</span>
-                        </div>
-                        <div class="match-row">
-                            <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
-                            <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
-                        </div>
-                        <div class="match-row">
-                            <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
-                            <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
-                        </div>
-                        <button class="prono-btn" onclick="openNhlProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
-                    `;
-                    container.appendChild(card);
-                });
-            } catch (err) {
-                container.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur de chargement.</p>';
-            }
-        }
-
-        async function openNhlProno(home, away) {
-            const modal = document.getElementById('prono-modal');
-            const title = document.getElementById('modal-match-title');
-            const body = document.getElementById('modal-body');
-            
-            // Bouton fermer en BLEU PATINOIRE pour la NHL
-            document.getElementById('modal-close-btn').style.backgroundColor = 'var(--nhl-accent)';
-
-            title.innerText = `${home} vs ${away}`;
-            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse LNH (5 modèles) en cours...</p>';
-            modal.style.display = 'flex';
-
-            try {
-                const res = await fetch('/predict/match', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ home_team: home, away_team: away })
-                });
-                const data = await res.json();
-                const h = data.probabilities.home_win;
-                const d = data.probabilities.draw;
-                const a = data.probabilities.away_win;
-
-                let playersHomeHtml = '';
-                let playersAwayHtml = '';
-
-                if (data.home_players) {
-                    data.home_players.forEach(p => {
-                        playersHomeHtml += `<div class="player-row-modal"><span>${p.name} (${p.pos})</span><span>${p.stats}</span><strong>${p.pct}%</strong></div>`;
-                    });
-                }
-                if (data.away_players) {
-                    data.away_players.forEach(p => {
-                        playersAwayHtml += `<div class="player-row-modal"><span>${p.name} (${p.pos})</span><span>${p.stats}</span><strong>${p.pct}%</strong></div>`;
-                    });
-                }
-
-                body.innerHTML = `
-                    <div class="modal-section">
-                        <div class="modal-section-title">📊 Probabilités Multi-IA (Score : ${data.predicted_score})</div>
-                        <div class="prob-bar-container">
-                            <div class="prob-info-row"><span>Victoire ${home}</span><span>${h}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${h}%; background-color: var(--home-color);"></div></div>
-                        </div>
-                        <div class="prob-bar-container" style="margin-top: 8px;">
-                            <div class="prob-info-row"><span>Match Nul / Prolongations</span><span>${d}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${d}%; background-color: var(--draw-color);"></div></div>
-                        </div>
-                        <div class="prob-bar-container" style="margin-top: 8px;">
-                            <div class="prob-info-row"><span>Victoire ${away}</span><span>${a}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${a}%; background-color: var(--away-color);"></div></div>
-                        </div>
-                    </div>
-
-                    <div class="modal-section">
-                        <div class="modal-section-title">🏒 Total Buts (Over / Under 5.5)</div>
-                        <div class="prob-info-row"><span>Plus de 5.5 buts</span><strong style="color: var(--nhl-accent);">${data.over_under_5_5.over_prob}%</strong></div>
-                    </div>
-
-                    <div class="modal-section">
-                        <div class="modal-section-title">👤 Projections Joueurs (Point %)</div>
-                        <div class="team-tabs">
-                            <button id="tab-p-home" class="team-tab-btn active" onclick="switchModalTeam('home')">${home}</button>
-                            <button id="tab-p-away" class="team-tab-btn" onclick="switchModalTeam('away')">${away}</button>
-                        </div>
-                        <div id="modal-players-content">
-                            <div style="font-size: 0.78em; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Joueur</span><span>Stats</span><span>Point %</span></div>
-                            <div id="list-players-home">${playersHomeHtml}</div>
-                            <div id="list-players-away" style="display:none;">${playersAwayHtml}</div>
-                        </div>
-                    </div>
-                `;
-            } catch (err) {
-                body.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur lors du chargement des pronostics LNH.</p>';
-            }
-        }
-
-        function switchModalTeam(team) {
-            const homeList = document.getElementById('list-players-home');
-            const awayList = document.getElementById('list-players-away');
-            const btnHome = document.getElementById('tab-p-home');
-            const btnAway = document.getElementById('tab-p-away');
-
-            if (team === 'home') {
-                homeList.style.display = 'block';
-                awayList.style.display = 'none';
-                btnHome.classList.add('active');
-                btnAway.classList.remove('active');
-            } else {
-                homeList.style.display = 'none';
-                awayList.style.display = 'block';
-                btnAway.classList.add('active');
-                btnHome.classList.remove('active');
-            }
-        }
-
-        window.onload = () => {
-            buildCalendar('foot');
-            buildCalendar('nhl');
-            loadFootMatches();
-            loadNhlMatches();
-        };
     </script>
 </body>
 </html>
