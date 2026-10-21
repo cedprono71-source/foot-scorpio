@@ -176,8 +176,8 @@
         }
 
         .team-logo {
-            width: 32px;  /* Logos agrandis à 32px */
-            height: 32px; /* Logos agrandis à 32px */
+            width: 32px;
+            height: 32px;
             object-fit: contain;
             flex-shrink: 0;
         }
@@ -356,12 +356,11 @@
             font-weight: bold;
         }
 
-        /* Bouton Fermer en bas */
+        /* Bouton Fermer en bas (dynamique) */
         .modal-close-bottom-btn {
             width: 100%;
-            background-color: #21262d;
-            color: var(--text-color);
-            border: 1px solid var(--border-color);
+            color: #ffffff;
+            border: none;
             padding: 12px;
             border-radius: 10px;
             font-weight: bold;
@@ -369,11 +368,11 @@
             cursor: pointer;
             margin-top: 5px;
             margin-bottom: 10px;
-            transition: background 0.2s;
+            transition: opacity 0.2s;
         }
 
         .modal-close-bottom-btn:hover {
-            background-color: #30363d;
+            opacity: 0.9;
         }
     </style>
 </head>
@@ -412,7 +411,7 @@
             <div id="modal-body">
                 <!-- Contenu injecté dynamiquement -->
             </div>
-            <button class="modal-close-bottom-btn" onclick="closeModal()">Fermer</button>
+            <button id="modal-close-btn" class="modal-close-bottom-btn" onclick="closeModal()">Fermer</button>
         </div>
     </div>
 
@@ -516,6 +515,9 @@
             const modal = document.getElementById('prono-modal');
             const title = document.getElementById('modal-match-title');
             const body = document.getElementById('modal-body');
+            
+            // Bouton fermer en ROUGE pour le foot
+            document.getElementById('modal-close-btn').style.backgroundColor = 'var(--accent-color)';
 
             title.innerText = `${home} vs ${away}`;
             body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse Multi-IA (5 modèles) en cours...</p>';
@@ -616,6 +618,9 @@
             const modal = document.getElementById('prono-modal');
             const title = document.getElementById('modal-match-title');
             const body = document.getElementById('modal-body');
+            
+            // Bouton fermer en BLEU PATINOIRE pour la NHL
+            document.getElementById('modal-close-btn').style.backgroundColor = 'var(--nhl-accent)';
 
             title.innerText = `${home} vs ${away}`;
             body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse LNH (5 modèles) en cours...</p>';
