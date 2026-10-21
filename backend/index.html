@@ -516,7 +516,6 @@
             const title = document.getElementById('modal-match-title');
             const body = document.getElementById('modal-body');
             
-            // Bouton fermer en ROUGE pour le foot
             document.getElementById('modal-close-btn').style.backgroundColor = 'var(--accent-color)';
 
             title.innerText = `${home} vs ${away}`;
@@ -619,7 +618,6 @@
             const title = document.getElementById('modal-match-title');
             const body = document.getElementById('modal-body');
             
-            // Bouton fermer en BLEU PATINOIRE pour la NHL
             document.getElementById('modal-close-btn').style.backgroundColor = 'var(--nhl-accent)';
 
             title.innerText = `${home} vs ${away}`;
@@ -640,12 +638,15 @@
                 let playersHomeHtml = '';
                 let playersAwayHtml = '';
 
+                // --- TRI AUTOMATIQUE DES JOUEURS PAR % DÉCROISSANT ---
                 if (data.home_players) {
+                    data.home_players.sort((x, y) => y.pct - x.pct);
                     data.home_players.forEach(p => {
                         playersHomeHtml += `<div class="player-row-modal"><span>${p.name} (${p.pos})</span><span>${p.stats}</span><strong>${p.pct}%</strong></div>`;
                     });
                 }
                 if (data.away_players) {
+                    data.away_players.sort((x, y) => y.pct - x.pct);
                     data.away_players.forEach(p => {
                         playersAwayHtml += `<div class="player-row-modal"><span>${p.name} (${p.pos})</span><span>${p.stats}</span><strong>${p.pct}%</strong></div>`;
                     });
