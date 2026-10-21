@@ -164,7 +164,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 4px 0;
+            padding: 6px 0;
             font-size: 0.95em;
             font-weight: 500;
         }
@@ -172,18 +172,19 @@
         .team-info {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
 
         .team-logo {
-            width: 20px;
-            height: 20px;
+            width: 32px;  /* Logos agrandis à 32px */
+            height: 32px; /* Logos agrandis à 32px */
             object-fit: contain;
+            flex-shrink: 0;
         }
 
         .match-score {
             font-weight: bold;
-            font-size: 1.05em;
+            font-size: 1.15em;
         }
 
         .prono-btn {
