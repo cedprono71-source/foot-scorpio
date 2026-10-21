@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.25")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.26")
 
 app.add_middleware(
     CORSMiddleware,
@@ -94,7 +94,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN ---
+# --- Route Football : API ESPN (Synchronisation parfaite sur la date française) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
@@ -148,16 +148,10 @@ def get_foot_matches(date: str):
                             
                         try:
                             dt_utc = datetime.fromisoformat(event_raw_date.replace("Z", "+00:00"))
-                            if league_code in ["usa.1", "mex.1", "ecu.1", "col.1"]:
-                                dt_local_region = dt_utc - timedelta(hours=6)
-                            else:
-                                dt_local_region = dt_utc
-                                
-                            match_date_str = dt_local_region.strftime("%Y-%m-%d")
                             dt_france = dt_utc.astimezone(paris_tz)
+                            match_date_str = dt_france.strftime("%Y-%m-%d")
                         except Exception:
-                            match_date_str = event_raw_date[:10]
-                            dt_france = None
+                            continue
                         
                         if match_date_str == date and event_id not in seen_event_ids:
                             seen_event_ids.add(event_id)
@@ -176,7 +170,7 @@ def get_foot_matches(date: str):
                             elif state in ["in", "live"] or "IN_PROGRESS" in status_name or "LIVE" in status_name:
                                 game_state = "En cours"
                             else:
-                                game_state = dt_france.strftime("%H:%M") if dt_france else event_raw_date[11:16]
+                                game_state = dt_france.strftime("%H:%M")
 
                             competitors = comp.get("competitors", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
@@ -344,7 +338,7 @@ def fetch_nhl_roster(team_str: str):
     return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 65}]
 
 
-# --- Route NHL (Avec alignement sur la date française / 3 jours de vérification) ---
+# --- Route NHL ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
@@ -406,7 +400,7 @@ def get_nhl_matches(date: str):
                     away_logo = away_obj.get("logo", "")
                     
                     home_score = home_obj.get("score")
-                    away_score = away_obj.get("score")
+                    away_score = home_obj.get("score")
                     
                     state = str(game.get("gameState", "")).upper()
                     
