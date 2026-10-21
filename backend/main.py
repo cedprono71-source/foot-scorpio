@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.26")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.27")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,44 +26,44 @@ class MatchRequest(BaseModel):
     away_id: Optional[str] = None
 
 
-# --- Moteur Consensus 5 IA Dynamique ---
+# --- Moteur Consensus 5 IA Dynamique et Varié ---
 def get_team_seed(home_team, away_team):
     h = int(hashlib.md5(f"{home_team}-{away_team}".encode()).hexdigest(), 16)
     return h
 
 def ai_poisson_model(home_team, away_team):
     seed = get_team_seed(home_team, away_team)
-    home_p = 35.0 + (seed % 30)
-    away_p = 20.0 + ((seed // 7) % 25)
-    draw_p = max(15.0, 100.0 - (home_p + away_p))
+    home_p = 30.0 + (seed % 40)
+    away_p = 15.0 + ((seed // 7) % 35)
+    draw_p = max(10.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def ai_machine_learning_model(home_team, away_team):
     seed = get_team_seed(away_team, home_team)
-    home_p = 30.0 + (seed % 35)
-    away_p = 25.0 + ((seed // 5) % 25)
-    draw_p = max(15.0, 100.0 - (home_p + away_p))
+    home_p = 25.0 + (seed % 45)
+    away_p = 20.0 + ((seed // 5) % 30)
+    draw_p = max(10.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def ai_streak_model(home_team, away_team):
     seed = get_team_seed(home_team, "streak")
-    home_p = 40.0 + (seed % 25)
-    away_p = 20.0 + ((seed // 3) % 25)
-    draw_p = max(15.0, 100.0 - (home_p + away_p))
+    home_p = 35.0 + (seed % 35)
+    away_p = 15.0 + ((seed // 3) % 35)
+    draw_p = max(10.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def ai_h2h_model(home_team, away_team):
     seed = get_team_seed("h2h", away_team)
-    home_p = 38.0 + (seed % 28)
-    away_p = 22.0 + ((seed // 9) % 25)
-    draw_p = max(15.0, 100.0 - (home_p + away_p))
+    home_p = 32.0 + (seed % 38)
+    away_p = 18.0 + ((seed // 9) % 32)
+    draw_p = max(10.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def ai_fatigue_model(home_team, away_team):
-    seed = get_team_seed(home_team, "streak")
-    home_p = 42.0 + ((seed // 4) % 22)
-    away_p = 24.0 + ((seed // 11) % 22)
-    draw_p = max(15.0, 100.0 - (home_p + away_p))
+    seed = get_team_seed(home_team, "fatigue")
+    home_p = 30.0 + ((seed // 4) % 40)
+    away_p = 20.0 + ((seed // 11) % 35)
+    draw_p = max(10.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def calculate_5_ai_consensus(home_team, away_team):
@@ -94,7 +94,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football : API ESPN (Synchronisation parfaite sur la date française) ---
+# --- Route Football : API ESPN ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
@@ -210,40 +210,30 @@ def get_foot_matches(date: str):
 def predict_foot_match(req: MatchRequest):
     try:
         probs = calculate_5_ai_consensus(req.home_team, req.away_team)
-        seed = get_team_seed(req.home_team, req.away_team)
         
-        home_goals = 0 if probs["home_win"] < 30 else (1 if probs["home_win"] < 55 else (2 if seed % 3 == 0 else 3))
-        away_goals = 0 if probs["away_win"] < 30 else (1 if probs["away_win"] < 55 else (1 if seed % 2 == 0 else 2))
+        seed_home = int(hashlib.md5(req.home_team.encode()).hexdigest(), 16)
+        seed_away = int(hashlib.md5(req.away_team.encode()).hexdigest(), 16)
         
-        if probs["draw"] > 35:
-            home_goals = 1
-            away_goals = 1
+        home_goals = (seed_home % 4) if probs["home_win"] >= 38 else (seed_home % 2)
+        away_goals = (seed_away % 3) if probs["away_win"] >= 32 else (seed_away % 2)
+        
+        if probs["draw"] > 35 and home_goals == away_goals:
+            home_goals = seed_home % 3
+            away_goals = home_goals
 
         predicted_score = f"{home_goals} - {away_goals}"
 
-        ht_home = 1 if home_goals > 0 and (seed % 2 == 0 or home_goals >= 2) else 0
-        if home_goals >= 3 and seed % 4 == 0:
-            ht_home = 2
-        ht_home = min(ht_home, home_goals)
-
-        ht_away = 1 if away_goals > 0 and (seed % 3 == 0 or away_goals >= 2) else 0
-        if away_goals >= 3 and seed % 5 == 0:
-            ht_away = 2
-        ht_away = min(ht_away, away_goals)
-
+        ht_home = min(1, home_goals) if seed_home % 2 == 0 else 0
+        ht_away = min(1, away_goals) if seed_away % 2 == 0 else 0
         ht_score = f"{ht_home} - {ht_away}"
         ht_total_goals = ht_home + ht_away
 
-        if ht_total_goals > 0:
-            over_0_5_prob = round(70.0 + (seed % 25), 1)
-            action_conseillee = "Plus de 0.5 but MT"
-        else:
-            over_0_5_prob = round(20.0 + (seed % 30), 1)
-            action_conseillee = "Observation en 1ère MT"
+        over_0_5_prob = round(65.0 + (seed_home % 30), 1) if ht_total_goals > 0 else round(25.0 + (seed_home % 30), 1)
+        action_conseillee = "Plus de 0.5 but MT" if ht_total_goals > 0 else "Observation en 1ère MT"
 
-        btts_prob = round(50.0 + (seed % 35), 1) if home_goals > 0 and away_goals > 0 else round(25.0 + (seed % 20), 1)
-        over_25_prob = round(40.0 + (seed % 40), 1) if (home_goals + away_goals) >= 3 else round(30.0 + (seed % 25), 1)
-        base_cards = 3.2 + (seed % 5) * 0.4
+        btts_prob = round(45.0 + (seed_home % 40), 1) if home_goals > 0 and away_goals > 0 else round(20.0 + (seed_home % 25), 1)
+        over_25_prob = round(35.0 + (seed_away % 45), 1) if (home_goals + away_goals) >= 3 else round(25.0 + (seed_away % 30), 1)
+        base_cards = 2.8 + (seed_home % 5) * 0.5
 
         return {
             "match": f"{req.home_team} vs {req.away_team}",
@@ -258,7 +248,7 @@ def predict_foot_match(req: MatchRequest):
             },
             "yellow_cards": {
                 "expected_total": round(base_cards, 1),
-                "over_4_5_prob": round(50.0 + (seed % 30), 1),
+                "over_4_5_prob": round(45.0 + (seed_home % 35), 1),
                 "home_team_avg": round(base_cards * 0.52, 1),
                 "away_team_avg": round(base_cards * 0.48, 1)
             }
@@ -328,7 +318,7 @@ def fetch_nhl_roster(team_str: str):
                         "name": f"{first} {last}".strip(),
                         "pos": pos,
                         "stats": f"#{num}" if num else "Actif",
-                        "pct": 60 + (abs(hash(last)) % 25)
+                        "pct": 55 + (abs(hash(last)) % 35)
                     })
             if players:
                 return players[:3]
@@ -400,7 +390,7 @@ def get_nhl_matches(date: str):
                     away_logo = away_obj.get("logo", "")
                     
                     home_score = home_obj.get("score")
-                    away_score = home_obj.get("score")
+                    away_score = away_obj.get("score")
                     
                     state = str(game.get("gameState", "")).upper()
                     
@@ -436,11 +426,11 @@ def predict_nhl_match(req: MatchRequest):
     home_players = fetch_nhl_roster(req.home_team)
     away_players = fetch_nhl_roster(req.away_team)
     
-    seed = get_team_seed(req.home_team, req.away_team)
-    home_goals = 2 + (seed % 3)
-    away_goals = 1 + ((seed // 3) % 3)
+    seed_nhl = int(hashlib.md5(f"{req.home_team}-{req.away_team}-nhl".encode()).hexdigest(), 16)
+    home_goals = 1 + (seed_nhl % 5)
+    away_goals = 1 + ((seed_nhl // 3) % 5)
     
-    over_prob = round(40.0 + (seed % 45), 1)
+    over_prob = round(35.0 + (seed_nhl % 55), 1)
 
     return {
         "match": f"{req.home_team} vs {req.away_team}",
