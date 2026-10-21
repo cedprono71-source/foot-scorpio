@@ -3,14 +3,13 @@ import hashlib
 import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.28")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.27")
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,7 +94,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football Ultra-Rapide : API ESPN (Parallélisée) ---
+# --- Route Football : API ESPN ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
@@ -131,14 +130,12 @@ def get_foot_matches(date: str):
 
     raw_matches = []
     seen_event_ids = set()
-
-    def fetch_league(item):
-        league_code, league_display_name = item
-        local_matches = []
+    
+    for league_code, league_display_name in league_names.items():
         for espn_date in dates_to_check:
             try:
                 url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_code}/scoreboard?dates={espn_date}"
-                response = requests.get(url, timeout=3)
+                response = requests.get(url, timeout=4)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -156,7 +153,9 @@ def get_foot_matches(date: str):
                         except Exception:
                             continue
                         
-                        if match_date_str == date:
+                        if match_date_str == date and event_id not in seen_event_ids:
+                            seen_event_ids.add(event_id)
+                            
                             competitions = event.get("competitions", [])
                             if not competitions:
                                 continue
@@ -186,12 +185,13 @@ def get_foot_matches(date: str):
                                     away_logo = team.get("team", {}).get("logo", "")
                                     away_score = team.get("score")
 
-                            local_matches.append({
-                                "event_id": event_id,
+                            raw_matches.append({
                                 "_sort_time": event_raw_date,
                                 "league": league_display_name,
                                 "home_team": home_team,
                                 "away_team": away_team,
+                                "home_id": event_id,
+                                "away_id": event_id,
                                 "home_logo": home_logo,
                                 "away_logo": away_logo,
                                 "home_score": int(home_score) if home_score is not None and str(home_score).isdigit() else None,
@@ -200,16 +200,6 @@ def get_foot_matches(date: str):
                             })
             except Exception:
                 continue
-        return local_matches
-
-    # Lancement simultané des requêtes de toutes les ligues
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = [executor.submit(fetch_league, item) for item in league_names.items()]
-        for future in as_completed(futures):
-            for m in future.result():
-                if m["event_id"] not in seen_event_ids:
-                    seen_event_ids.add(m["event_id"])
-                    raw_matches.append({k: v for k, v in m.items() if k != "event_id"})
     
     raw_matches.sort(key=lambda x: x["_sort_time"])
     formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
