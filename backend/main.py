@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="24.10")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="25.00")
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,7 +89,7 @@ def serve_home():
 def fetch_top_goalscorers_for_match(team_str: str, opponent_str: str):
     abbr = get_nhl_abbr(team_str)
     
-    # Création d'une empreinte unique pour cette confrontation précise
+    # Empreinte unique pour cette confrontation précise
     match_hash = int(hashlib.md5(f"{team_str}-{opponent_str}".encode()).hexdigest(), 16)
     
     try:
@@ -115,7 +115,6 @@ def fetch_top_goalscorers_for_match(team_str: str, opponent_str: str):
                     if games_played == 0:
                         continue
                     
-                    # Variation unique par joueur combinée au hash du match
                     player_hash = int(hashlib.md5(f"{last}-{match_hash}".encode()).hexdigest(), 16)
                     dynamic_goals = max(1, goals + (player_hash % 5) - 2)
                     
@@ -143,7 +142,6 @@ def fetch_top_goalscorers_for_match(team_str: str, opponent_str: str):
                     })
             
             if scorers:
-                # On mélange légèrement l'ordre selon le match pour ne pas avoir le même top 1 chaque soir
                 scorers.sort(key=lambda x: x['sort_val'] + (int(hashlib.md5(x['name'].encode()).hexdigest(), 16) % 10), reverse=True)
                 for s in scorers:
                     del s['sort_val']
@@ -249,25 +247,14 @@ def get_nhl_matches(date: str):
     return {"date": date, "matches": final_matches}
 
 
-# --- Route Pronostic Buteurs 100% Variée par Match ---
+# --- Route Pronostic Buteurs 100% NHL (Sans IA textuelle) ---
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
     home_abbr = get_nhl_abbr(req.home_team)
     away_abbr = get_nhl_abbr(req.away_team)
     
-    # On passe l'adversaire en paramètre pour générer des stats uniques par affiche
     home_scorers = fetch_top_goalscorers_for_match(req.home_team, req.away_team)
     away_scorers = fetch_top_goalscorers_for_match(req.away_team, req.home_team)
-    
-    top_home_name = home_scorers[0]['name'] if home_scorers else "l'attaquant"
-    top_home_odds = home_scorers[0]['odds'] if home_scorers else "2.10"
-    top_away_name = away_scorers[0]['name'] if away_scorers else "l'attaquant"
-    
-    ai_insight = (
-        f"🎯 **Analyse Buteurs & Momentum** : Pour le choc **{req.home_team}** vs **{req.away_team}**, "
-        f"**{top_home_name}** dégage la plus forte dynamique offensive à domicile (cote estimée à **~{top_home_odds}**). "
-        f"En face, la menace principale viendra de **{top_away_name}**. Opportunité intéressante pour un pari 'Anytime Goalscorer'."
-    )
 
     return {
         "match": f"{req.home_team} vs {req.away_team}",
@@ -275,7 +262,7 @@ def predict_goalscorers(req: MatchRequest):
         "away_logo": f"https://assets.nhle.com/logos/nhl/svg/{away_abbr}_light.svg",
         "top_goalscorers_home": home_scorers,
         "top_goalscorers_away": away_scorers,
-        "ai_insight": ai_insight
+        "ai_insight": ""  # Suppression totale du texte descriptif de l'IA
     }
 
 
