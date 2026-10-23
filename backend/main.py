@@ -3,14 +3,13 @@ import hashlib
 import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.30")
+app = FastAPI(title="NHL Pronostics API", version="23.00")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,7 +26,7 @@ class MatchRequest(BaseModel):
     away_id: Optional[str] = None
 
 
-# --- Moteur Consensus 5 IA Dynamique et Varié ---
+# --- Moteur Consensus 5 IA Local (Stable et sans erreur 503) ---
 def get_team_seed(home_team, away_team):
     h = int(hashlib.md5(f"{home_team}-{away_team}".encode()).hexdigest(), 16)
     return h
@@ -95,178 +94,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football Ultra-Rapide : API ESPN (Parallélisée) ---
-@app.get("/api/matches/foot")
-def get_foot_matches(date: str):
-    paris_tz = ZoneInfo("Europe/Paris")
-    try:
-        req_date_obj = datetime.strptime(date, "%Y-%m-%d")
-        dates_to_check = [
-            (req_date_obj - timedelta(days=1)).strftime("%Y%m%d"),
-            req_date_obj.strftime("%Y%m%d"),
-            (req_date_obj + timedelta(days=1)).strftime("%Y%m%d")
-        ]
-    except Exception:
-        dates_to_check = [date.replace("-", "")]
-
-    league_names = {
-        "eng.1": "Premier League",
-        "eng.2": "EFL Championship",
-        "esp.1": "La Liga",
-        "ita.1": "Serie A",
-        "ger.1": "Bundesliga",
-        "fra.1": "Ligue 1",
-        "usa.1": "MLS",
-        "mex.1": "Liga MX",
-        "ecu.1": "Liga Pro Équateur",
-        "col.1": "Liga BetPlay Colombie",
-        "rou.1": "Liga I Roumanie",
-        "tur.1": "Süper Lig",
-        "ksa.1": "Saudi Pro League",
-        "uefa.champions": "UEFA Champions League",
-        "uefa.europa": "UEFA Europa League",
-        "fifa.friendly": "Matchs Amicaux",
-        "fifa.world": "Sélections Nationales"
-    }
-
-    raw_matches = []
-    seen_event_ids = set()
-
-    def fetch_league(item):
-        league_code, league_display_name = item
-        local_matches = []
-        for espn_date in dates_to_check:
-            try:
-                url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_code}/scoreboard?dates={espn_date}"
-                response = requests.get(url, timeout=3)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    for event in data.get("events", []):
-                        event_id = str(event.get("id"))
-                        event_raw_date = event.get("date", "")
-                        
-                        if not event_raw_date:
-                            continue
-                            
-                        try:
-                            dt_utc = datetime.fromisoformat(event_raw_date.replace("Z", "+00:00"))
-                            dt_france = dt_utc.astimezone(paris_tz)
-                            match_date_str = dt_france.strftime("%Y-%m-%d")
-                        except Exception:
-                            continue
-                        
-                        if match_date_str == date:
-                            competitions = event.get("competitions", [])
-                            if not competitions:
-                                continue
-                            comp = competitions[0]
-                            
-                            status_type = comp.get("status", {}).get("type", {})
-                            state = str(status_type.get("state", "")).lower()
-                            status_name = str(status_type.get("name", "")).upper()
-                            
-                            if state == "post" or status_name == "STATUS_FINAL":
-                                game_state = "OFF"
-                            elif state in ["in", "live"] or "IN_PROGRESS" in status_name or "LIVE" in status_name:
-                                game_state = "En cours"
-                            else:
-                                game_state = dt_france.strftime("%H:%M")
-
-                            competitors = comp.get("competitors", [])
-                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
-
-                            for team in competitors:
-                                if team.get("homeAway") == "home":
-                                    home_team = team.get("team", {}).get("displayName", "Domicile")
-                                    home_logo = team.get("team", {}).get("logo", "")
-                                    home_score = team.get("score")
-                                else:
-                                    away_team = team.get("team", {}).get("displayName", "Extérieur")
-                                    away_logo = team.get("team", {}).get("logo", "")
-                                    away_score = team.get("score")
-
-                            local_matches.append({
-                                "event_id": event_id,
-                                "_sort_time": event_raw_date,
-                                "league": league_display_name,
-                                "home_team": home_team,
-                                "away_team": away_team,
-                                "home_logo": home_logo,
-                                "away_logo": away_logo,
-                                "home_score": int(home_score) if home_score is not None and str(home_score).isdigit() else None,
-                                "away_score": int(away_score) if away_score is not None and str(away_score).isdigit() else None,
-                                "game_state": game_state
-                            })
-            except Exception:
-                continue
-        return local_matches
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = [executor.submit(fetch_league, item) for item in league_names.items()]
-        for future in as_completed(futures):
-            for m in future.result():
-                if m["event_id"] not in seen_event_ids:
-                    seen_event_ids.add(m["event_id"])
-                    raw_matches.append({k: v for k, v in m.items() if k != "event_id"})
-    
-    raw_matches.sort(key=lambda x: x["_sort_time"])
-    formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
-                    
-    return {"date": date, "matches": formatted_matches}
-
-@app.post("/predict/match/foot")
-def predict_foot_match(req: MatchRequest):
-    try:
-        probs = calculate_5_ai_consensus(req.home_team, req.away_team)
-        
-        seed_home = int(hashlib.md5(req.home_team.encode()).hexdigest(), 16)
-        seed_away = int(hashlib.md5(req.away_team.encode()).hexdigest(), 16)
-        
-        home_goals = (seed_home % 4) if probs["home_win"] >= 38 else (seed_home % 2)
-        away_goals = (seed_away % 3) if probs["away_win"] >= 32 else (seed_away % 2)
-        
-        if probs["draw"] > 35 and home_goals == away_goals:
-            home_goals = seed_home % 3
-            away_goals = home_goals
-
-        predicted_score = f"{home_goals} - {away_goals}"
-
-        ht_home = min(1, home_goals) if seed_home % 2 == 0 else 0
-        ht_away = min(1, away_goals) if seed_home % 2 == 0 else 0
-        ht_score = f"{ht_home} - {ht_away}"
-        ht_total_goals = ht_home + ht_away
-
-        over_0_5_prob = round(65.0 + (seed_home % 30), 1) if ht_total_goals > 0 else round(25.0 + (seed_home % 30), 1)
-        action_conseillee = "Plus de 0.5 but MT" if ht_total_goals > 0 else "Observation en 1ère MT"
-
-        btts_prob = round(45.0 + (seed_home % 40), 1) if home_goals > 0 and away_goals > 0 else round(20.0 + (seed_home % 25), 1)
-        over_25_prob = round(35.0 + (seed_away % 45), 1) if (home_goals + away_goals) >= 3 else round(25.0 + (seed_away % 30), 1)
-        base_cards = 2.8 + (seed_home % 5) * 0.5
-
-        return {
-            "match": f"{req.home_team} vs {req.away_team}",
-            "probabilities": probs,
-            "predicted_score": predicted_score,
-            "btts": {"yes_prob": btts_prob},
-            "over_under_2_5": {"over_prob": over_25_prob},
-            "first_half": {
-                "over_0_5_prob": over_0_5_prob,
-                "predicted_ht_score": ht_score,
-                "action_conseillee": action_conseillee
-            },
-            "yellow_cards": {
-                "expected_total": round(base_cards, 1),
-                "over_4_5_prob": round(45.0 + (seed_home % 35), 1),
-                "home_team_avg": round(base_cards * 0.52, 1),
-                "away_team_avg": round(base_cards * 0.48, 1)
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# --- Fonction utilitaire Effectifs NHL Corrigée et Précise ---
+# --- Fonction utilitaire Effectifs NHL ---
 def fetch_nhl_roster(team_str: str):
     team_map = {
         "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
@@ -351,7 +179,7 @@ def fetch_nhl_roster(team_str: str):
     return [{"name": f"Joueur clé ({team_str})", "pos": "F", "stats": "En forme", "pct": 75}]
 
 
-# --- Route NHL ---
+# --- Route NHL Matchs ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
@@ -443,6 +271,8 @@ def get_nhl_matches(date: str):
 
     return {"date": date, "matches": final_matches}
 
+
+# --- Route NHL Prédiction ---
 @app.post("/predict/match")
 def predict_nhl_match(req: MatchRequest):
     probs = calculate_5_ai_consensus(req.home_team, req.away_team)
@@ -463,6 +293,7 @@ def predict_nhl_match(req: MatchRequest):
         "home_players": home_players,
         "away_players": away_players
     }
+
 
 if __name__ == "__main__":
     import uvicorn
