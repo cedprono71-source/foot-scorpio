@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NHL GoalScorer Analytics</title>
-    <!-- Tailwind CSS pour un design moderne et sombre -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
@@ -59,7 +59,6 @@
         let currentMatchData = null;
         let activeTab = 'home';
 
-        // Initialisation de la date du jour au format YYYY-MM-DD
         const todayStr = new Date().toISOString().split('T')[0];
         const datePicker = document.getElementById('date-picker');
         datePicker.value = todayStr;
