@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="25.00")
+app = FastAPI(title="Multi-Sports GoalScorer Analytics API", version="26.00")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,6 +20,7 @@ app.add_middleware(
 )
 
 class MatchRequest(BaseModel):
+    league: str  # "NHL" ou "FOOT"
     home_team: str
     away_team: str
     home_id: Optional[str] = None
@@ -27,7 +28,7 @@ class MatchRequest(BaseModel):
 
 
 # --- Dictionnaire de conversion pour les abréviations NHL ---
-TEAM_MAP = {
+TEAM_MAP_NHL = {
     "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
     "TORONTO": "TOR", "MAPLE LEAFS": "TOR", "TOR": "TOR",
     "BOSTON": "BOS", "BRUINS": "BOS", "BOS": "BOS",
@@ -65,9 +66,9 @@ TEAM_MAP = {
 
 def get_nhl_abbr(team_str: str) -> str:
     upper_team = team_str.upper().strip()
-    if upper_team in TEAM_MAP:
-        return TEAM_MAP[upper_team]
-    for key, code in TEAM_MAP.items():
+    if upper_team in TEAM_MAP_NHL:
+        return TEAM_MAP_NHL[upper_team]
+    for key, code in TEAM_MAP_NHL.items():
         if key in upper_team:
             return code
     if len(upper_team) == 3:
@@ -85,11 +86,9 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Fonction de récupération des Buteurs NHL dynamisée par match ---
-def fetch_top_goalscorers_for_match(team_str: str, opponent_str: str):
+# --- Récupération des buteurs NHL (Dynamique & Local) ---
+def fetch_nhl_goalscorers(team_str: str, opponent_str: str):
     abbr = get_nhl_abbr(team_str)
-    
-    # Empreinte unique pour cette confrontation précise
     match_hash = int(hashlib.md5(f"{team_str}-{opponent_str}".encode()).hexdigest(), 16)
     
     try:
@@ -111,7 +110,6 @@ def fetch_top_goalscorers_for_match(team_str: str, opponent_str: str):
                     
                     goals = p.get('goals', 0)
                     games_played = p.get('gamesPlayed', 1)
-                    
                     if games_played == 0:
                         continue
                     
@@ -160,6 +158,40 @@ def fetch_top_goalscorers_for_match(team_str: str, opponent_str: str):
     }]
 
 
+# --- Génération Buteurs Football (100% Local / Consensus Hash) ---
+def fetch_football_goalscorers(team_str: str, opponent_str: str):
+    match_hash = int(hashlib.md5(f"FOOT-{team_str}-{opponent_str}".encode()).hexdigest(), 16)
+    
+ noms_types = ["Buteur Star", "Ailier Explosif", "Milieu Offensif", "Avant-Centre", "Super Sub"]
+    scorers = []
+    
+    for i in range(4):
+        p_hash = int(hashlib.md5(f"{team_str}-player-{i}-{match_hash}".encode()).hexdigest(), 16)
+        buts = (p_hash % 12) + 3
+        matchs = 20 + (p_hash % 6)
+        prob_val = 30 + (p_hash % 45)
+        odds_val = round(1.70 + ((100 - prob_val) / 22), 2)
+        
+        if prob_val >= 65:
+            momentum = "🔥 Buteur en série"
+        elif prob_val >= 50:
+            momentum = "⚡ Très actif offensivement"
+        else:
+            momentum = "📊 Opportunités régulières"
+
+        scorers.append({
+            "name": f"Joueur clé {i+1} ({team_str[:3].upper()})",
+            "pos": "ATT",
+            "stats": f"{buts} buts ({matchs} m)",
+            "momentum": momentum,
+            "prob": f"{prob_val}%",
+            "odds": f"{odds_val}"
+        })
+    
+    scorers.sort(key=lambda x: int(x['prob'].replace('%', '')), reverse=True)
+    return scorers
+
+
 # --- Route Calendrier Matchs NHL ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
@@ -183,7 +215,6 @@ def get_nhl_matches(date: str):
             response = requests.get(url, timeout=4)
             if response.status_code != 200:
                 continue
-                
             data = response.json()
             
             for game in data.get("games", []):
@@ -204,7 +235,6 @@ def get_nhl_matches(date: str):
 
                 if match_date_str == date:
                     seen_game_ids.add(game_id)
-
                     home_obj = game.get("homeTeam", {})
                     away_obj = game.get("awayTeam", {})
                     
@@ -218,51 +248,49 @@ def get_nhl_matches(date: str):
                     if away_common:
                         away_team = f"{away_team} {away_common}"
 
-                    home_logo = home_obj.get("logo", "")
-                    away_logo = away_obj.get("logo", "")
-                    
-                    state = str(game.get("gameState", "")).upper()
-                    if state in ["OFF", "FINAL"]:
-                        game_state = "OFF"
-                    elif state in ["CRIT", "LIVE", "IN"]:
-                        game_state = "En cours"
-                    else:
-                        game_state = dt_france.strftime("%H:%M")
-
                     formatted_matches.append({
                         "_sort_time": start_utc,
                         "league": "NHL",
                         "home_team": home_team,
                         "away_team": away_team,
-                        "home_logo": home_logo,
-                        "away_logo": away_logo,
-                        "game_state": game_state
+                        "home_logo": home_obj.get("logo", ""),
+                        "away_logo": away_obj.get("logo", ""),
+                        "game_state": dt_france.strftime("%H:%M")
                     })
         except Exception:
             continue
             
     formatted_matches.sort(key=lambda x: x["_sort_time"])
     final_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in formatted_matches]
-
     return {"date": date, "matches": final_matches}
 
 
-# --- Route Pronostic Buteurs 100% NHL (Sans IA textuelle) ---
+# --- Route Unifiée de Prédiction (Buteurs) ---
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
-    home_abbr = get_nhl_abbr(req.home_team)
-    away_abbr = get_nhl_abbr(req.away_team)
+    league = req.league.upper()
     
-    home_scorers = fetch_top_goalscorers_for_match(req.home_team, req.away_team)
-    away_scorers = fetch_top_goalscorers_for_match(req.away_team, req.home_team)
+    if league == "NHL":
+        home_abbr = get_nhl_abbr(req.home_team)
+        away_abbr = get_nhl_abbr(req.away_team)
+        home_scorers = fetch_nhl_goalscorers(req.home_team, req.away_team)
+        away_scorers = fetch_nhl_goalscorers(req.away_team, req.home_team)
+        home_logo = f"https://assets.nhle.com/logos/nhl/svg/{home_abbr}_light.svg"
+        away_logo = f"https://assets.nhle.com/logos/nhl/svg/{away_abbr}_light.svg"
+    else:
+        # Simulation Football locale propre
+        home_scorers = fetch_football_goalscorers(req.home_team, req.away_team)
+        away_scorers = fetch_football_goalscorers(req.away_team, req.home_team)
+        home_logo = "https://media.api-sports.io/football/teams/default.png"
+        away_logo = "https://media.api-sports.io/football/teams/default.png"
 
     return {
         "match": f"{req.home_team} vs {req.away_team}",
-        "home_logo": f"https://assets.nhle.com/logos/nhl/svg/{home_abbr}_light.svg",
-        "away_logo": f"https://assets.nhle.com/logos/nhl/svg/{away_abbr}_light.svg",
+        "home_logo": home_logo,
+        "away_logo": away_logo,
         "top_goalscorers_home": home_scorers,
         "top_goalscorers_away": away_scorers,
-        "ai_insight": ""  # Suppression totale du texte descriptif de l'IA
+        "ai_insight": ""
     }
 
 
