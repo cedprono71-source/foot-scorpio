@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.30")
+app = FastAPI(title="Multi-IA Pronostics API", version="22.31")
 
 app.add_middleware(
     CORSMiddleware,
@@ -118,6 +118,7 @@ def get_foot_matches(date: str):
         "fra.1": "Ligue 1",
         "usa.1": "MLS",
         "mex.1": "Liga MX",
+        "arg.1": "Championnat d'Argentine",
         "ecu.1": "Liga Pro Équateur",
         "col.1": "Liga BetPlay Colombie",
         "rou.1": "Liga I Roumanie",
@@ -331,7 +332,7 @@ def fetch_nhl_roster(team_str: str):
                         "pct": 55 + (abs(hash(last)) % 35)
                     })
             if players:
-                return players[:8]  # Mis à 8 joueurs pour alimenter la liste avec défilement
+                return players[:8]
     except Exception:
         pass
         
