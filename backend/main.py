@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI(title="Multi-IA Pronostics API", version="22.31")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.32")
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,16 +95,18 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football Ultra-Rapide : API ESPN (Parallélisée) ---
+# --- Route Football Ultra-Rapide : API ESPN (Parallélisée + Argentine + Fenêtre élargie) ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
     try:
         req_date_obj = datetime.strptime(date, "%Y-%m-%d")
         dates_to_check = [
+            (req_date_obj - timedelta(days=2)).strftime("%Y%m%d"),
             (req_date_obj - timedelta(days=1)).strftime("%Y%m%d"),
             req_date_obj.strftime("%Y%m%d"),
-            (req_date_obj + timedelta(days=1)).strftime("%Y%m%d")
+            (req_date_obj + timedelta(days=1)).strftime("%Y%m%d"),
+            (req_date_obj + timedelta(days=2)).strftime("%Y%m%d")
         ]
     except Exception:
         dates_to_check = [date.replace("-", "")]
@@ -203,7 +205,6 @@ def get_foot_matches(date: str):
                 continue
         return local_matches
 
-    # Exécution simultanée pour toutes les ligues
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(fetch_league, item) for item in league_names.items()]
         for future in as_completed(futures):
