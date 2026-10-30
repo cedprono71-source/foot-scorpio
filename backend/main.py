@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.45")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.46")
 
 app.add_middleware(
     CORSMiddleware,
@@ -156,7 +156,6 @@ def get_foot_matches(date: str):
                             
                         try:
                             match_date_str = event_raw_date.split("T")[0]
-                            
                             dt_utc = datetime.fromisoformat(event_raw_date.replace("Z", "+00:00"))
                             dt_france = dt_utc.astimezone(paris_tz)
                             game_time_str = dt_france.strftime("%H:%M")
@@ -180,22 +179,23 @@ def get_foot_matches(date: str):
                             else:
                                 game_state = game_time_str
 
-                            competitors = comp.get("competitions", [])
-                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
+                            competitors = comp.get("competitors", [])
+                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Équipe Domicile", "Équipe Extérieur", "", "", None, None
 
-                            for team in competitors:
+                            for i, team in enumerate(competitors):
                                 team_data = team.get("team", {})
-                                team_display_name = team_data.get("displayName") or team_data.get("name") or team_data.get("shortDisplayName", "Équipe")
+                                team_display_name = team_data.get("displayName") or team_data.get("name") or team_data.get("shortDisplayName", f"Équipe {i+1}")
                                 
                                 t_logo = team_data.get("logo", "")
                                 if not t_logo and "logos" in team_data and len(team_data["logos"]) > 0:
                                     t_logo = team_data["logos"][0].get("href", "")
 
-                                if team.get("homeAway") == "home":
+                                home_away = team.get("homeAway")
+                                if home_away == "home" or (not home_away and i == 0):
                                     home_team = team_display_name
                                     home_logo = t_logo
                                     home_score = team.get("score")
-                                else:
+                                elif home_away == "away" or (not home_away and i == 1):
                                     away_team = team_display_name
                                     away_logo = t_logo
                                     away_score = team.get("score")
