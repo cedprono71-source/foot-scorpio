@@ -9,8 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
+from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.32")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.33")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,6 +20,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- SYSTÈM DE CACHE (Expire après 10 minutes, max 100 dates stockées) ---
+matches_cache = TTLCache(maxsize=100, ttl=600)
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -95,41 +99,33 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football Ultra-Rapide : API ESPN (Parallélisée + Argentine + Fenêtre élargie) ---
+# --- Route Football Ultra-Rapide avec Cache ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
+    # Vérification si les données sont déjà en cache pour cette date
+    if date in matches_cache:
+        return matches_cache[date]
+
     paris_tz = ZoneInfo("Europe/Paris")
     try:
         req_date_obj = datetime.strptime(date, "%Y-%m-%d")
         dates_to_check = [
-            (req_date_obj - timedelta(days=2)).strftime("%Y%m%d"),
             (req_date_obj - timedelta(days=1)).strftime("%Y%m%d"),
             req_date_obj.strftime("%Y%m%d"),
-            (req_date_obj + timedelta(days=1)).strftime("%Y%m%d"),
-            (req_date_obj + timedelta(days=2)).strftime("%Y%m%d")
+            (req_date_obj + timedelta(days=1)).strftime("%Y%m%d")
         ]
     except Exception:
         dates_to_check = [date.replace("-", "")]
 
     league_names = {
         "eng.1": "Premier League",
-        "eng.2": "EFL Championship",
         "esp.1": "La Liga",
         "ita.1": "Serie A",
         "ger.1": "Bundesliga",
         "fra.1": "Ligue 1",
         "usa.1": "MLS",
-        "mex.1": "Liga MX",
-        "arg.1": "Championnat d'Argentine",
-        "ecu.1": "Liga Pro Équateur",
-        "col.1": "Liga BetPlay Colombie",
-        "rou.1": "Liga I Roumanie",
-        "tur.1": "Süper Lig",
-        "ksa.1": "Saudi Pro League",
         "uefa.champions": "UEFA Champions League",
-        "uefa.europa": "UEFA Europa League",
-        "fifa.friendly": "Matchs Amicaux",
-        "fifa.world": "Sélections Nationales"
+        "uefa.europa": "UEFA Europa League"
     }
 
     raw_matches = []
@@ -205,7 +201,7 @@ def get_foot_matches(date: str):
                 continue
         return local_matches
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         futures = [executor.submit(fetch_league, item) for item in league_names.items()]
         for future in as_completed(futures):
             for m in future.result():
@@ -216,7 +212,11 @@ def get_foot_matches(date: str):
     raw_matches.sort(key=lambda x: x["_sort_time"])
     formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
                     
-    return {"date": date, "matches": formatted_matches}
+    result = {"date": date, "matches": formatted_matches}
+    
+    # Stockage dans le cache pour les requêtes futures sur cette date
+    matches_cache[date] = result
+    return result
 
 @app.post("/predict/match/foot")
 def predict_foot_match(req: MatchRequest):
@@ -236,7 +236,7 @@ def predict_foot_match(req: MatchRequest):
         predicted_score = f"{home_goals} - {away_goals}"
 
         ht_home = min(1, home_goals) if seed_home % 2 == 0 else 0
-        ht_away = min(1, away_goals) if seed_away % 2 == 0 else 0
+        ht_away = min(1, away_goals) if seed_home % 2 == 0 else 0
         ht_score = f"{ht_home} - {ht_away}"
         ht_total_goals = ht_home + ht_away
 
