@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.35")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.46")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- SYSTÈME DE CACHE (Expire après 10 minutes, max 100 dates stockées) ---
 matches_cache = TTLCache(maxsize=100, ttl=600)
 
 class MatchRequest(BaseModel):
@@ -30,8 +29,6 @@ class MatchRequest(BaseModel):
     home_id: Optional[str] = None
     away_id: Optional[str] = None
 
-
-# --- Moteur Consensus 5 IA Dynamique et Varié ---
 def get_team_seed(home_team, away_team):
     h = int(hashlib.md5(f"{home_team}-{away_team}".encode()).hexdigest(), 16)
     return h
@@ -88,8 +85,6 @@ def calculate_5_ai_consensus(home_team, away_team):
         "away_win": round(final_away, 1)
     }
 
-
-# --- ROUTE PRINCIPALE ---
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -98,11 +93,8 @@ def serve_home():
     except FileNotFoundError:
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
-
-# --- Route Football Ultra-Rapide avec Cache & Tous les Championnats ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
-    # Vérification si les données sont déjà en cache pour cette date
     if date in matches_cache:
         return matches_cache[date]
 
@@ -163,9 +155,10 @@ def get_foot_matches(date: str):
                             continue
                             
                         try:
+                            match_date_str = event_raw_date.split("T")[0]
                             dt_utc = datetime.fromisoformat(event_raw_date.replace("Z", "+00:00"))
                             dt_france = dt_utc.astimezone(paris_tz)
-                            match_date_str = dt_france.strftime("%Y-%m-%d")
+                            game_time_str = dt_france.strftime("%H:%M")
                         except Exception:
                             continue
                         
@@ -184,19 +177,27 @@ def get_foot_matches(date: str):
                             elif state in ["in", "live"] or "IN_PROGRESS" in status_name or "LIVE" in status_name:
                                 game_state = "En cours"
                             else:
-                                game_state = dt_france.strftime("%H:%M")
+                                game_state = game_time_str
 
                             competitors = comp.get("competitors", [])
-                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
+                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Équipe Domicile", "Équipe Extérieur", "", "", None, None
 
-                            for team in competitors:
-                                if team.get("homeAway") == "home":
-                                    home_team = team.get("team", {}).get("displayName", "Domicile")
-                                    home_logo = team.get("team", {}).get("logo", "")
+                            for i, team in enumerate(competitors):
+                                team_data = team.get("team", {})
+                                team_display_name = team_data.get("displayName") or team_data.get("name") or team_data.get("shortDisplayName", f"Équipe {i+1}")
+                                
+                                t_logo = team_data.get("logo", "")
+                                if not t_logo and "logos" in team_data and len(team_data["logos"]) > 0:
+                                    t_logo = team_data["logos"][0].get("href", "")
+
+                                home_away = team.get("homeAway")
+                                if home_away == "home" or (not home_away and i == 0):
+                                    home_team = team_display_name
+                                    home_logo = t_logo
                                     home_score = team.get("score")
-                                else:
-                                    away_team = team.get("team", {}).get("displayName", "Extérieur")
-                                    away_logo = team.get("team", {}).get("logo", "")
+                                elif home_away == "away" or (not home_away and i == 1):
+                                    away_team = team_display_name
+                                    away_logo = t_logo
                                     away_score = team.get("score")
 
                             local_matches.append({
@@ -227,8 +228,6 @@ def get_foot_matches(date: str):
     formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
                     
     result = {"date": date, "matches": formatted_matches}
-    
-    # Stockage dans le cache pour les requêtes futures sur cette date
     matches_cache[date] = result
     return result
 
@@ -236,30 +235,45 @@ def get_foot_matches(date: str):
 def predict_foot_match(req: MatchRequest):
     try:
         probs = calculate_5_ai_consensus(req.home_team, req.away_team)
+        hw = probs["home_win"]
+        dw = probs["draw"]
+        aw = probs["away_win"]
         
-        seed_home = int(hashlib.md5(req.home_team.encode()).hexdigest(), 16)
-        seed_away = int(hashlib.md5(req.away_team.encode()).hexdigest(), 16)
+        seed = get_team_seed(req.home_team, req.away_team)
         
-        home_goals = (seed_home % 4) if probs["home_win"] >= 38 else (seed_home % 2)
-        away_goals = (seed_away % 3) if probs["away_win"] >= 32 else (seed_away % 2)
-        
-        if probs["draw"] > 35 and home_goals == away_goals:
-            home_goals = seed_home % 3
-            away_goals = home_goals
+        if hw >= aw and hw >= dw:
+            home_goals = 2 if hw >= 45 else 1
+            away_goals = 0 if home_goals == 2 and (seed % 2 == 0) else 1
+            if home_goals <= away_goals:
+                home_goals = away_goals + 1
+        elif aw >= hw and aw >= dw:
+            away_goals = 2 if aw >= 45 else 1
+            home_goals = 0 if away_goals == 2 and (seed % 2 == 0) else 1
+            if away_goals <= home_goals:
+                away_goals = home_goals + 1
+        else:
+            g = 1 if (seed % 2 == 0) else 0
+            home_goals = g
+            away_goals = g
 
         predicted_score = f"{home_goals} - {away_goals}"
+        total_goals = home_goals + away_goals
 
-        ht_home = min(1, home_goals) if seed_home % 2 == 0 else 0
-        ht_away = min(1, away_goals) if seed_away % 2 == 0 else 0
+        ht_home = 1 if home_goals >= 2 and seed % 2 == 0 else (1 if home_goals == 1 and seed % 3 == 0 else 0)
+        ht_away = 1 if away_goals >= 2 and seed % 3 == 0 else (1 if away_goals == 1 and seed % 4 == 0 else 0)
         ht_score = f"{ht_home} - {ht_away}"
-        ht_total_goals = ht_home + ht_away
+        ht_total = ht_home + ht_away
 
-        over_0_5_prob = round(65.0 + (seed_home % 30), 1) if ht_total_goals > 0 else round(25.0 + (seed_home % 30), 1)
-        action_conseillee = "Plus de 0.5 but MT" if ht_total_goals > 0 else "Observation en 1ère MT"
+        over_0_5_prob = round(82.0 if ht_total > 0 else 38.0, 1)
+        action_conseillee = "Plus de 0.5 but MT" if ht_total > 0 else "Observation en 1ère MT"
 
-        btts_prob = round(45.0 + (seed_home % 40), 1) if home_goals > 0 and away_goals > 0 else round(20.0 + (seed_home % 25), 1)
-        over_25_prob = round(35.0 + (seed_away % 45), 1) if (home_goals + away_goals) >= 3 else round(25.0 + (seed_away % 30), 1)
-        base_cards = 2.8 + (seed_home % 5) * 0.5
+        btts_yes = (home_goals > 0 and away_goals > 0)
+        btts_prob = round(72.0 if btts_yes else 28.0, 1)
+
+        over_25 = (total_goals >= 3)
+        over_25_prob = round(75.0 if over_25 else 25.0, 1)
+
+        base_cards = 3.0 + (seed % 4) * 0.5
 
         return {
             "match": f"{req.home_team} vs {req.away_team}",
@@ -274,14 +288,13 @@ def predict_foot_match(req: MatchRequest):
             },
             "yellow_cards": {
                 "expected_total": round(base_cards, 1),
-                "over_4_5_prob": round(45.0 + (seed_home % 35), 1),
+                "over_4_5_prob": round(45.0 + (seed % 35), 1),
                 "home_team_avg": round(base_cards * 0.52, 1),
                 "away_team_avg": round(base_cards * 0.48, 1)
             }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn
