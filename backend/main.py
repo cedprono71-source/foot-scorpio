@@ -21,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- SYSTÈM DE CACHE (Expire après 10 minutes, max 100 dates stockées) ---
+# --- SYSTÈME DE CACHE (Expire après 10 minutes, max 100 dates stockées) ---
 matches_cache = TTLCache(maxsize=100, ttl=600)
 
 class MatchRequest(BaseModel):
@@ -99,7 +99,7 @@ def serve_home():
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
 
-# --- Route Football Ultra-Rapide avec Cache ---
+# --- Route Football Ultra-Rapide avec Cache & Tous les Championnats ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     # Vérification si les données sont déjà en cache pour cette date
@@ -119,13 +119,25 @@ def get_foot_matches(date: str):
 
     league_names = {
         "eng.1": "Premier League",
+        "eng.2": "EFL Championship",
         "esp.1": "La Liga",
+        "esp.2": "Liga 2 (Espagne)",
         "ita.1": "Serie A",
         "ger.1": "Bundesliga",
+        "ger.2": "2. Bundesliga",
         "fra.1": "Ligue 1",
         "usa.1": "MLS",
+        "mex.1": "Liga MX",
+        "arg.1": "Championnat d'Argentine",
+        "ecu.1": "Liga Pro Équateur",
+        "col.1": "Liga BetPlay Colombie",
+        "rou.1": "Liga I Roumanie",
+        "tur.1": "Süper Lig",
+        "ksa.1": "Saudi Pro League",
         "uefa.champions": "UEFA Champions League",
-        "uefa.europa": "UEFA Europa League"
+        "uefa.europa": "UEFA Europa League",
+        "fifa.friendly": "Matchs Amicaux",
+        "fifa.world": "Sélections Nationales"
     }
 
     raw_matches = []
@@ -201,7 +213,7 @@ def get_foot_matches(date: str):
                 continue
         return local_matches
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(fetch_league, item) for item in league_names.items()]
         for future in as_completed(futures):
             for m in future.result():
@@ -236,7 +248,7 @@ def predict_foot_match(req: MatchRequest):
         predicted_score = f"{home_goals} - {away_goals}"
 
         ht_home = min(1, home_goals) if seed_home % 2 == 0 else 0
-        ht_away = min(1, away_goals) if seed_home % 2 == 0 else 0
+        ht_away = min(1, away_goals) if seed_away % 2 == 0 else 0
         ht_score = f"{ht_home} - {ht_away}"
         ht_total_goals = ht_home + ht_away
 
