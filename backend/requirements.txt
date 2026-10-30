@@ -5,3 +5,4 @@ scipy
 pydantic
 requests
 apscheduler
+pip install cachetools
