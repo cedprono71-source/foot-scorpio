@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.35")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.36")
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,7 +55,7 @@ def ai_streak_model(home_team, away_team):
     home_p = 35.0 + (seed % 35)
     away_p = 15.0 + ((seed // 3) % 35)
     draw_p = max(10.0, 100.0 - (home_p + away_p))
-    return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
+    return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(draw_p, 1)}
 
 def ai_h2h_model(home_team, away_team):
     seed = get_team_seed("h2h", away_team)
@@ -102,7 +102,6 @@ def serve_home():
 # --- Route Football Ultra-Rapide avec Cache & Tous les Championnats ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
-    # Vérification si les données sont déjà en cache pour cette date
     if date in matches_cache:
         return matches_cache[date]
 
@@ -186,7 +185,7 @@ def get_foot_matches(date: str):
                             else:
                                 game_state = dt_france.strftime("%H:%M")
 
-                            competitors = comp.get("competitors", [])
+                            competitors = comp.get("competitions", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
 
                             for team in competitors:
@@ -227,39 +226,61 @@ def get_foot_matches(date: str):
     formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
                     
     result = {"date": date, "matches": formatted_matches}
-    
-    # Stockage dans le cache pour les requêtes futures sur cette date
     matches_cache[date] = result
     return result
 
+
+# --- ROUTE DE PRÉDICTION STRICTEMENT COHÉRENTE ---
 @app.post("/predict/match/foot")
 def predict_foot_match(req: MatchRequest):
     try:
+        # 1. Calcul du consensus des IA
         probs = calculate_5_ai_consensus(req.home_team, req.away_team)
+        hw = probs["home_win"]
+        dw = probs["draw"]
+        aw = probs["away_win"]
         
-        seed_home = int(hashlib.md5(req.home_team.encode()).hexdigest(), 16)
-        seed_away = int(hashlib.md5(req.away_team.encode()).hexdigest(), 16)
+        seed = get_team_seed(req.home_team, req.away_team)
         
-        home_goals = (seed_home % 4) if probs["home_win"] >= 38 else (seed_home % 2)
-        away_goals = (seed_away % 3) if probs["away_win"] >= 32 else (seed_away % 2)
-        
-        if probs["draw"] > 35 and home_goals == away_goals:
-            home_goals = seed_home % 3
-            away_goals = home_goals
+        # 2. Déduction logique et stricte du score selon le vainqueur probable
+        if hw >= aw and hw >= dw:
+            # Victoire logique de l'équipe à domicile
+            home_goals = 2 if hw >= 45 else 1
+            away_goals = 0 if home_goals == 2 and (seed % 2 == 0) else 1
+            if home_goals <= away_goals:
+                home_goals = away_goals + 1
+        elif aw >= hw and aw >= dw:
+            # Victoire logique de l'équipe à l'extérieur
+            away_goals = 2 if aw >= 45 else 1
+            home_goals = 0 if away_goals == 2 and (seed % 2 == 0) else 1
+            if away_goals <= home_goals:
+                away_goals = home_goals + 1
+        else:
+            # Match nul logique
+            g = 1 if (seed % 2 == 0) else 0
+            home_goals = g
+            away_goals = g
 
         predicted_score = f"{home_goals} - {away_goals}"
+        total_goals = home_goals + away_goals
 
-        ht_home = min(1, home_goals) if seed_home % 2 == 0 else 0
-        ht_away = min(1, away_goals) if seed_away % 2 == 0 else 0
+        # 3. Score Mi-Temps cohérent par rapport au score final
+        ht_home = 1 if home_goals >= 2 and seed % 2 == 0 else (1 if home_goals == 1 and seed % 3 == 0 else 0)
+        ht_away = 1 if away_goals >= 2 and seed % 3 == 0 else (1 if away_goals == 1 and seed % 4 == 0 else 0)
         ht_score = f"{ht_home} - {ht_away}"
-        ht_total_goals = ht_home + ht_away
+        ht_total = ht_home + ht_away
 
-        over_0_5_prob = round(65.0 + (seed_home % 30), 1) if ht_total_goals > 0 else round(25.0 + (seed_home % 30), 1)
-        action_conseillee = "Plus de 0.5 but MT" if ht_total_goals > 0 else "Observation en 1ère MT"
+        # 4. Probabilités annexes alignées sur les buts réels du match prédit
+        over_0_5_prob = round(82.0 if ht_total > 0 else 38.0, 1)
+        action_conseillee = "Plus de 0.5 but MT" if ht_total > 0 else "Observation en 1ère MT"
 
-        btts_prob = round(45.0 + (seed_home % 40), 1) if home_goals > 0 and away_goals > 0 else round(20.0 + (seed_home % 25), 1)
-        over_25_prob = round(35.0 + (seed_away % 45), 1) if (home_goals + away_goals) >= 3 else round(25.0 + (seed_away % 30), 1)
-        base_cards = 2.8 + (seed_home % 5) * 0.5
+        btts_yes = (home_goals > 0 and away_goals > 0)
+        btts_prob = round(72.0 if btts_yes else 28.0, 1)
+
+        over_25 = (total_goals >= 3)
+        over_25_prob = round(75.0 if over_25 else 25.0, 1)
+
+        base_cards = 3.0 + (seed % 4) * 0.5
 
         return {
             "match": f"{req.home_team} vs {req.away_team}",
@@ -274,7 +295,7 @@ def predict_foot_match(req: MatchRequest):
             },
             "yellow_cards": {
                 "expected_total": round(base_cards, 1),
-                "over_4_5_prob": round(45.0 + (seed_home % 35), 1),
+                "over_4_5_prob": round(45.0 + (seed % 35), 1),
                 "home_team_avg": round(base_cards * 0.52, 1),
                 "away_team_avg": round(base_cards * 0.48, 1)
             }
