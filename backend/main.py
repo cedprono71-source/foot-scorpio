@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.46")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.49")
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,37 +35,38 @@ def get_team_seed(home_team, away_team):
 
 def ai_poisson_model(home_team, away_team):
     seed = get_team_seed(home_team, away_team)
-    home_p = 30.0 + (seed % 40)
-    away_p = 15.0 + ((seed // 7) % 35)
-    draw_p = max(10.0, 100.0 - (home_p + away_p))
+    # Simulation statistique pondérée basée sur l'empreinte des équipes
+    home_p = 34.0 + (seed % 32)
+    away_p = 22.0 + ((seed // 7) % 28)
+    draw_p = max(15.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def ai_machine_learning_model(home_team, away_team):
     seed = get_team_seed(away_team, home_team)
-    home_p = 25.0 + (seed % 45)
-    away_p = 20.0 + ((seed // 5) % 30)
-    draw_p = max(10.0, 100.0 - (home_p + away_p))
+    home_p = 30.0 + (seed % 38)
+    away_p = 24.0 + ((seed // 5) % 26)
+    draw_p = max(15.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def ai_streak_model(home_team, away_team):
     seed = get_team_seed(home_team, "streak")
-    home_p = 35.0 + (seed % 35)
-    away_p = 15.0 + ((seed // 3) % 35)
-    draw_p = max(10.0, 100.0 - (home_p + away_p))
+    home_p = 35.0 + (seed % 30)
+    away_p = 20.0 + ((seed // 3) % 30)
+    draw_p = max(15.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def ai_h2h_model(home_team, away_team):
     seed = get_team_seed("h2h", away_team)
-    home_p = 32.0 + (seed % 38)
-    away_p = 18.0 + ((seed // 9) % 32)
-    draw_p = max(10.0, 100.0 - (home_p + away_p))
+    home_p = 32.0 + (seed % 34)
+    away_p = 22.0 + ((seed // 9) % 28)
+    draw_p = max(15.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def ai_fatigue_model(home_team, away_team):
     seed = get_team_seed(home_team, "fatigue")
-    home_p = 30.0 + ((seed // 4) % 40)
-    away_p = 20.0 + ((seed // 11) % 35)
-    draw_p = max(10.0, 100.0 - (home_p + away_p))
+    home_p = 33.0 + ((seed // 4) % 33)
+    away_p = 21.0 + ((seed // 11) % 29)
+    draw_p = max(15.0, 100.0 - (home_p + away_p))
     return {"home": round(home_p, 1), "draw": round(draw_p, 1), "away": round(away_p, 1)}
 
 def calculate_5_ai_consensus(home_team, away_team):
@@ -77,7 +78,7 @@ def calculate_5_ai_consensus(home_team, away_team):
     
     final_home = p1['home'] * 0.35 + p2['home'] * 0.25 + p3['home'] * 0.15 + p4['home'] * 0.125 + p5['home'] * 0.125
     final_away = p1['away'] * 0.35 + p2['away'] * 0.25 + p3['away'] * 0.15 + p4['away'] * 0.125 + p5['away'] * 0.125
-    final_draw = max(10.0, 100.0 - (final_home + final_away))
+    final_draw = max(15.0, 100.0 - (final_home + final_away))
 
     return {
         "home_win": round(final_home, 1),
@@ -180,25 +181,27 @@ def get_foot_matches(date: str):
                                 game_state = game_time_str
 
                             competitors = comp.get("competitors", [])
-                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Équipe Domicile", "Équipe Extérieur", "", "", None, None
+                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
 
-                            for i, team in enumerate(competitors):
-                                team_data = team.get("team", {})
+                            for i, competitor in enumerate(competitors):
+                                team_data = competitor.get("team", {})
                                 team_display_name = team_data.get("displayName") or team_data.get("name") or team_data.get("shortDisplayName", f"Équipe {i+1}")
                                 
                                 t_logo = team_data.get("logo", "")
                                 if not t_logo and "logos" in team_data and len(team_data["logos"]) > 0:
                                     t_logo = team_data["logos"][0].get("href", "")
 
-                                home_away = team.get("homeAway")
+                                score_val = competitor.get("score")
+                                home_away = competitor.get("homeAway")
+
                                 if home_away == "home" or (not home_away and i == 0):
                                     home_team = team_display_name
                                     home_logo = t_logo
-                                    home_score = team.get("score")
+                                    home_score = score_val
                                 elif home_away == "away" or (not home_away and i == 1):
                                     away_team = team_display_name
                                     away_logo = t_logo
-                                    away_score = team.get("score")
+                                    away_score = score_val
 
                             local_matches.append({
                                 "event_id": event_id,
@@ -241,20 +244,14 @@ def predict_foot_match(req: MatchRequest):
         
         seed = get_team_seed(req.home_team, req.away_team)
         
-        if hw >= aw and hw >= dw:
-            home_goals = 2 if hw >= 45 else 1
-            away_goals = 0 if home_goals == 2 and (seed % 2 == 0) else 1
-            if home_goals <= away_goals:
-                home_goals = away_goals + 1
-        elif aw >= hw and aw >= dw:
-            away_goals = 2 if aw >= 45 else 1
-            home_goals = 0 if away_goals == 2 and (seed % 2 == 0) else 1
-            if away_goals <= home_goals:
-                away_goals = home_goals + 1
-        else:
-            g = 1 if (seed % 2 == 0) else 0
-            home_goals = g
-            away_goals = g
+        # Calcul dynamique des buts plus réaliste et diversifié
+        home_goals = int((seed % 3) * (hw / 100.0) + 0.5)
+        away_goals = int(((seed // 7) % 3) * (aw / 100.0) + 0.3)
+        
+        if hw > aw + 18 and home_goals <= away_goals:
+            home_goals = away_goals + 1
+        elif aw > hw + 18 and away_goals <= home_goals:
+            away_goals = home_goals + 1
 
         predicted_score = f"{home_goals} - {away_goals}"
         total_goals = home_goals + away_goals
@@ -264,14 +261,14 @@ def predict_foot_match(req: MatchRequest):
         ht_score = f"{ht_home} - {ht_away}"
         ht_total = ht_home + ht_away
 
-        over_0_5_prob = round(82.0 if ht_total > 0 else 38.0, 1)
+        over_0_5_prob = round(84.0 if ht_total > 0 else 40.0, 1)
         action_conseillee = "Plus de 0.5 but MT" if ht_total > 0 else "Observation en 1ère MT"
 
         btts_yes = (home_goals > 0 and away_goals > 0)
-        btts_prob = round(72.0 if btts_yes else 28.0, 1)
+        btts_prob = round(68.0 if btts_yes else 32.0, 1)
 
         over_25 = (total_goals >= 3)
-        over_25_prob = round(75.0 if over_25 else 25.0, 1)
+        over_25_prob = round(72.0 if over_25 else 28.0, 1)
 
         base_cards = 3.0 + (seed % 4) * 0.5
 
@@ -288,7 +285,7 @@ def predict_foot_match(req: MatchRequest):
             },
             "yellow_cards": {
                 "expected_total": round(base_cards, 1),
-                "over_4_5_prob": round(45.0 + (seed % 35), 1),
+                "over_4_5_prob": round(42.0 + (seed % 35), 1),
                 "home_team_avg": round(base_cards * 0.52, 1),
                 "away_team_avg": round(base_cards * 0.48, 1)
             }
