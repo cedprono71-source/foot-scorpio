@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.44")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.45")
 
 app.add_middleware(
     CORSMiddleware,
@@ -155,9 +155,10 @@ def get_foot_matches(date: str):
                             continue
                             
                         try:
+                            match_date_str = event_raw_date.split("T")[0]
+                            
                             dt_utc = datetime.fromisoformat(event_raw_date.replace("Z", "+00:00"))
                             dt_france = dt_utc.astimezone(paris_tz)
-                            match_date_str = dt_france.strftime("%Y-%m-%d")
                             game_time_str = dt_france.strftime("%H:%M")
                         except Exception:
                             continue
@@ -179,7 +180,7 @@ def get_foot_matches(date: str):
                             else:
                                 game_state = game_time_str
 
-                            competitors = comp.get("competitors", [])
+                            competitors = comp.get("competitions", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
 
                             for team in competitors:
