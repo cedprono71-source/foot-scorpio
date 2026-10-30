@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.39")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.42")
 
 app.add_middleware(
     CORSMiddleware,
@@ -157,7 +157,13 @@ def get_foot_matches(date: str):
                         try:
                             dt_utc = datetime.fromisoformat(event_raw_date.replace("Z", "+00:00"))
                             dt_france = dt_utc.astimezone(paris_tz)
-                            match_date_str = dt_france.strftime("%Y-%m-%d")
+                            game_time_str = dt_france.strftime("%H:%M")
+                            
+                            # Ajustement cibler uniquement pour les Amériques/MLS, l'Europe reste intacte
+                            if league_code in ["usa.1", "mex.1", "chi.1", "par.1", "ecu.1", "col.1"]:
+                                match_date_str = (dt_utc - timedelta(hours=5)).strftime("%Y-%m-%d")
+                            else:
+                                match_date_str = event_raw_date.split("T")[0]
                         except Exception:
                             continue
                         
@@ -176,7 +182,7 @@ def get_foot_matches(date: str):
                             elif state in ["in", "live"] or "IN_PROGRESS" in status_name or "LIVE" in status_name:
                                 game_state = "En cours"
                             else:
-                                game_state = dt_france.strftime("%H:%M")
+                                game_state = game_time_str
 
                             competitors = comp.get("competitors", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
