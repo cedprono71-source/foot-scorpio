@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.37")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.39")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- SYSTÈME DE CACHE (Expire après 10 minutes, max 100 dates stockées) ---
 matches_cache = TTLCache(maxsize=100, ttl=600)
 
 class MatchRequest(BaseModel):
@@ -30,8 +29,6 @@ class MatchRequest(BaseModel):
     home_id: Optional[str] = None
     away_id: Optional[str] = None
 
-
-# --- Moteur Consensus 5 IA Dynamique et Varié ---
 def get_team_seed(home_team, away_team):
     h = int(hashlib.md5(f"{home_team}-{away_team}".encode()).hexdigest(), 16)
     return h
@@ -88,8 +85,6 @@ def calculate_5_ai_consensus(home_team, away_team):
         "away_win": round(final_away, 1)
     }
 
-
-# --- ROUTE PRINCIPALE ---
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -98,8 +93,6 @@ def serve_home():
     except FileNotFoundError:
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
-
-# --- Route Football Ultra-Rapide avec Cache & Tous les Championnats ---
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
     if date in matches_cache:
@@ -189,13 +182,20 @@ def get_foot_matches(date: str):
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
 
                             for team in competitors:
+                                team_data = team.get("team", {})
+                                team_display_name = team_data.get("displayName") or team_data.get("name") or team_data.get("shortDisplayName", "Équipe")
+                                
+                                t_logo = team_data.get("logo", "")
+                                if not t_logo and "logos" in team_data and len(team_data["logos"]) > 0:
+                                    t_logo = team_data["logos"][0].get("href", "")
+
                                 if team.get("homeAway") == "home":
-                                    home_team = team.get("team", {}).get("displayName", "Domicile")
-                                    home_logo = team.get("team", {}).get("logo", "")
+                                    home_team = team_display_name
+                                    home_logo = t_logo
                                     home_score = team.get("score")
                                 else:
-                                    away_team = team.get("team", {}).get("displayName", "Extérieur")
-                                    away_logo = team.get("team", {}).get("logo", "")
+                                    away_team = team_display_name
+                                    away_logo = t_logo
                                     away_score = team.get("score")
 
                             local_matches.append({
@@ -229,8 +229,6 @@ def get_foot_matches(date: str):
     matches_cache[date] = result
     return result
 
-
-# --- ROUTE DE PRÉDICTION STRICTEMENT COHÉRENTE ---
 @app.post("/predict/match/foot")
 def predict_foot_match(req: MatchRequest):
     try:
@@ -295,7 +293,6 @@ def predict_foot_match(req: MatchRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn
