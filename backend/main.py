@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.34")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.35")
 
 app.add_middleware(
     CORSMiddleware,
@@ -130,6 +130,7 @@ def get_foot_matches(date: str):
         "usa.1": "MLS",
         "mex.1": "Liga MX",
         "chi.1": "Campeonato Chileno",
+        "par.1": "Primera División (Paraguay)",
         "ecu.1": "Liga Pro Équateur",
         "col.1": "Liga BetPlay Colombie",
         "rou.1": "Liga I Roumanie",
