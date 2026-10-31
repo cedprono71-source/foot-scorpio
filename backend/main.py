@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API - Surgical Goalscorer Edition", version="24.0")
+app = FastAPI(title="Multi-Sport Pronostics API - Surgical Goalscorer Edition", version="24.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -115,6 +115,39 @@ def calculate_surgical_consensus(home_team, away_team):
         "btts_prob": round(btts_prob_total, 1),
         "over_25_prob": round(over_25_prob_total, 1)
     }
+
+def get_real_player_from_espn(team_name: str) -> str:
+    """Interroge l'API publique d'ESPN pour extraire un vrai attaquant/joueur de l'effectif sans bloquer l'application"""
+    try:
+        search_url = "https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams"
+        response = requests.get(search_url, timeout=2)
+        if response.status_code == 200:
+            data = response.json()
+            for league in data.get("sports", [{}])[0].get("leagues", []):
+                for team_obj in league.get("teams", []):
+                    team_info = team_obj.get("team", {})
+                    if (
+                        team_name.lower() in team_info.get("displayName", "").lower()
+                        or team_name.lower() in team_info.get("name", "").lower()
+                    ):
+                        league_slug = league.get("slug", "ita.1")
+                        team_id = team_info.get("id")
+                        roster_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_slug}/teams/{team_id}/roster"
+                        roster_resp = requests.get(roster_url, timeout=2)
+                        if roster_resp.status_code == 200:
+                            roster_data = roster_resp.json()
+                            athletes = roster_data.get("athletes", []) or roster_data.get("roster", [])
+                            for athlete in athletes:
+                                position = athlete.get("position", {}).get("name", "").lower()
+                                if "forward" in position or "striker" in position or "attaquant" in position:
+                                    return athlete.get("displayName")
+                            if athletes:
+                                return athletes[0].get("displayName")
+    except Exception as e:
+        print(f"Erreur de récupération ESPN pour {team_name}: {e}")
+    
+    # Fallback propre de sécurité si l'API ne répond pas ou ne trouve pas l'équipe
+    return "Buteur Principal"
 
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
@@ -302,13 +335,12 @@ def predict_foot_match(req: MatchRequest):
 
         base_cards = 3.3 + (seed % 3) * 0.4
 
-        # --- CALCUL BUTEURS (Anytime Goalscorer) ---
+        # --- CALCUL AUTOMATIQUE DES VRAIS BUTEURS VIA ESPM ---
+        home_player = get_real_player_from_espn(req.home_team)
+        away_player = get_real_player_from_espn(req.away_team)
+
         home_buteur_prob = min(82.0, round(min(consensus["home_exp"] * 40.0, 78.0), 1))
         away_buteur_prob = min(82.0, round(min(consensus["away_exp"] * 40.0, 78.0), 1))
-        
-        star_players = ["Attaquant Star", "Buteur Principal", "Ailier Prolifique", "Renard des Surfaces"]
-        home_star = star_players[seed % len(star_players)]
-        away_star = star_players[(seed // 2) % len(star_players)]
 
         return {
             "match": f"{req.home_team} vs {req.away_team}",
@@ -322,9 +354,9 @@ def predict_foot_match(req: MatchRequest):
             "btts": {"yes_prob": consensus["btts_prob"]},
             "over_under_2_5": {"over_prob": consensus["over_25_prob"]},
             "goalscorers": {
-                "home_player": home_star,
+                "home_player": home_player,
                 "home_player_prob": home_buteur_prob,
-                "away_player": away_star,
+                "away_player": away_player,
                 "away_player_prob": away_buteur_prob
             },
             "first_half": {
