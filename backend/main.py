@@ -11,8 +11,9 @@ from pydantic import BaseModel
 from typing import Optional
 import math
 from cachetools import TTLCache
+from functools import lru_cache
 
-app = FastAPI(title="Multi-Sport Pronostics API - Surgical Goalscorer Edition", version="24.1")
+app = FastAPI(title="Multi-Sport Pronostics API - Surgical Goalscorer Edition", version="24.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,14 +36,12 @@ def get_team_seed(home_team, away_team):
     return h
 
 def get_surgical_team_profile(team_name):
-    """Génère un profil chirurgical Domicile/Extérieur intégrant la dynamique de forme récente (5 derniers matchs)."""
     h = int(hashlib.md5(team_name.encode()).hexdigest(), 16)
     home_gf = 1.1 + (h % 12) / 10.0      
     home_ga = 0.7 + ((h // 3) % 10) / 10.0 
     away_gf = 0.8 + ((h // 7) % 11) / 10.0 
     away_ga = 1.0 + ((h // 11) % 12) / 10.0
     
-    # Facteur de forme récente (multiplicateur entre 0.85 et 1.15)
     recent_form_multiplier = 0.90 + ((h // 17) % 26) / 100.0
     
     return {
@@ -54,14 +53,12 @@ def get_surgical_team_profile(team_name):
     }
 
 def poisson_probability(lmbda, k):
-    """Calcule la probabilité exacte d'un nombre de buts selon la loi de Poisson."""
     try:
         return (math.exp(-lmbda) * (lmbda ** k)) / math.factorial(k)
     except Exception:
         return 0.1
 
 def calculate_surgical_consensus(home_team, away_team):
-    """Moteur de Poisson avancé intégrant les splits et la dynamique de forme."""
     h_prof = get_surgical_team_profile(home_team)
     a_prof = get_surgical_team_profile(away_team)
     
@@ -116,38 +113,38 @@ def calculate_surgical_consensus(home_team, away_team):
         "over_25_prob": round(over_25_prob_total, 1)
     }
 
+@lru_cache(maxsize=300)
 def get_real_player_from_espn(team_name: str) -> str:
-    """Interroge l'API publique d'ESPN pour extraire un vrai attaquant/joueur de l'effectif sans bloquer l'application"""
-    try:
-        search_url = "https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams"
-        response = requests.get(search_url, timeout=2)
-        if response.status_code == 200:
-            data = response.json()
-            for league in data.get("sports", [{}])[0].get("leagues", []):
-                for team_obj in league.get("teams", []):
-                    team_info = team_obj.get("team", {})
-                    if (
-                        team_name.lower() in team_info.get("displayName", "").lower()
-                        or team_name.lower() in team_info.get("name", "").lower()
-                    ):
-                        league_slug = league.get("slug", "ita.1")
-                        team_id = team_info.get("id")
-                        roster_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_slug}/teams/{team_id}/roster"
-                        roster_resp = requests.get(roster_url, timeout=2)
-                        if roster_resp.status_code == 200:
-                            roster_data = roster_resp.json()
+    """Scanne les championnats majeurs d'ESPN pour extraire un vrai attaquant/joueur de l'effectif"""
+    leagues = ["fra.1", "eng.1", "esp.1", "ita.1", "ger.1", "ned.1", "por.1", "uefa.champions"]
+    for league in leagues:
+        try:
+            url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/teams"
+            resp = requests.get(url, timeout=1.5)
+            if resp.status_code == 200:
+                data = resp.json()
+                teams_list = data.get("sports", [{}])[0].get("leagues", [{}])[0].get("teams", [])
+                for t in teams_list:
+                    t_info = t.get("team", {})
+                    name = t_info.get("displayName", "")
+                    short_name = t_info.get("name", "")
+                    if team_name.lower() in name.lower() or team_name.lower() in short_name.lower():
+                        team_id = t_info.get("id")
+                        roster_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/teams/{team_id}/roster"
+                        r_resp = requests.get(roster_url, timeout=1.5)
+                        if r_resp.status_code == 200:
+                            roster_data = r_resp.json()
                             athletes = roster_data.get("athletes", []) or roster_data.get("roster", [])
                             for athlete in athletes:
-                                position = athlete.get("position", {}).get("name", "").lower()
-                                if "forward" in position or "striker" in position or "attaquant" in position:
+                                pos = athlete.get("position", {}).get("name", "").lower()
+                                if any(p in pos for p in ["forward", "striker", "attaquant", "centre-forward", "winger"]):
                                     return athlete.get("displayName")
                             if athletes:
                                 return athletes[0].get("displayName")
-    except Exception as e:
-        print(f"Erreur de récupération ESPN pour {team_name}: {e}")
-    
-    # Fallback propre de sécurité si l'API ne répond pas ou ne trouve pas l'équipe
-    return "Buteur Principal"
+        except Exception:
+            continue
+            
+    return "Attaquant Star"
 
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
@@ -335,7 +332,7 @@ def predict_foot_match(req: MatchRequest):
 
         base_cards = 3.3 + (seed % 3) * 0.4
 
-        # --- CALCUL AUTOMATIQUE DES VRAIS BUTEURS VIA ESPM ---
+        # --- RÉCUPÉRATION DES VRAIS JOUEURS AVEC CACHE ---
         home_player = get_real_player_from_espn(req.home_team)
         away_player = get_real_player_from_espn(req.away_team)
 
