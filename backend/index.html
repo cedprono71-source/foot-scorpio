@@ -402,18 +402,21 @@
             }
         }
 
-        async function loadFootMatches() {
-            if (!cachedFootMatches[selectedFootDate]) {
+        async function loadFootMatches(isBackground = false) {
+            if (!cachedFootMatches[selectedFootDate] && !isBackground) {
                 renderSkeletons();
             }
             try {
                 const res = await fetch(`/api/matches/foot?date=${selectedFootDate}`);
                 const data = await res.json();
                 cachedFootMatches[selectedFootDate] = data.matches || [];
+                renderFootMatches();
             } catch (err) {
-                cachedFootMatches[selectedFootDate] = [];
+                if (!isBackground) {
+                    cachedFootMatches[selectedFootDate] = [];
+                    renderFootMatches();
+                }
             }
-            renderFootMatches();
         }
 
         function renderFootMatches() {
@@ -534,6 +537,11 @@
         window.onload = () => {
             buildCalendar();
             loadFootMatches();
+
+            // Mise à jour automatique des matchs en arrière-plan toutes les 60 secondes
+            setInterval(() => {
+                loadFootMatches(true);
+            }, 60000);
         };
     </script>
 </body>
