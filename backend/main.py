@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API - Dixon-Coles Surgical Edition", version="25.0")
+app = FastAPI(title="Multi-Sport Pronostics API - Dixon-Coles Advanced Matrix Edition", version="26.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,20 +60,25 @@ def poisson_probability(lmbda, k):
         return 0.1
 
 def calculate_surgical_consensus(home_team, away_team):
-    """Moteur de Poisson avancé doté de la correction statistique de Dixon-Coles."""
+    """Moteur de Poisson avancé avec correction de Dixon-Coles et extraction de la matrice des scores."""
     h_prof = get_surgical_team_profile(home_team)
-    a_prof = get_surgical_team_profile(away_team)
+    a_prof = get_surgical_team_profile(home_team) # Note: on garde la logique de profil
     
-    home_exp = max(0.45, (h_prof["home_gf"] * a_prof["away_ga"]) / 1.25)
-    away_exp = max(0.35, (a_prof["away_gf"] * h_prof["home_ga"]) / 1.30)
+    # Recalcul propre pour l'équipe extérieure avec son profil
+    a_prof_actual = get_surgical_team_profile(away_team)
+    
+    home_exp = max(0.45, (h_prof["home_gf"] * a_prof_actual["away_ga"]) / 1.25)
+    away_exp = max(0.35, (a_prof_actual["away_gf"] * h_prof["home_ga"]) / 1.30)
 
     home_win_prob = 0.0
     draw_prob = 0.0
     away_win_prob = 0.0
     btts_prob_total = 0.0
     over_25_prob_total = 0.0
+    
+    score_matrix = {}
 
-    # Facteur de correction de Dixon-Coles (rho = -0.08 pour l'ajustement scientifique des scores bas)
+    # Facteur de correction de Dixon-Coles (rho = -0.08)
     rho = -0.08
 
     for h_goals in range(7):
@@ -89,6 +94,8 @@ def calculate_surgical_consensus(home_team, away_team):
                 p *= max(0.1, (1.0 + (home_exp * rho)))
             elif h_goals == 1 and a_goals == 0:
                 p *= max(0.1, (1.0 + (away_exp * rho)))
+
+            score_matrix[(h_goals, a_goals)] = p
 
             if h_goals > a_goals:
                 home_win_prob += p
@@ -109,9 +116,20 @@ def calculate_surgical_consensus(home_team, away_team):
         away_win_prob = (away_win_prob / total) * 100
         btts_prob_total = (btts_prob_total / total) * 100
         over_25_prob_total = (over_25_prob_total / total) * 100
+        
+        # Normalisation de la matrice des scores pour obtenir des pourcentages réels
+        normalized_matrix = {score: (prob / total) * 100 for score, prob in score_matrix.items()}
     else:
         home_win_prob, draw_prob, away_win_prob = 45.0, 25.0, 30.0
         btts_prob_total, over_25_prob_total = 55.0, 50.0
+        normalized_matrix = {}
+
+    # Tri des scores exacts par probabilité décroissante pour extraire le Top 3
+    sorted_scores = sorted(normalized_matrix.items(), key=lambda item: item[1], reverse=True)
+    top_exact_scores = [
+        {"score": f"{s[0]} - {s[1]}", "probability": round(prob, 1)}
+        for s, prob in sorted_scores[:3]
+    ]
 
     return {
         "home_win": round(home_win_prob, 1),
@@ -120,7 +138,8 @@ def calculate_surgical_consensus(home_team, away_team):
         "home_exp": home_exp,
         "away_exp": away_exp,
         "btts_prob": round(btts_prob_total, 1),
-        "over_25_prob": round(over_25_prob_total, 1)
+        "over_25_prob": round(over_25_prob_total, 1),
+        "top_exact_scores": top_exact_scores
     }
 
 @app.get("/", response_class=HTMLResponse)
@@ -326,6 +345,7 @@ def predict_foot_match(req: MatchRequest):
                 "confidence_index": max_prob
             },
             "predicted_score": predicted_score,
+            "top_exact_scores": consensus["top_exact_scores"],
             "btts": {"yes_prob": consensus["btts_prob"]},
             "over_under_2_5": {"over_prob": consensus["over_25_prob"]},
             "goalscorers": {
