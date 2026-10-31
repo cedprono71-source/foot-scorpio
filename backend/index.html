@@ -102,7 +102,6 @@
             font-weight: bold;
         }
 
-        /* Mini badges sur la liste principale */
         .list-signal-tag {
             font-size: 0.65em;
             font-weight: bold;
@@ -238,7 +237,6 @@
             letter-spacing: 0.5px;
         }
 
-        /* Badges de signal fort dans la modale */
         .signal-badge-box {
             display: flex;
             justify-content: space-between;
@@ -317,7 +315,6 @@
             opacity: 0.9;
         }
 
-        /* --- Animation Squelette de chargement --- */
         @keyframes pulseSkeleton {
             0% { opacity: 0.4; }
             50% { opacity: 0.8; }
@@ -356,7 +353,6 @@
     <script>
         let selectedFootDate = new Date().toISOString().split('T')[0];
         let cachedFootMatches = {};
-        // Cache local pour mémoriser les signaux des matchs déjà calculés et éviter de surcharger
         let matchSignalsCache = {};
 
         function buildCalendar() {
@@ -402,7 +398,6 @@
             }
         }
 
-        // --- SQUELETTES DE CHARGEMENT ---
         function renderSkeletons() {
             const container = document.getElementById('foot-matches');
             container.innerHTML = '';
@@ -428,8 +423,6 @@
                 const data = await res.json();
                 cachedFootMatches[selectedFootDate] = data.matches || [];
                 renderFootMatches();
-                
-                // Pré-charge en arrière-plan les signaux de la liste pour afficher les pastilles rapidement
                 precomputeListSignals(cachedFootMatches[selectedFootDate]);
             } catch (err) {
                 if (!isBackground) {
@@ -452,16 +445,13 @@
                         const data = await res.json();
                         matchSignalsCache[cacheKey] = data.signal_analysis;
                         
-                        // Met à jour dynamiquement la pastille sur la carte si elle existe déjà dans le DOM
                         const badgeEl = document.getElementById(`badge-${m.home_team}-${m.away_team}`.replace(/\s+/g, '-'));
                         if (badgeEl) {
                             const sig = data.signal_analysis;
                             badgeEl.className = `list-signal-tag ${sig.strength.toLowerCase() === 'fort' ? 'fort' : (sig.strength.toLowerCase() === 'modéré' ? 'modere' : 'incertain')}`;
                             badgeEl.innerText = sig.strength === 'FORT' ? '🔥 Fort' : (sig.strength === 'MODÉRÉ' ? '⚡ Modéré' : '• Neutre');
                         }
-                    } catch (e) {
-                        // Ignore en cas d'erreur réseau ponctuelle
-                    }
+                    } catch (e) {}
                 }
             }
         }
@@ -539,11 +529,12 @@
                 const d = data.probabilities.draw;
                 const a = data.probabilities.away_win;
 
-                // Gestion du badge de signal fort
                 const sig = data.signal_analysis;
                 let tagClass = 'incertain';
                 if (sig.strength === 'FORT') tagClass = 'fort';
                 else if (sig.strength === 'MODÉRÉ') tagClass = 'modere';
+
+                const g = data.goalscorers;
 
                 body.innerHTML = `
                     <div class="signal-badge-box">
@@ -577,6 +568,18 @@
                     </div>
 
                     <div class="modal-section">
+                        <div class="modal-section-title">🎯 Pépites Buteurs (Anytime)</div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;">
+                            <span>👤 ${home} (${g.home_player})</span>
+                            <strong style="color: var(--home-color);">${g.home_player_prob}%</strong>
+                        </div>
+                        <div class="prob-info-row">
+                            <span>👤 ${away} (${g.away_player})</span>
+                            <strong style="color: var(--away-color);">${g.away_player_prob}%</strong>
+                        </div>
+                    </div>
+
+                    <div class="modal-section">
                         <div class="modal-section-title">⏱️ 1ère Mi-Temps</div>
                         <div class="prob-info-row" style="margin-bottom: 6px;"><span>Score HT estimé</span><strong>${data.first_half.predicted_ht_score}</strong></div>
                         <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité But MT (>0.5)</span><strong>${data.first_half.over_0_5_prob}%</strong></div>
@@ -601,7 +604,6 @@
             buildCalendar();
             loadFootMatches();
 
-            // Mise à jour automatique des matchs en arrière-plan toutes les 60 secondes
             setInterval(() => {
                 loadFootMatches(true);
             }, 60000);
