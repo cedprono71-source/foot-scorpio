@@ -88,17 +88,32 @@
             border-radius: 12px;
             padding: 12px 15px;
             margin-bottom: 12px;
+            position: relative;
         }
 
         .match-card-header {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             font-size: 0.75em;
             color: var(--text-muted);
             text-transform: uppercase;
             margin-bottom: 8px;
             font-weight: bold;
         }
+
+        /* Mini badges sur la liste principale */
+        .list-signal-tag {
+            font-size: 0.65em;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .list-signal-tag.fort { background-color: #10b981; color: #fff; }
+        .list-signal-tag.modere { background-color: #f59e0b; color: #fff; }
+        .list-signal-tag.incertain { background-color: #374151; color: #9ca3af; }
 
         .match-row {
             display: flex;
@@ -223,7 +238,7 @@
             letter-spacing: 0.5px;
         }
 
-        /* Badges de signal fort */
+        /* Badges de signal fort dans la modale */
         .signal-badge-box {
             display: flex;
             justify-content: space-between;
@@ -341,6 +356,8 @@
     <script>
         let selectedFootDate = new Date().toISOString().split('T')[0];
         let cachedFootMatches = {};
+        // Cache local pour mémoriser les signaux des matchs déjà calculés et éviter de surcharger
+        let matchSignalsCache = {};
 
         function buildCalendar() {
             const container = document.getElementById('foot-calendar');
@@ -411,10 +428,40 @@
                 const data = await res.json();
                 cachedFootMatches[selectedFootDate] = data.matches || [];
                 renderFootMatches();
+                
+                // Pré-charge en arrière-plan les signaux de la liste pour afficher les pastilles rapidement
+                precomputeListSignals(cachedFootMatches[selectedFootDate]);
             } catch (err) {
                 if (!isBackground) {
                     cachedFootMatches[selectedFootDate] = [];
                     renderFootMatches();
+                }
+            }
+        }
+
+        async function precomputeListSignals(matches) {
+            for (let m of matches) {
+                const cacheKey = `${m.home_team}-${m.away_team}`;
+                if (!matchSignalsCache[cacheKey]) {
+                    try {
+                        const res = await fetch('/predict/match/foot', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ home_team: m.home_team, away_team: m.away_team })
+                        });
+                        const data = await res.json();
+                        matchSignalsCache[cacheKey] = data.signal_analysis;
+                        
+                        // Met à jour dynamiquement la pastille sur la carte si elle existe déjà dans le DOM
+                        const badgeEl = document.getElementById(`badge-${m.home_team}-${m.away_team}`.replace(/\s+/g, '-'));
+                        if (badgeEl) {
+                            const sig = data.signal_analysis;
+                            badgeEl.className = `list-signal-tag ${sig.strength.toLowerCase() === 'fort' ? 'fort' : (sig.strength.toLowerCase() === 'modéré' ? 'modere' : 'incertain')}`;
+                            badgeEl.innerText = sig.strength === 'FORT' ? '🔥 Fort' : (sig.strength === 'MODÉRÉ' ? '⚡ Modéré' : '• Neutre');
+                        }
+                    } catch (e) {
+                        // Ignore en cas d'erreur réseau ponctuelle
+                    }
                 }
             }
         }
@@ -435,12 +482,28 @@
 
             container.innerHTML = '';
             matches.forEach(m => {
+                const cacheKey = `${m.home_team}-${m.away_team}`;
+                const cachedSig = matchSignalsCache[cacheKey];
+                
+                let badgeClass = 'list-signal-tag incertain';
+                let badgeText = '• Analyse...';
+                if (cachedSig) {
+                    if (cachedSig.strength === 'FORT') { badgeClass = 'list-signal-tag fort'; badgeText = '🔥 Fort'; }
+                    else if (cachedSig.strength === 'MODÉRÉ') { badgeClass = 'list-signal-tag modere'; badgeText = '⚡ Modéré'; }
+                    else { badgeClass = 'list-signal-tag incertain'; badgeText = '• Neutre'; }
+                }
+
+                const uniqueBadgeId = `badge-${m.home_team}-${m.away_team}`.replace(/\s+/g, '-');
+
                 const card = document.createElement('div');
                 card.className = 'match-card';
                 card.innerHTML = `
                     <div class="match-card-header">
                         <span>${m.league || 'FOOTBALL'}</span>
-                        <span>${m.game_state}</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span id="${uniqueBadgeId}" class="${badgeClass}">${badgeText}</span>
+                            <span>${m.game_state}</span>
+                        </div>
                     </div>
                     <div class="match-row">
                         <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
@@ -462,7 +525,7 @@
             const body = document.getElementById('modal-body');
 
             title.innerText = `${home} vs ${away}`;
-            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse Multi-IA (5 modèles) en cours...</p>';
+            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse Multi-IA chirurgicale en cours...</p>';
             modal.style.display = 'flex';
 
             try {
