@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.53")
+app = FastAPI(title="Multi-Sport Pronostics API - Europe Max", version="22.54")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,7 +23,6 @@ app.add_middleware(
 )
 
 matches_cache = TTLCache(maxsize=100, ttl=600)
-# Stockage global des stats et du championnat associé à chaque équipe
 real_team_stats = {}
 
 class MatchRequest(BaseModel):
@@ -44,26 +43,13 @@ def poisson_probability(lmbda, k):
         return 0.1
 
 def calculate_real_poisson_consensus(home_team, away_team):
-    """Calcule les probabilités de Poisson en appliquant des coefficients selon les spécificités de la ligue."""
-    h_stats = real_team_stats.get(home_team, {"gf": 1.35, "ga": 1.15, "league": ""})
-    a_stats = real_team_stats.get(away_team, {"gf": 1.15, "ga": 1.35, "league": ""})
+    """Calcule les probabilités de Poisson optimisées pour les standards européens."""
+    h_stats = real_team_stats.get(home_team, {"gf": 1.4, "ga": 1.1})
+    a_stats = real_team_stats.get(away_team, {"gf": 1.1, "ga": 1.4})
     
-    league = h_stats.get("league", "")
-    
-    # Coefficients adaptatifs selon la réalité tactique et géographique du championnat
-    home_mult = 1.12
-    away_mult = 0.90
-    goal_boost = 1.0
-    
-    if "Saudi Pro League" in league or "MLS" in league:
-        goal_boost = 1.22  # Ligues historiquement très offensives / déséquilibrées
-    elif any(l in league for l in ["Colombie", "Chili", "Paraguay", "Équateur", "Liga MX"]):
-        home_mult = 1.28   # Avantage à domicile fortement majoré en Amérique latine
-        away_mult = 0.85
-
-    # Calcul des buts attendus (xG) corrigés par le profil de la ligue
-    home_exp = max(0.4, ((h_stats["gf"] + a_stats["ga"]) / 2.0) * home_mult * goal_boost)
-    away_exp = max(0.3, ((a_stats["gf"] + h_stats["ga"]) / 2.0) * away_mult * goal_boost)
+    # Standard européen : léger avantage domicile tactique
+    home_exp = max(0.4, ((h_stats["gf"] + a_stats["ga"]) / 2.0) * 1.15)
+    away_exp = max(0.3, ((a_stats["gf"] + h_stats["ga"]) / 2.0) * 0.90)
 
     home_win_prob = 0.0
     draw_prob = 0.0
@@ -120,29 +106,26 @@ def get_foot_matches(date: str):
     except Exception:
         dates_to_check = [date.replace("-", "")]
 
+    # Catalogue maximum des championnats et coupes en Europe
     league_names = {
         "eng.1": "Premier League",
         "eng.2": "EFL Championship",
         "esp.1": "La Liga",
-        "esp.2": "Liga 2 (Espagne)",
+        "esp.2": "Segunda División",
         "ita.1": "Serie A",
+        "ita.2": "Serie B",
         "ger.1": "Bundesliga",
         "ger.2": "2. Bundesliga",
         "fra.1": "Ligue 1",
-        "bel.1": "Jupiler Pro League (Belgique)",
-        "usa.1": "MLS",
-        "mex.1": "Liga MX",
-        "chi.1": "Campeonato Chileno",
-        "par.1": "Primera División (Paraguay)",
-        "ecu.1": "Liga Pro Équateur",
-        "col.1": "Liga BetPlay Colombie",
-        "rou.1": "Liga I Roumanie",
+        "fra.2": "Ligue 2",
+        "ned.1": "Eredivisie",
+        "por.1": "Liga Portugal",
+        "bel.1": "Jupiler Pro League",
         "tur.1": "Süper Lig",
-        "ksa.1": "Saudi Pro League",
+        "sco.1": "Scottish Premiership",
         "uefa.champions": "UEFA Champions League",
         "uefa.europa": "UEFA Europa League",
-        "fifa.friendly": "Matchs Amicaux",
-        "fifa.world": "Sélections Nationales"
+        "uefa.conf": "UEFA Conference League"
     }
 
     raw_matches = []
@@ -190,7 +173,7 @@ def get_foot_matches(date: str):
                             else:
                                 game_state = game_time_str
 
-                            competitors = comp.get("competitions", [])
+                            competitors = comp.get("competitors", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
 
                             for i, competitor in enumerate(competitors):
@@ -214,11 +197,9 @@ def get_foot_matches(date: str):
                                         elif s.get("name") == "pointsAgainst" or s.get("name") == "goalsAgainst":
                                             ga = float(s.get("value", ga))
 
-                                # Enregistrement de l'équipe avec son championnat d'origine
                                 real_team_stats[team_display_name] = {
                                     "gf": max(0.5, gf),
-                                    "ga": max(0.5, ga),
-                                    "league": league_display_name
+                                    "ga": max(0.5, ga)
                                 }
 
                                 if home_away == "home" or (not home_away and i == 0):
