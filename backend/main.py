@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.51")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.53")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +23,8 @@ app.add_middleware(
 )
 
 matches_cache = TTLCache(maxsize=100, ttl=600)
+# Stockage global des stats et du championnat associé à chaque équipe
+real_team_stats = {}
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -34,36 +36,42 @@ def get_team_seed(home_team, away_team):
     h = int(hashlib.md5(f"{home_team}-{away_team}".encode()).hexdigest(), 16)
     return h
 
-def get_team_stats(team_name):
-    """Génère un profil statistique réaliste et unique pour chaque équipe basé sur son nom."""
-    h = int(hashlib.md5(team_name.encode()).hexdigest(), 16)
-    gf = 0.9 + (h % 15) / 10.0   # Buts marqués moyens (entre 0.9 et 2.3)
-    ga = 0.8 + ((h // 7) % 13) / 10.0 # Buts encaissés moyens (entre 0.8 et 2.0)
-    return {"gf": round(gf, 2), "ga": round(ga, 2)}
-
 def poisson_probability(lmbda, k):
-    """Calcule la probabilité d'un nombre de buts selon la loi de Poisson."""
+    """Calcule la probabilité exacte d'un nombre de buts selon la loi de Poisson."""
     try:
         return (math.exp(-lmbda) * (lmbda ** k)) / math.factorial(k)
     except Exception:
         return 0.1
 
 def calculate_real_poisson_consensus(home_team, away_team):
-    """Calcule un consensus réaliste basé sur les profils statistiques uniques des équipes."""
-    h_stats = get_team_stats(home_team)
-    a_stats = get_team_stats(away_team)
+    """Calcule les probabilités de Poisson en appliquant des coefficients selon les spécificités de la ligue."""
+    h_stats = real_team_stats.get(home_team, {"gf": 1.35, "ga": 1.15, "league": ""})
+    a_stats = real_team_stats.get(away_team, {"gf": 1.15, "ga": 1.35, "league": ""})
     
-    # Espérance de buts (xG simplifiés) avec avantage domicile
-    home_exp = max(0.4, (h_stats["gf"] + a_stats["ga"]) / 2.0 * 1.18)
-    away_exp = max(0.3, (a_stats["gf"] + h_stats["ga"]) / 2.0 * 0.88)
+    league = h_stats.get("league", "")
+    
+    # Coefficients adaptatifs selon la réalité tactique et géographique du championnat
+    home_mult = 1.12
+    away_mult = 0.90
+    goal_boost = 1.0
+    
+    if "Saudi Pro League" in league or "MLS" in league:
+        goal_boost = 1.22  # Ligues historiquement très offensives / déséquilibrées
+    elif any(l in league for l in ["Colombie", "Chili", "Paraguay", "Équateur", "Liga MX"]):
+        home_mult = 1.28   # Avantage à domicile fortement majoré en Amérique latine
+        away_mult = 0.85
+
+    # Calcul des buts attendus (xG) corrigés par le profil de la ligue
+    home_exp = max(0.4, ((h_stats["gf"] + a_stats["ga"]) / 2.0) * home_mult * goal_boost)
+    away_exp = max(0.3, ((a_stats["gf"] + h_stats["ga"]) / 2.0) * away_mult * goal_boost)
 
     home_win_prob = 0.0
     draw_prob = 0.0
     away_win_prob = 0.0
 
-    # Matrice de Poisson sur les scores de 0 à 5 buts
-    for h_goals in range(6):
-        for a_goals in range(6):
+    # Matrice de Poisson (0 à 6 buts)
+    for h_goals in range(7):
+        for a_goals in range(7):
             p = poisson_probability(home_exp, h_goals) * poisson_probability(away_exp, a_goals)
             if h_goals > a_goals:
                 home_win_prob += p
@@ -182,7 +190,7 @@ def get_foot_matches(date: str):
                             else:
                                 game_state = game_time_str
 
-                            competitors = comp.get("competitors", [])
+                            competitors = comp.get("competitions", [])
                             home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
 
                             for i, competitor in enumerate(competitors):
@@ -195,6 +203,23 @@ def get_foot_matches(date: str):
 
                                 score_val = competitor.get("score")
                                 home_away = competitor.get("homeAway")
+
+                                gf, ga = 1.3, 1.2
+                                records = competitor.get("records", [])
+                                for rec in records:
+                                    stats_summary = rec.get("stats", [])
+                                    for s in stats_summary:
+                                        if s.get("name") == "pointsFor" or s.get("name") == "goalsFor":
+                                            gf = float(s.get("value", gf))
+                                        elif s.get("name") == "pointsAgainst" or s.get("name") == "goalsAgainst":
+                                            ga = float(s.get("value", ga))
+
+                                # Enregistrement de l'équipe avec son championnat d'origine
+                                real_team_stats[team_display_name] = {
+                                    "gf": max(0.5, gf),
+                                    "ga": max(0.5, ga),
+                                    "league": league_display_name
+                                }
 
                                 if home_away == "home" or (not home_away and i == 0):
                                     home_team = team_display_name
@@ -246,17 +271,13 @@ def predict_foot_match(req: MatchRequest):
             "away_win": consensus["away_win"]
         }
         
-        # Dérivation directe des buts prédits à partir des espérances mathématiques de Poisson
         home_goals = int(round(consensus["home_exp"]))
         away_goals = int(round(consensus["away_exp"]))
 
-        # Sécurité de cohérence avec les probabilités du consensus
-        if probs["home_win"] > 58 and home_goals <= away_goals:
+        if probs["home_win"] > 60 and home_goals <= away_goals:
             home_goals = away_goals + 1
-        elif probs["away_win"] > 58 and away_goals <= home_goals:
+        elif probs["away_win"] > 60 and away_goals <= home_goals:
             away_goals = home_goals + 1
-        elif abs(home_goals - away_goals) > 3:
-            home_goals, away_goals = 2, 1
 
         predicted_score = f"{home_goals} - {away_goals}"
         total_goals = home_goals + away_goals
@@ -267,16 +288,16 @@ def predict_foot_match(req: MatchRequest):
         ht_score = f"{ht_home} - {ht_away}"
         ht_total = ht_home + ht_away
 
-        over_0_5_prob = round(85.0 if ht_total > 0 else 42.0, 1)
+        over_0_5_prob = round(86.0 if ht_total > 0 else 40.0, 1)
         action_conseillee = "Plus de 0.5 but MT" if ht_total > 0 else "Observation en 1ère MT"
 
         btts_yes = (home_goals > 0 and away_goals > 0)
-        btts_prob = round(72.0 if btts_yes else 30.0, 1)
+        btts_prob = round(74.0 if btts_yes else 28.0, 1)
 
         over_25 = (total_goals >= 3)
-        over_25_prob = round(75.0 if over_25 else 25.0, 1)
+        over_25_prob = round(76.0 if over_25 else 24.0, 1)
 
-        base_cards = 3.0 + (seed % 4) * 0.5
+        base_cards = 3.2 + (seed % 3) * 0.4
 
         return {
             "match": f"{req.home_team} vs {req.away_team}",
@@ -291,7 +312,7 @@ def predict_foot_match(req: MatchRequest):
             },
             "yellow_cards": {
                 "expected_total": round(base_cards, 1),
-                "over_4_5_prob": round(45.0 + (seed % 35), 1),
+                "over_4_5_prob": round(46.0 + (seed % 30), 1),
                 "home_team_avg": round(base_cards * 0.52, 1),
                 "away_team_avg": round(base_cards * 0.48, 1)
             }
