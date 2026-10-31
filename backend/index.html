@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-IA Pronostics - Football</title>
+    <title>Signal Fort - Prédictions Football Pro</title>
     <style>
         :root {
             --bg-color: #0b0e14;
@@ -330,7 +330,7 @@
 <body>
 
     <header>
-        <h1>⚽ Multi-IA Pronostics (Football)</h1>
+        <h1>⚽ Signal Fort - Football Pro</h1>
     </header>
 
     <div id="sport-foot">
@@ -432,6 +432,22 @@
             }
         }
 
+        // Mapping des ligues vers les codes ESPN pour la récupération ciblée des buteurs
+        function getLeagueCode(leagueName) {
+            const mapping = {
+                "Premier League": "eng.1", "EFL Championship": "eng.2",
+                "La Liga": "esp.1", "Segunda División": "esp.2",
+                "Serie A": "ita.1", "Serie B": "ita.2",
+                "Bundesliga": "ger.1", "2. Bundesliga": "ger.2",
+                "Ligue 1": "fra.1", "Ligue 2": "fra.2",
+                "Eredivisie": "ned.1", "Liga Portugal": "por.1",
+                "Jupiler Pro League": "bel.1", "Süper Lig": "tur.1",
+                "Scottish Premiership": "sco.1", "UEFA Champions League": "uefa.champions",
+                "UEFA Europa League": "uefa.europa", "UEFA Conference League": "uefa.conf"
+            };
+            return mapping[leagueName] || "eng.1";
+        }
+
         async function precomputeListSignals(matches) {
             for (let m of matches) {
                 const cacheKey = `${m.home_team}-${m.away_team}`;
@@ -440,7 +456,12 @@
                         const res = await fetch('/predict/match/foot', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ home_team: m.home_team, away_team: m.away_team })
+                            body: JSON.stringify({ 
+                                home_team: m.home_team, 
+                                away_team: m.away_team,
+                                event_id: m.event_id,
+                                league_code: getLeagueCode(m.league)
+                            })
                         });
                         const data = await res.json();
                         matchSignalsCache[cacheKey] = data.signal_analysis;
@@ -503,26 +524,33 @@
                         <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
                         <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
                     </div>
-                    <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}')">⚡ PRONO</button>
+                    <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}', '${m.event_id}', '${m.league}')">⚡ PRONO</button>
                 `;
                 container.appendChild(card);
             });
         }
 
-        async function openFootProno(home, away) {
+        async function openFootProno(home, away, eventId, leagueName) {
             const modal = document.getElementById('prono-modal');
             const title = document.getElementById('modal-match-title');
             const body = document.getElementById('modal-body');
 
             title.innerText = `${home} vs ${away}`;
-            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse Multi-IA chirurgicale en cours...</p>';
+            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse Dixon-Coles et recherche des effectifs en cours...</p>';
             modal.style.display = 'flex';
+
+            const leagueCode = getLeagueCode(leagueName);
 
             try {
                 const res = await fetch('/predict/match/foot', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ home_team: home, away_team: away })
+                    body: JSON.stringify({ 
+                        home_team: home, 
+                        away_team: away,
+                        event_id: eventId,
+                        league_code: leagueCode
+                    })
                 });
                 const data = await res.json();
                 const h = data.probabilities.home_win;
@@ -536,10 +564,23 @@
 
                 const g = data.goalscorers;
 
+                // Affichage du Top 3 des scores exacts si présent
+                let topScoresHtml = '';
+                if (data.top_exact_scores && data.top_exact_scores.length > 0) {
+                    topScoresHtml = `
+                        <div class="modal-section">
+                            <div class="modal-section-title">🎯 Top 3 Scores Exacts (Dixon-Coles)</div>
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                ${data.top_exact_scores.map(s => `<span style="background: #21262d; border: 1px solid #30363d; padding: 4px 8px; border-radius: 6px; font-size: 0.85em;">${s.score} (<strong style="color: var(--accent-color);">${s.probability}%</strong>)</span>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
                 body.innerHTML = `
                     <div class="signal-badge-box">
                         <div>
-                            <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Consensus Multi-IA</div>
+                            <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Consensus Dixon-Coles</div>
                             <div style="font-size: 0.9em; font-weight: bold; margin-top: 2px;">Indice : ${sig.confidence_index}%</div>
                         </div>
                         <span class="signal-tag ${tagClass}">${sig.badge}</span>
@@ -560,6 +601,8 @@
                             <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${a}%; background-color: var(--away-color);"></div></div>
                         </div>
                     </div>
+
+                    ${topScoresHtml}
 
                     <div class="modal-section">
                         <div class="modal-section-title">⚽ Options de Paris</div>
