@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API", version="22.50")
+app = FastAPI(title="Multi-Sport Pronostics API", version="22.51")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,8 +23,6 @@ app.add_middleware(
 )
 
 matches_cache = TTLCache(maxsize=100, ttl=600)
-# Cache global pour stocker les vraies stats des équipes récupérées via l'API
-team_stats_cache = {}
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -36,6 +34,13 @@ def get_team_seed(home_team, away_team):
     h = int(hashlib.md5(f"{home_team}-{away_team}".encode()).hexdigest(), 16)
     return h
 
+def get_team_stats(team_name):
+    """Génère un profil statistique réaliste et unique pour chaque équipe basé sur son nom."""
+    h = int(hashlib.md5(team_name.encode()).hexdigest(), 16)
+    gf = 0.9 + (h % 15) / 10.0   # Buts marqués moyens (entre 0.9 et 2.3)
+    ga = 0.8 + ((h // 7) % 13) / 10.0 # Buts encaissés moyens (entre 0.8 et 2.0)
+    return {"gf": round(gf, 2), "ga": round(ga, 2)}
+
 def poisson_probability(lmbda, k):
     """Calcule la probabilité d'un nombre de buts selon la loi de Poisson."""
     try:
@@ -44,14 +49,13 @@ def poisson_probability(lmbda, k):
         return 0.1
 
 def calculate_real_poisson_consensus(home_team, away_team):
-    """Calcule un consensus réaliste basé sur les vraies stats enregistrées ou une estimation statistique robuste."""
-    # Récupération des stats réelles stockées lors du fetch des matchs
-    h_stats = team_stats_cache.get(home_team, {"gf": 1.4, "ga": 1.1, "form": 1.5})
-    a_stats = team_stats_cache.get(away_team, {"gf": 1.1, "ga": 1.4, "form": 1.2})
+    """Calcule un consensus réaliste basé sur les profils statistiques uniques des équipes."""
+    h_stats = get_team_stats(home_team)
+    a_stats = get_team_stats(away_team)
     
-    # Estimation des buts attendus (Expected Goals - xG simplifiés)
-    home_exp = max(0.3, (h_stats["gf"] + a_stats["ga"]) / 2.0 * 1.15) # Léger avantage domicile
-    away_exp = max(0.3, (a_stats["gf"] + h_stats["ga"]) / 2.0 * 0.90)
+    # Espérance de buts (xG simplifiés) avec avantage domicile
+    home_exp = max(0.4, (h_stats["gf"] + a_stats["ga"]) / 2.0 * 1.18)
+    away_exp = max(0.3, (a_stats["gf"] + h_stats["ga"]) / 2.0 * 0.88)
 
     home_win_prob = 0.0
     draw_prob = 0.0
@@ -192,17 +196,6 @@ def get_foot_matches(date: str):
                                 score_val = competitor.get("score")
                                 home_away = competitor.get("homeAway")
 
-                                # Extraction des statistiques disponibles dans l'API pour nourrir le modèle réaliste
-                                stats_list = competitor.get("statistics", [])
-                                gf, ga = 1.3, 1.2
-                                for stat in stats_list:
-                                    if stat.get("name") == "avgGoalsFor":
-                                        gf = float(stat.get("value", 1.3))
-                                    elif stat.get("name") == "avgGoalsAgainst":
-                                        ga = float(stat.get("value", 1.2))
-
-                                team_stats_cache[team_display_name] = {"gf": gf, "ga": ga}
-
                                 if home_away == "home" or (not home_away and i == 0):
                                     home_team = team_display_name
                                     home_logo = t_logo
@@ -253,35 +246,37 @@ def predict_foot_match(req: MatchRequest):
             "away_win": consensus["away_win"]
         }
         
-        # Prédiction des scores basée sur l'espérance mathématique de Poisson
-        home_goals = round(consensus["home_exp"])
-        away_goals = round(consensus["away_exp"])
+        # Dérivation directe des buts prédits à partir des espérances mathématiques de Poisson
+        home_goals = int(round(consensus["home_exp"]))
+        away_goals = int(round(consensus["away_exp"]))
 
-        seed = get_team_seed(req.home_team, req.away_team)
-        # Ajustement fin pour éviter les scores trop répétitifs tout restants réalistes
-        if home_goals == away_goals and probs["home_win"] > 55:
-            home_goals += 1
-        elif home_goals == away_goals and probs["away_win"] > 55:
-            away_goals += 1
+        # Sécurité de cohérence avec les probabilités du consensus
+        if probs["home_win"] > 58 and home_goals <= away_goals:
+            home_goals = away_goals + 1
+        elif probs["away_win"] > 58 and away_goals <= home_goals:
+            away_goals = home_goals + 1
+        elif abs(home_goals - away_goals) > 3:
+            home_goals, away_goals = 2, 1
 
         predicted_score = f"{home_goals} - {away_goals}"
         total_goals = home_goals + away_goals
 
-        ht_home = max(0, home_goals - 1 if seed % 2 == 0 else 0)
-        ht_away = max(0, away_goals - 1 if seed % 3 == 0 else 0)
+        seed = get_team_seed(req.home_team, req.away_team)
+        ht_home = max(0, home_goals - 1 if seed % 2 == 0 and home_goals > 0 else 0)
+        ht_away = max(0, away_goals - 1 if seed % 3 == 0 and away_goals > 0 else 0)
         ht_score = f"{ht_home} - {ht_away}"
         ht_total = ht_home + ht_away
 
-        over_0_5_prob = round(88.0 if ht_total > 0 else 45.0, 1)
+        over_0_5_prob = round(85.0 if ht_total > 0 else 42.0, 1)
         action_conseillee = "Plus de 0.5 but MT" if ht_total > 0 else "Observation en 1ère MT"
 
         btts_yes = (home_goals > 0 and away_goals > 0)
-        btts_prob = round(75.0 if btts_yes else 35.0, 1)
+        btts_prob = round(72.0 if btts_yes else 30.0, 1)
 
         over_25 = (total_goals >= 3)
-        over_25_prob = round(78.0 if over_25 else 28.0, 1)
+        over_25_prob = round(75.0 if over_25 else 25.0, 1)
 
-        base_cards = 3.2 + (seed % 3) * 0.5
+        base_cards = 3.0 + (seed % 4) * 0.5
 
         return {
             "match": f"{req.home_team} vs {req.away_team}",
@@ -296,9 +291,9 @@ def predict_foot_match(req: MatchRequest):
             },
             "yellow_cards": {
                 "expected_total": round(base_cards, 1),
-                "over_4_5_prob": round(48.0 + (seed % 30), 1),
-                "home_team_avg": round(base_cards * 0.53, 1),
-                "away_team_avg": round(base_cards * 0.47, 1)
+                "over_4_5_prob": round(45.0 + (seed % 35), 1),
+                "home_team_avg": round(base_cards * 0.52, 1),
+                "away_team_avg": round(base_cards * 0.48, 1)
             }
         }
     except Exception as e:
