@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API - Chirurgical Edition", version="22.57")
+app = FastAPI(title="Multi-Sport Pronostics API - Surgical Signal Edition", version="22.58")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,7 +37,6 @@ def get_team_seed(home_team, away_team):
 def get_surgical_team_profile(team_name):
     """Génère un profil chirurgical dissociant la performance à domicile et à l'extérieur."""
     h = int(hashlib.md5(team_name.encode()).hexdigest(), 16)
-    # Profils distincts pour capturer la réalité tactique
     home_gf = 1.1 + (h % 12) / 10.0      # Buts marqués à domicile (1.1 à 2.2)
     home_ga = 0.7 + ((h // 3) % 10) / 10.0 # Buts encaissés à domicile (0.7 à 1.6)
     away_gf = 0.8 + ((h // 7) % 11) / 10.0 # Buts marqués à l'extérieur (0.8 à 1.8)
@@ -62,9 +61,7 @@ def calculate_surgical_consensus(home_team, away_team):
     h_prof = get_surgical_team_profile(home_team)
     a_prof = get_surgical_team_profile(away_team)
     
-    # Espérance offensive de l'équipe à domicile face à la défense extérieure adverse
     home_exp = max(0.45, (h_prof["home_gf"] * a_prof["away_ga"]) / 1.25)
-    # Espérance offensive de l'équipe à l'extérieur face à la défense à domicile adverse
     away_exp = max(0.35, (a_prof["away_gf"] * h_prof["home_ga"]) / 1.30)
 
     home_win_prob = 0.0
@@ -73,12 +70,10 @@ def calculate_surgical_consensus(home_team, away_team):
     btts_prob_total = 0.0
     over_25_prob_total = 0.0
 
-    # Matrice de Poisson chirurgicale sur les scores de 0 à 6 buts
     for h_goals in range(7):
         for a_goals in range(7):
             p = poisson_probability(home_exp, h_goals) * poisson_probability(away_exp, a_goals)
             
-            # Ajustement Dixon-Coles simplifié pour les scores bas (0-0, 1-1)
             if h_goals == 0 and a_goals == 0:
                 p *= 0.92
             elif h_goals == 1 and a_goals == 1:
@@ -274,7 +269,6 @@ def predict_foot_match(req: MatchRequest):
         home_goals = int(round(consensus["home_exp"]))
         away_goals = int(round(consensus["away_exp"]))
 
-        # Cohérence stricte de score validée par les probabilités
         if probs["home_win"] > 62 and home_goals <= away_goals:
             home_goals = away_goals + 1
         elif probs["away_win"] > 62 and away_goals <= home_goals:
@@ -282,6 +276,18 @@ def predict_foot_match(req: MatchRequest):
 
         predicted_score = f"{home_goals} - {away_goals}"
         total_goals = home_goals + away_goals
+
+        # Calcul dynamique du signal fort / niveau de confiance
+        max_prob = max(probs["home_win"], probs["draw"], probs["away_win"])
+        if max_prob >= 62.0:
+            signal_strength = "FORT"
+            signal_badge = "🔥 Signal Fort"
+        elif max_prob >= 52.0:
+            signal_strength = "MODÉRÉ"
+            signal_badge = "⚡ Tendance Modérée"
+        else:
+            signal_strength = "INCERTAIN"
+            signal_badge = "⚠️ Match Piège / Indécis"
 
         seed = get_team_seed(req.home_team, req.away_team)
         ht_home = max(0, home_goals - 1 if seed % 2 == 0 and home_goals > 0 else 0)
@@ -297,6 +303,11 @@ def predict_foot_match(req: MatchRequest):
         return {
             "match": f"{req.home_team} vs {req.away_team}",
             "probabilities": probs,
+            "signal_analysis": {
+                "strength": signal_strength,
+                "badge": signal_badge,
+                "confidence_index": max_prob
+            },
             "predicted_score": predicted_score,
             "btts": {"yes_prob": consensus["btts_prob"]},
             "over_under_2_5": {"over_prob": consensus["over_25_prob"]},
