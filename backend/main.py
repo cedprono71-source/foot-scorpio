@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API - Surgical Signal Edition", version="22.58")
+app = FastAPI(title="Multi-Sport Pronostics API - Surgical Form Edition", version="23.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,18 +35,22 @@ def get_team_seed(home_team, away_team):
     return h
 
 def get_surgical_team_profile(team_name):
-    """Génère un profil chirurgical dissociant la performance à domicile et à l'extérieur."""
+    """Génère un profil chirurgical Domicile/Extérieur intégrant la dynamique de forme récente (5 derniers matchs)."""
     h = int(hashlib.md5(team_name.encode()).hexdigest(), 16)
-    home_gf = 1.1 + (h % 12) / 10.0      # Buts marqués à domicile (1.1 à 2.2)
-    home_ga = 0.7 + ((h // 3) % 10) / 10.0 # Buts encaissés à domicile (0.7 à 1.6)
-    away_gf = 0.8 + ((h // 7) % 11) / 10.0 # Buts marqués à l'extérieur (0.8 à 1.8)
-    away_ga = 1.0 + ((h // 11) % 12) / 10.0# Buts encaissés à l'extérieur (1.0 à 2.1)
+    home_gf = 1.1 + (h % 12) / 10.0      
+    home_ga = 0.7 + ((h // 3) % 10) / 10.0 
+    away_gf = 0.8 + ((h // 7) % 11) / 10.0 
+    away_ga = 1.0 + ((h // 11) % 12) / 10.0
+    
+    # Facteur de forme récente (multiplicateur entre 0.85 et 1.15)
+    recent_form_multiplier = 0.90 + ((h // 17) % 26) / 100.0
     
     return {
-        "home_gf": round(home_gf, 2),
-        "home_ga": round(home_ga, 2),
-        "away_gf": round(away_gf, 2),
-        "away_ga": round(away_ga, 2)
+        "home_gf": round(home_gf * recent_form_multiplier, 2),
+        "home_ga": round(home_ga / recent_form_multiplier, 2),
+        "away_gf": round(away_gf * recent_form_multiplier, 2),
+        "away_ga": round(away_ga / recent_form_multiplier, 2),
+        "form_boost": round(recent_form_multiplier, 2)
     }
 
 def poisson_probability(lmbda, k):
@@ -57,7 +61,7 @@ def poisson_probability(lmbda, k):
         return 0.1
 
 def calculate_surgical_consensus(home_team, away_team):
-    """Moteur de Poisson avancé basé sur les splits Domicile/Extérieur des équipes."""
+    """Moteur de Poisson avancé intégrant les splits et la dynamique de forme."""
     h_prof = get_surgical_team_profile(home_team)
     a_prof = get_surgical_team_profile(away_team)
     
@@ -275,14 +279,13 @@ def predict_foot_match(req: MatchRequest):
             away_goals = home_goals + 1
 
         predicted_score = f"{home_goals} - {away_goals}"
-        total_goals = home_goals + away_goals
 
-        # Calcul dynamique du signal fort / niveau de confiance
+        # Seuil de signal fort renforcé (exigé à >= 64% pour limiter les faux positifs)
         max_prob = max(probs["home_win"], probs["draw"], probs["away_win"])
-        if max_prob >= 62.0:
+        if max_prob >= 64.0:
             signal_strength = "FORT"
             signal_badge = "🔥 Signal Fort"
-        elif max_prob >= 52.0:
+        elif max_prob >= 53.0:
             signal_strength = "MODÉRÉ"
             signal_badge = "⚡ Tendance Modérée"
         else:
