@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API - Dixon-Coles Advanced Matrix Edition", version="26.0")
+app = FastAPI(title="Multi-Sport Pronostics API - Dixon-Coles Surgical Edition", version="26.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +29,8 @@ class MatchRequest(BaseModel):
     away_team: str
     home_id: Optional[str] = None
     away_id: Optional[str] = None
+    event_id: Optional[str] = None
+    league_code: Optional[str] = "eng.1"
 
 def get_team_seed(home_team, away_team):
     h = int(hashlib.md5(f"{home_team}-{away_team}".encode()).hexdigest(), 16)
@@ -62,9 +64,6 @@ def poisson_probability(lmbda, k):
 def calculate_surgical_consensus(home_team, away_team):
     """Moteur de Poisson avancé avec correction de Dixon-Coles et extraction de la matrice des scores."""
     h_prof = get_surgical_team_profile(home_team)
-    a_prof = get_surgical_team_profile(home_team) # Note: on garde la logique de profil
-    
-    # Recalcul propre pour l'équipe extérieure avec son profil
     a_prof_actual = get_surgical_team_profile(away_team)
     
     home_exp = max(0.45, (h_prof["home_gf"] * a_prof_actual["away_ga"]) / 1.25)
@@ -77,15 +76,12 @@ def calculate_surgical_consensus(home_team, away_team):
     over_25_prob_total = 0.0
     
     score_matrix = {}
-
-    # Facteur de correction de Dixon-Coles (rho = -0.08)
     rho = -0.08
 
     for h_goals in range(7):
         for a_goals in range(7):
             p = poisson_probability(home_exp, h_goals) * poisson_probability(away_exp, a_goals)
             
-            # Application de la matrice de correction Dixon-Coles sur les scores bas
             if h_goals == 0 and a_goals == 0:
                 p *= max(0.1, (1.0 - (home_exp * away_exp * rho)))
             elif h_goals == 1 and a_goals == 1:
@@ -116,15 +112,12 @@ def calculate_surgical_consensus(home_team, away_team):
         away_win_prob = (away_win_prob / total) * 100
         btts_prob_total = (btts_prob_total / total) * 100
         over_25_prob_total = (over_25_prob_total / total) * 100
-        
-        # Normalisation de la matrice des scores pour obtenir des pourcentages réels
         normalized_matrix = {score: (prob / total) * 100 for score, prob in score_matrix.items()}
     else:
         home_win_prob, draw_prob, away_win_prob = 45.0, 25.0, 30.0
         btts_prob_total, over_25_prob_total = 55.0, 50.0
         normalized_matrix = {}
 
-    # Tri des scores exacts par probabilité décroissante pour extraire le Top 3
     sorted_scores = sorted(normalized_matrix.items(), key=lambda item: item[1], reverse=True)
     top_exact_scores = [
         {"score": f"{s[0]} - {s[1]}", "probability": round(prob, 1)}
@@ -277,7 +270,7 @@ def get_foot_matches(date: str):
             for m in future.result():
                 if m["event_id"] not in seen_event_ids:
                     seen_event_ids.add(m["event_id"])
-                    raw_matches.append({k: v for k, v in m.items() if k != "event_id"})
+                    raw_matches.append(m)  # On garde l'event_id pour le front-end
     
     raw_matches.sort(key=lambda x: x["_sort_time"])
     formatted_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in raw_matches]
@@ -328,13 +321,44 @@ def predict_foot_match(req: MatchRequest):
 
         base_cards = 3.3 + (seed % 3) * 0.4
 
-        # --- CALCUL BUTEURS (Fallback stable) ---
-        home_buteur_prob = min(82.0, round(min(consensus["home_exp"] * 40.0, 78.0), 1))
-        away_buteur_prob = min(82.0, round(min(consensus["away_exp"] * 40.0, 78.0), 1))
-        
+        # --- CALCUL BUTEURS (Fallback par défaut) ---
         star_players = ["Attaquant Star", "Buteur Principal", "Ailier Prolifique", "Renard des Surfaces"]
         home_star = star_players[seed % len(star_players)]
         away_star = star_players[(seed // 2) % len(star_players)]
+        
+        home_buteur_prob = min(82.0, round(min(consensus["home_exp"] * 40.0, 78.0), 1))
+        away_buteur_prob = min(82.0, round(min(consensus["away_exp"] * 40.0, 78.0), 1))
+
+        # --- RECHERCHE CIBLÉE DES VRAIS JOUEURS (Uniquement sur Signal Fort avec event_id) ---
+        if max_prob >= 64.0 and req.event_id:
+            try:
+                summary_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{req.league_code or 'eng.1'}/summary?event={req.event_id}"
+                resp = requests.get(summary_url, timeout=2)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    rosters = data.get("rosters", [])
+                    
+                    home_found, away_found = [], []
+                    for team in rosters:
+                        t_name = team.get("team", {}).get("displayName", "")
+                        is_home = req.home_team.lower() in t_name.lower() or t_name.lower() in req.home_team.lower()
+                        
+                        for p in team.get("roster", []):
+                            athlete = p.get("athlete", {})
+                            name = athlete.get("displayName")
+                            pos = athlete.get("position", {}).get("name", "")
+                            if name and pos in ["Forward", "Striker", "Midfielder"]:
+                                if is_home:
+                                    home_found.append(name)
+                                else:
+                                    away_found.append(name)
+                                    
+                    if home_found:
+                        home_star = home_found[0]
+                    if away_found:
+                        away_star = away_found[0]
+            except Exception:
+                pass  # En cas de timeout ou d'erreur, le système bascule proprement sur le fallback
 
         return {
             "match": f"{req.home_team} vs {req.away_team}",
