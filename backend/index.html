@@ -223,6 +223,27 @@
             letter-spacing: 0.5px;
         }
 
+        /* Badges de signal fort */
+        .signal-badge-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, #1f242d 0%, #161b22 100%);
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+        }
+        .signal-tag {
+            font-size: 0.85em;
+            font-weight: bold;
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+        .signal-tag.fort { background-color: #10b981; color: #fff; }
+        .signal-tag.modere { background-color: #f59e0b; color: #fff; }
+        .signal-tag.incertain { background-color: #6b7280; color: #fff; }
+
         .prob-bar-container {
             margin-bottom: 10px;
         }
@@ -452,9 +473,23 @@
                 const d = data.probabilities.draw;
                 const a = data.probabilities.away_win;
 
+                // Gestion du badge de signal fort
+                const sig = data.signal_analysis;
+                let tagClass = 'incertain';
+                if (sig.strength === 'FORT') tagClass = 'fort';
+                else if (sig.strength === 'MODÉRÉ') tagClass = 'modere';
+
                 body.innerHTML = `
+                    <div class="signal-badge-box">
+                        <div>
+                            <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Consensus Multi-IA</div>
+                            <div style="font-size: 0.9em; font-weight: bold; margin-top: 2px;">Indice : ${sig.confidence_index}%</div>
+                        </div>
+                        <span class="signal-tag ${tagClass}">${sig.badge}</span>
+                    </div>
+
                     <div class="modal-section">
-                        <div class="modal-section-title">📊 Probabilités Multi-IA (Score : ${data.predicted_score})</div>
+                        <div class="modal-section-title">📊 Probabilités (Score : ${data.predicted_score})</div>
                         <div class="prob-bar-container">
                             <div class="prob-info-row"><span>Victoire ${home}</span><span>${h}%</span></div>
                             <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${h}%; background-color: var(--home-color);"></div></div>
