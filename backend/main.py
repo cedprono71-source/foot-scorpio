@@ -12,7 +12,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Multi-Sport Pronostics API - Surgical Form Edition", version="23.0")
+app = FastAPI(title="Multi-Sport Pronostics API - Surgical Goalscorer Edition", version="24.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -280,7 +280,6 @@ def predict_foot_match(req: MatchRequest):
 
         predicted_score = f"{home_goals} - {away_goals}"
 
-        # Seuil de signal fort renforcé (exigé à >= 64% pour limiter les faux positifs)
         max_prob = max(probs["home_win"], probs["draw"], probs["away_win"])
         if max_prob >= 64.0:
             signal_strength = "FORT"
@@ -303,6 +302,14 @@ def predict_foot_match(req: MatchRequest):
 
         base_cards = 3.3 + (seed % 3) * 0.4
 
+        # --- CALCUL BUTEURS (Anytime Goalscorer) ---
+        home_buteur_prob = min(82.0, round(min(consensus["home_exp"] * 40.0, 78.0), 1))
+        away_buteur_prob = min(82.0, round(min(consensus["away_exp"] * 40.0, 78.0), 1))
+        
+        star_players = ["Attaquant Star", "Buteur Principal", "Ailier Prolifique", "Renard des Surfaces"]
+        home_star = star_players[seed % len(star_players)]
+        away_star = star_players[(seed // 2) % len(star_players)]
+
         return {
             "match": f"{req.home_team} vs {req.away_team}",
             "probabilities": probs,
@@ -314,6 +321,12 @@ def predict_foot_match(req: MatchRequest):
             "predicted_score": predicted_score,
             "btts": {"yes_prob": consensus["btts_prob"]},
             "over_under_2_5": {"over_prob": consensus["over_25_prob"]},
+            "goalscorers": {
+                "home_player": home_star,
+                "home_player_prob": home_buteur_prob,
+                "away_player": away_star,
+                "away_player_prob": away_buteur_prob
+            },
             "first_half": {
                 "over_0_5_prob": over_0_5_prob,
                 "predicted_ht_score": ht_score,
