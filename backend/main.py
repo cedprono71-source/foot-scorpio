@@ -1,5 +1,6 @@
 import os
 import hashlib
+import sqlite3
 import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -12,7 +13,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Signal Fort - Ultimate Quadruple-Ensemble Edition", version="29.0")
+app = FastAPI(title="Signal Fort - Ultimate Quadruple-Ensemble Edition (Historique Réel)", version="30.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +24,41 @@ app.add_middleware(
 )
 
 matches_cache = TTLCache(maxsize=100, ttl=600)
+
+# --- INITIALISATION DE LA BASE DE DONNÉES HISTORIQUE ---
+def init_db():
+    conn = sqlite3.connect("football_history.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS matches_history (
+            event_id TEXT PRIMARY KEY,
+            league TEXT,
+            home_team TEXT,
+            away_team TEXT,
+            home_score INTEGER,
+            away_score INTEGER,
+            date TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def save_match_to_db(event_id, league, home_team, away_team, home_score, away_score, date):
+    """Enregistre ou met à jour un match terminé dans la base historique."""
+    if home_score is not None and away_score is not None:
+        try:
+            conn = sqlite3.connect("football_history.db")
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO matches_history (event_id, league, home_team, away_team, home_score, away_score, date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (event_id, league, home_team, away_team, home_score, away_score, date))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -37,7 +73,6 @@ def get_team_seed(home_team, away_team):
     return h
 
 def get_dynamic_home_advantage(league_code: str) -> float:
-    """Ajuste l'avantage du terrain selon la culture de la ligue."""
     intense_leagues = ["tur.1", "gre.1", "arg.1", "bra.1"]
     balanced_leagues = ["eng.1", "ger.1", "ned.1"]
     if league_code in intense_leagues:
@@ -46,25 +81,48 @@ def get_dynamic_home_advantage(league_code: str) -> float:
         return 1.20
     return 1.25
 
-def get_surgical_team_profile(team_name, league_code="eng.1"):
-    """Génère un profil statistique avec pondération temporelle de forme."""
-    h = int(hashlib.md5(team_name.encode()).hexdigest(), 16)
-    home_gf = 1.1 + (h % 12) / 10.0      
-    home_ga = 0.7 + ((h // 3) % 10) / 10.0 
-    away_gf = 0.8 + ((h // 7) % 11) / 10.0 
-    away_ga = 1.0 + ((h // 11) % 12) / 10.0
-    time_decay_factor = 0.95 + ((h // 19) % 15) / 100.0
-    recent_form_multiplier = (0.90 + ((h // 17) % 26) / 100.0) * time_decay_factor
+def get_real_team_profile(team_name: str, league_code: str):
+    """Calcule les vraies statistiques d'attaque/défense basées sur l'historique SQLite."""
+    conn = sqlite3.connect("football_history.db")
+    cursor = conn.cursor()
+    
+    # Matchs à domicile de l'équipe
+    cursor.execute("""
+        SELECT home_score, away_score FROM matches_history 
+        WHERE home_team = ? AND home_score IS NOT NULL 
+        ORDER BY date DESC LIMIT 10
+    """, (team_name,))
+    home_matches = cursor.fetchall()
+    
+    # Matchs à l'extérieur de l'équipe
+    cursor.execute("""
+        SELECT home_score, away_score FROM matches_history 
+        WHERE away_team = ? AND home_score IS NOT NULL 
+        ORDER BY date DESC LIMIT 10
+    """, (team_name,))
+    away_matches = cursor.fetchall()
+    conn.close()
+    
+    home_gf_list = [m[0] for m in home_matches] if home_matches else []
+    home_ga_list = [m[1] for m in home_matches] if home_matches else []
+    away_gf_list = [m[1] for m in away_matches] if away_matches else []
+    away_ga_list = [m[0] for m in away_matches] if away_matches else []
+    
+    # Moyennes réelles ou valeurs par défaut équilibrées si la base est vide
+    home_gf = sum(home_gf_list) / len(home_gf_list) if home_gf_list else 1.3
+    home_ga = sum(home_ga_list) / len(home_ga_list) if home_ga_list else 1.0
+    away_gf = sum(away_gf_list) / len(away_gf_list) if away_gf_list else 1.1
+    away_ga = sum(away_ga_list) / len(away_ga_list) if away_ga_list else 1.2
+    
     return {
-        "home_gf": round(home_gf * recent_form_multiplier, 2),
-        "home_ga": round(home_ga / recent_form_multiplier, 2),
-        "away_gf": round(away_gf * recent_form_multiplier, 2),
-        "away_ga": round(away_ga / recent_form_multiplier, 2),
-        "form_boost": round(recent_form_multiplier, 2)
+        "home_gf": round(max(0.3, home_gf), 2),
+        "home_ga": round(max(0.3, home_ga), 2),
+        "away_gf": round(max(0.3, away_gf), 2),
+        "away_ga": round(max(0.3, away_ga), 2),
+        "form_boost": 1.0
     }
 
 def calculate_elo_probability(home_team, away_team):
-    """IA n°2 : Modèle Elo AI (Hiérarchie globale)."""
     h_seed = int(hashlib.md5(home_team.encode()).hexdigest(), 16)
     a_seed = int(hashlib.md5(away_team.encode()).hexdigest(), 16)
     home_elo = 1500 + (h_seed % 320) - 160
@@ -82,7 +140,6 @@ def calculate_elo_probability(home_team, away_team):
     }
 
 def calculate_form_momentum_probability(home_team, away_team):
-    """IA n°3 : Form Momentum AI (Dynamique de forme récente)."""
     h_hash = int(hashlib.md5(f"momentum-{home_team}".encode()).hexdigest(), 16)
     a_hash = int(hashlib.md5(f"momentum-{away_team}".encode()).hexdigest(), 16)
     home_momentum = 45.0 + (h_hash % 40) + 8.0
@@ -95,7 +152,6 @@ def calculate_form_momentum_probability(home_team, away_team):
     }
 
 def calculate_machine_learning_probability(home_team, away_team, league_code):
-    """IA n°4 : XGBoost / Machine Learning (Patterns non-linéaires)."""
     seed = get_team_seed(home_team, away_team)
     ml_home = 42.0 + (seed % 35)
     ml_away = 30.0 + ((seed // 3) % 30)
@@ -114,9 +170,9 @@ def poisson_probability(lmbda, k):
         return 0.1
 
 def calculate_surgical_consensus(home_team, away_team, league_code="eng.1"):
-    """Consensus Quadruple-Ensemble : Dixon-Coles (40%) + Elo (25%) + Momentum (20%) + ML (15%)."""
-    h_prof = get_surgical_team_profile(home_team, league_code)
-    a_prof_actual = get_surgical_team_profile(away_team, league_code)
+    """Consensus alimenté par les vraies données historiques SQLite."""
+    h_prof = get_real_team_profile(home_team, league_code)
+    a_prof_actual = get_real_team_profile(away_team, league_code)
     home_advantage = get_dynamic_home_advantage(league_code)
     
     seed = get_team_seed(home_team, away_team)
@@ -159,7 +215,6 @@ def calculate_surgical_consensus(home_team, away_team, league_code="eng.1"):
         btts_prob_total, over_25_prob_total = 55.0, 50.0
         normalized_matrix = {}
 
-    # --- FUSION FINALE DES 4 MODÈLES ---
     elo_data = calculate_elo_probability(home_team, away_team)
     form_data = calculate_form_momentum_probability(home_team, away_team)
     ml_data = calculate_machine_learning_probability(home_team, away_team, league_code)
@@ -187,31 +242,11 @@ def calculate_surgical_consensus(home_team, away_team, league_code="eng.1"):
 
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
-    # Retourne le front-end intégré (Flashscore style)
     try:
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
-        return """
-        <!DOCTYPE html>
-        <html lang="fr">
-        <head>
-            <meta charset="UTF-8">
-            <title>Signal Fort - PWA</title>
-            <style>
-                body { background: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-                .card { background: #1e293b; padding: 30px; border-radius: 12px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-                h1 { color: #38bdf8; margin-top: 0; }
-            </style>
-        </head>
-        <body>
-            <div class="card">
-                <h1>Signal Fort v29.0</h1>
-                <p>Backend Quadruple-Ensemble actif ! Veuillez placer votre fichier <code>index.html</code> dans le dossier du projet.</p>
-            </div>
-        </body>
-        </html>
-        """
+        return "<h1>Signal Fort - Backend actif avec SQLite</h1>"
 
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
@@ -278,46 +313,50 @@ def get_foot_matches(date: str):
                         except Exception:
                             continue
                         
+                        competitions = event.get("competitions", [])
+                        if not competitions:
+                            continue
+                        comp = competitions[0]
+                        
+                        status_type = comp.get("status", {}).get("type", {})
+                        state = str(status_type.get("state", "")).lower()
+                        status_name = str(status_type.get("name", "")).upper()
+                        
+                        if state == "post" or status_name == "STATUS_FINAL":
+                            game_state = "OFF"
+                        elif state in ["in", "live"] or "IN_PROGRESS" in status_name or "LIVE" in status_name:
+                            game_state = "En cours"
+                        else:
+                            game_state = game_time_str
+
+                        competitors = comp.get("competitors", [])
+                        home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
+
+                        for i, competitor in enumerate(competitors):
+                            team_data = competitor.get("team", {})
+                            team_display_name = team_data.get("displayName") or team_data.get("name") or team_data.get("shortDisplayName", f"Équipe {i+1}")
+                            
+                            t_logo = team_data.get("logo", "")
+                            if not t_logo and "logos" in team_data and len(team_data["logos"]) > 0:
+                                t_logo = team_data["logos"][0].get("href", "")
+
+                            score_val = competitor.get("score")
+                            home_away = competitor.get("homeAway")
+
+                            if home_away == "home" or (not home_away and i == 0):
+                                home_team = team_display_name
+                                home_logo = t_logo
+                                home_score = int(score_val) if score_val is not None and str(score_val).isdigit() else None
+                            elif home_away == "away" or (not home_away and i == 1):
+                                away_team = team_display_name
+                                away_logo = t_logo
+                                away_score = int(score_val) if score_val is not None and str(score_val).isdigit() else None
+
+                        # Sauvegarde automatique des matchs terminés dans la base SQLite historique
+                        if game_state == "OFF":
+                            save_match_to_db(event_id, league_display_name, home_team, away_team, home_score, away_score, match_date_str)
+
                         if match_date_str == date:
-                            competitions = event.get("competitions", [])
-                            if not competitions:
-                                continue
-                            comp = competitions[0]
-                            
-                            status_type = comp.get("status", {}).get("type", {})
-                            state = str(status_type.get("state", "")).lower()
-                            status_name = str(status_type.get("name", "")).upper()
-                            
-                            if state == "post" or status_name == "STATUS_FINAL":
-                                game_state = "OFF"
-                            elif state in ["in", "live"] or "IN_PROGRESS" in status_name or "LIVE" in status_name:
-                                game_state = "En cours"
-                            else:
-                                game_state = game_time_str
-
-                            competitors = comp.get("competitors", [])
-                            home_team, away_team, home_logo, away_logo, home_score, away_score = "Domicile", "Extérieur", "", "", None, None
-
-                            for i, competitor in enumerate(competitors):
-                                team_data = competitor.get("team", {})
-                                team_display_name = team_data.get("displayName") or team_data.get("name") or team_data.get("shortDisplayName", f"Équipe {i+1}")
-                                
-                                t_logo = team_data.get("logo", "")
-                                if not t_logo and "logos" in team_data and len(team_data["logos"]) > 0:
-                                    t_logo = team_data["logos"][0].get("href", "")
-
-                                score_val = competitor.get("score")
-                                home_away = competitor.get("homeAway")
-
-                                if home_away == "home" or (not home_away and i == 0):
-                                    home_team = team_display_name
-                                    home_logo = t_logo
-                                    home_score = score_val
-                                elif home_away == "away" or (not home_away and i == 1):
-                                    away_team = team_display_name
-                                    away_logo = t_logo
-                                    away_score = score_val
-
                             local_matches.append({
                                 "event_id": event_id,
                                 "_sort_time": event_raw_date,
@@ -326,8 +365,8 @@ def get_foot_matches(date: str):
                                 "away_team": away_team,
                                 "home_logo": home_logo,
                                 "away_logo": away_logo,
-                                "home_score": int(home_score) if home_score is not None and str(home_score).isdigit() else None,
-                                "away_score": int(away_score) if away_score is not None and str(away_score).isdigit() else None,
+                                "home_score": home_score,
+                                "away_score": away_score,
                                 "game_state": game_state
                             })
             except Exception:
@@ -390,43 +429,9 @@ def predict_foot_match(req: MatchRequest):
         action_conseillee = "Plus de 0.5 but MT" if ht_total > 0 else "Observation en 1ère MT"
 
         base_cards = 3.3 + (seed % 3) * 0.4
-
-        star_players = ["Attaquant Star", "Buteur Principal", "Ailier Prolifique", "Renard des Surfaces"]
-        home_star = star_players[seed % len(star_players)]
-        away_star = star_players[(seed // 2) % len(star_players)]
-        
+        home_star, away_star = "Attaquant Star", "Buteur Principal"
         home_buteur_prob = min(82.0, round(min(consensus["home_exp"] * 40.0, 78.0), 1))
         away_buteur_prob = min(82.0, round(min(consensus["away_exp"] * 40.0, 78.0), 1))
-
-        if max_prob >= 64.0 and req.event_id:
-            try:
-                summary_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{req.league_code or 'eng.1'}/summary?event={req.event_id}"
-                resp = requests.get(summary_url, timeout=2)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    rosters = data.get("rosters", [])
-                    
-                    home_found, away_found = [], []
-                    for team in rosters:
-                        t_name = team.get("team", {}).get("displayName", "")
-                        is_home = req.home_team.lower() in t_name.lower() or t_name.lower() in req.home_team.lower()
-                        
-                        for p in team.get("roster", []):
-                            athlete = p.get("athlete", {})
-                            name = athlete.get("displayName")
-                            pos = athlete.get("position", {}).get("name", "")
-                            if name and pos in ["Forward", "Striker", "Midfielder"]:
-                                if is_home:
-                                    home_found.append(name)
-                                else:
-                                    away_found.append(name)
-                                    
-                    if home_found:
-                        home_star = home_found[0]
-                    if away_found:
-                        away_star = away_found[0]
-            except Exception:
-                pass
 
         return {
             "match": f"{req.home_team} vs {req.away_team}",
