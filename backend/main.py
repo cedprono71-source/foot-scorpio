@@ -2,6 +2,7 @@ import os
 import hashlib
 import sqlite3
 import requests
+import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,7 +14,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Signal Fort - Ultimate Quadruple-Ensemble Edition (Historique Réel)", version="30.0")
+app = FastAPI(title="Signal Fort - Ultimate Quadruple-Ensemble Edition (Backfill Actif)", version="31.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,7 +47,6 @@ def init_db():
 init_db()
 
 def save_match_to_db(event_id, league, home_team, away_team, home_score, away_score, date):
-    """Enregistre ou met à jour un match terminé dans la base historique."""
     if home_score is not None and away_score is not None:
         try:
             conn = sqlite3.connect("football_history.db")
@@ -59,6 +59,62 @@ def save_match_to_db(event_id, league, home_team, away_team, home_score, away_sc
             conn.close()
         except Exception:
             pass
+
+def backfill_season_history(days_back=30):
+    """Remplit la base SQLite avec les matchs des jours précédents en arrière-plan."""
+    print("🔄 Début du chargement de l'historique de la saison en arrière-plan...")
+    paris_tz = ZoneInfo("Europe/Paris")
+    today = datetime.now(paris_tz)
+    
+    league_names = [
+        "eng.1", "eng.2", "esp.1", "esp.2", "ita.1", "ita.2", 
+        "ger.1", "ger.2", "fra.1", "fra.2", "ned.1"
+    ]
+    
+    for i in range(days_back):
+        target_date = today - timedelta(days=i)
+        date_str = target_date.strftime("%Y-%m-%d")
+        espn_date = target_date.strftime("%Y%m%d")
+        
+        for league_code in league_names:
+            try:
+                url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_code}/scoreboard?dates={espn_date}"
+                response = requests.get(url, timeout=3)
+                if response.status_code == 200:
+                    data = response.json()
+                    for event in data.get("events", []):
+                        event_id = str(event.get("id"))
+                        comp = event.get("competitions", [{}])[0]
+                        
+                        status_type = comp.get("status", {}).get("type", {})
+                        state = str(status_type.get("state", "")).lower()
+                        status_name = str(status_type.get("name", "")).upper()
+                        
+                        if state == "post" or status_name == "STATUS_FINAL":
+                            competitors = comp.get("competitors", [])
+                            if len(competitors) == 2:
+                                home_team, away_team, home_score, away_score = None, None, None, None
+                                for idx, competitor in enumerate(competitors):
+                                    t_data = competitor.get("team", {})
+                                    t_name = t_data.get("displayName") or t_data.get("name")
+                                    s_val = competitor.get("score")
+                                    h_a = competitor.get("homeAway")
+                                    
+                                    if h_a == "home" or (not h_a and idx == 0):
+                                        home_team = t_name
+                                        home_score = int(s_val) if s_val and str(s_val).isdigit() else None
+                                    elif h_a == "away" or (not h_a and idx == 1):
+                                        away_team = t_name
+                                        away_score = int(s_val) if s_val and str(s_val).isdigit() else None
+                                        
+                                if home_team and away_team:
+                                    save_match_to_db(event_id, league_code, home_team, away_team, home_score, away_score, date_str)
+            except Exception:
+                continue
+    print("✅ Chargement de l'historique terminé avec succès !")
+
+# Lancement du backfill dans un thread pour ne pas bloquer le démarrage sur Render
+threading.Thread(target=backfill_season_history, args=(30,), daemon=True).start()
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -86,7 +142,6 @@ def get_real_team_profile(team_name: str, league_code: str):
     conn = sqlite3.connect("football_history.db")
     cursor = conn.cursor()
     
-    # Matchs à domicile de l'équipe
     cursor.execute("""
         SELECT home_score, away_score FROM matches_history 
         WHERE home_team = ? AND home_score IS NOT NULL 
@@ -94,7 +149,6 @@ def get_real_team_profile(team_name: str, league_code: str):
     """, (team_name,))
     home_matches = cursor.fetchall()
     
-    # Matchs à l'extérieur de l'équipe
     cursor.execute("""
         SELECT home_score, away_score FROM matches_history 
         WHERE away_team = ? AND home_score IS NOT NULL 
@@ -108,7 +162,6 @@ def get_real_team_profile(team_name: str, league_code: str):
     away_gf_list = [m[1] for m in away_matches] if away_matches else []
     away_ga_list = [m[0] for m in away_matches] if away_matches else []
     
-    # Moyennes réelles ou valeurs par défaut équilibrées si la base est vide
     home_gf = sum(home_gf_list) / len(home_gf_list) if home_gf_list else 1.3
     home_ga = sum(home_ga_list) / len(home_ga_list) if home_ga_list else 1.0
     away_gf = sum(away_gf_list) / len(away_gf_list) if away_gf_list else 1.1
@@ -170,7 +223,6 @@ def poisson_probability(lmbda, k):
         return 0.1
 
 def calculate_surgical_consensus(home_team, away_team, league_code="eng.1"):
-    """Consensus alimenté par les vraies données historiques SQLite."""
     h_prof = get_real_team_profile(home_team, league_code)
     a_prof_actual = get_real_team_profile(away_team, league_code)
     home_advantage = get_dynamic_home_advantage(league_code)
@@ -246,7 +298,7 @@ def serve_home():
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
-        return "<h1>Signal Fort - Backend actif avec SQLite</h1>"
+        return "<h1>Signal Fort - Backend actif avec SQLite et Backfill</h1>"
 
 @app.get("/api/matches/foot")
 def get_foot_matches(date: str):
@@ -352,7 +404,6 @@ def get_foot_matches(date: str):
                                 away_logo = t_logo
                                 away_score = int(score_val) if score_val is not None and str(score_val).isdigit() else None
 
-                        # Sauvegarde automatique des matchs terminés dans la base SQLite historique
                         if game_state == "OFF":
                             save_match_to_db(event_id, league_display_name, home_team, away_team, home_score, away_score, match_date_str)
 
