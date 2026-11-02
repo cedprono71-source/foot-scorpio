@@ -1,6 +1,7 @@
 import os
 import math
 import time
+import pickle
 import sqlite3
 import logging
 import threading
@@ -25,8 +26,9 @@ try:
 except Exception:
     SKLEARN_AVAILABLE = False
 
-APP_VERSION = "32.0"
+APP_VERSION = "32.1"
 DB_PATH = os.getenv("FOOTBALL_DB_PATH", "football_history.db")
+MODEL_PATH = os.getenv("MODEL_PATH", "ml_model.pkl")
 PARIS_TZ = ZoneInfo("Europe/Paris")
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 REQUEST_TIMEOUT = 8
@@ -37,7 +39,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("signal-fort")
 
 app = FastAPI(
-    title="Signal Fort - Version 32.0 | Real Data + Predictive Models",
+    title="Signal Fort - Version 32.1 | Real Data + Predictive Models",
     version=APP_VERSION,
     description="Football predictions based on ESPN results, SQLite history, Elo, Poisson and optional trained machine learning."
 )
@@ -76,11 +78,12 @@ LEAGUES = {
 }
 
 session = requests.Session()
-session.headers.update({"User-Agent": "SignalFort/32.0 (football statistics app)"})
+session.headers.update({"User-Agent": "SignalFort/32.1 (football statistics app)"})
 
 
 def db_connect():
-    conn = sqlite3.connect(DB_PATH, timeout=20)
+    # check_same_thread=False évite les erreurs SQLite lors de l'utilisation de ThreadPoolExecutor
+    conn = sqlite3.connect(DB_PATH, timeout=20, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=20000")
@@ -222,11 +225,7 @@ def parse_event(event: dict, league_code: str) -> Optional[dict]:
 def backfill_history(days_back=BACKFILL_DAYS):
     logger.info("Starting ESPN historical backfill (%s days)", days_back)
     today = datetime.now(PARIS_TZ).date()
-    # ESPN date requests are parallelized by league/day; failures do not stop startup.
     jobs = []
-    # Startup import is deliberately limited to the 11 main leagues to avoid
-    # hundreds of simultaneous ESPN calls. Other leagues are still available
-    # in the live fixtures endpoint.
     backfill_leagues = list(LEAGUES.keys())[:11]
     with ThreadPoolExecutor(max_workers=8) as pool:
         for day_offset in range(days_back):
@@ -236,9 +235,6 @@ def backfill_history(days_back=BACKFILL_DAYS):
         for future in as_completed(jobs):
             try:
                 events = future.result()
-                # ESPN response does not expose the league code reliably, so infer it
-                # from the request mapping recorded by the caller below where possible.
-                # Historical rows are still saved by the daily sync endpoint.
                 for event in events:
                     comp = (event.get("competitions") or [{}])[0]
                     status = (comp.get("status") or {}).get("type") or {}
@@ -407,7 +403,6 @@ def build_features(home_team: str, away_team: str, league_code: str) -> Tuple[Li
     away_elo = ratings.get(away_team, 1500.0)
     home_avg, away_avg = league_goal_averages(league_code)
 
-    # Shrink sparse team samples toward league averages to avoid overreacting to 1-2 games.
     def shrink(value, n, prior, weight=5.0):
         return (value * n + prior * weight) / (n + weight)
 
@@ -439,9 +434,22 @@ def train_ml_model():
     if not SKLEARN_AVAILABLE:
         return None, 0
     now = time.time()
+    
     with cache_lock:
+        # Vérification du cache mémoire
         if ml_model_cache["model"] is not None and now - ml_model_cache["trained_at"] < 3600:
             return ml_model_cache["model"], ml_model_cache["rows"]
+        
+        # Vérification sur le disque si non présent en mémoire
+        if os.path.exists(MODEL_PATH):
+            try:
+                with open(MODEL_PATH, "rb") as f:
+                    disk_data = pickle.load(f)
+                    if now - disk_data.get("trained_at", 0) < 3600:
+                        ml_model_cache.update(disk_data)
+                        return disk_data["model"], disk_data["rows"]
+            except Exception:
+                logger.exception("Impossible de charger le modèle ML depuis le disque")
 
     with db_connect() as conn:
         rows = conn.execute("""
@@ -451,7 +459,6 @@ def train_ml_model():
             ORDER BY date ASC
         """).fetchall()
 
-    # Build chronological pre-match features: only earlier matches are used.
     rolling: Dict[str, List[Tuple[int, int, str]]] = {}
     X, y = [], []
     for row in rows:
@@ -483,8 +490,18 @@ def train_ml_model():
             LogisticRegression(max_iter=1000, class_weight="balanced")
         )
         model.fit(X, y)
+        
+        cache_data = {"model": model, "trained_at": now, "rows": len(X)}
         with cache_lock:
-            ml_model_cache.update({"model": model, "trained_at": now, "rows": len(X)})
+            ml_model_cache.update(cache_data)
+            
+        # Sauvegarde sur disque
+        try:
+            with open(MODEL_PATH, "wb") as f:
+                pickle.dump(cache_data, f)
+        except Exception:
+            logger.exception("Impossible d'enregistrer le modèle ML sur disque")
+
         return model, len(X)
     except Exception:
         logger.exception("ML training failed")
@@ -495,7 +512,6 @@ def ml_prediction(home_team: str, away_team: str, features: List[float]) -> Opti
     model, rows = train_ml_model()
     if model is None:
         return None
-    # ML uses its own rolling-form feature representation.
     hp, ap = team_profile(home_team), team_profile(away_team)
     x = [[hp["goals_for_avg"], hp["goals_against_avg"],
           ap["goals_for_avg"], ap["goals_against_avg"],
@@ -521,7 +537,6 @@ def calculate_surgical_consensus(home_team: str, away_team: str, league_code="en
     features, details = build_features(home_team, away_team, league_code)
     poisson = poisson_model(details["home_xg"], details["away_xg"])
 
-    # Elo probability from real match results, including a modest home advantage.
     elo_diff = details["home_elo"] + 55.0 - details["away_elo"]
     home_elo_prob = 1.0 / (1.0 + 10 ** (-elo_diff / 400.0))
     draw_base = max(0.16, min(0.30, 0.27 - abs(details["home_xg"] - details["away_xg"]) * 0.035))
@@ -533,7 +548,7 @@ def calculate_surgical_consensus(home_team: str, away_team: str, league_code="en
 
     ml = ml_prediction(home_team, away_team, features)
     if ml:
-        weights = (0.55, 0.20, 0.25)  # Poisson, Elo, trained ML
+        weights = (0.55, 0.20, 0.25)
         method = "Poisson + Elo + LogisticRegression entraînée"
         ml_probs = ml
     else:
@@ -565,26 +580,6 @@ def calculate_surgical_consensus(home_team: str, away_team: str, league_code="en
     }
 
 
-def get_team_scorer_candidates(team_id: Optional[str]) -> list:
-    # No fabricated player names: ESPN roster/boxscore data is not guaranteed for
-    # every league or fixture. This endpoint is intentionally conservative.
-    if not team_id:
-        return []
-    try:
-        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{team_id}/roster"
-        response = session.get(url, timeout=5)
-        if response.status_code != 200:
-            return []
-        data = response.json()
-        candidates = []
-        for athlete in data.get("athletes", []):
-            if isinstance(athlete, dict) and athlete.get("displayName"):
-                candidates.append({"name": athlete["displayName"], "source": "ESPN roster"})
-        return candidates[:5]
-    except Exception:
-        return []
-
-
 def implied_value(probability: float, decimal_odds: Optional[float]) -> dict:
     if not decimal_odds or decimal_odds <= 1.0:
         return {"available": False, "message": "Cote non fournie"}
@@ -606,8 +601,8 @@ def serve_home():
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
-        return """<html><head><meta charset='utf-8'><title>Signal Fort 32.0</title></head>
-        <body style='font-family:Arial;padding:30px'><h1>Signal Fort 32.0</h1>
+        return """<html><head><meta charset='utf-8'><title>Signal Fort 32.1</title></head>
+        <body style='font-family:Arial;padding:30px'><h1>Signal Fort 32.1</h1>
         <p>Backend actif. Place ton fichier index.html dans le même dossier.</p>
         <p><a href='/docs'>Ouvrir la documentation API</a></p></body></html>"""
 
@@ -620,7 +615,7 @@ def health():
         "status": "ok", "version": APP_VERSION,
         "historical_matches": count,
         "sklearn_available": SKLEARN_AVAILABLE,
-        "ml_active": ml_model_cache["model"] is not None,
+        "ml_active": ml_model_cache["model"] is not None or os.path.exists(MODEL_PATH),
     }
 
 
@@ -699,7 +694,6 @@ def predict_foot_match(req: MatchRequest):
             "away_win": consensus["away_win"],
         }
 
-        # Score modal from the Poisson matrix, not forced to match 1X2 probabilities.
         predicted_score = consensus["top_exact_scores"][0]["score"]
         max_prob = max(probs.values())
         if max_prob >= 60:
@@ -716,8 +710,6 @@ def predict_foot_match(req: MatchRequest):
             "moyenne" if min(hp["matches"], ap["matches"]) >= 3 else "limitée"
         )
 
-        # Keep the legacy response keys so the existing frontend remains compatible.
-        # Player identities and card probabilities are not fabricated.
         result = {
             "match": f"{home_team} vs {away_team}",
             "probabilities": probs,
@@ -790,7 +782,6 @@ def predict_foot_match(req: MatchRequest):
 
 @app.post("/predict/match/foot/value")
 def predict_value(req: dict):
-    """Value helper: body example {probability: 57, odds: 2.0}."""
     try:
         probability = float(req["probability"])
         odds = float(req["odds"])
@@ -811,7 +802,6 @@ def start_backfill(days: int = BACKFILL_DAYS):
 
 @app.on_event("startup")
 def startup_backfill():
-    # Run once per process; historical imports are intentionally asynchronous.
     if os.getenv("DISABLE_STARTUP_BACKFILL", "0") != "1":
         threading.Thread(target=backfill_history, args=(BACKFILL_DAYS,), daemon=True).start()
 
