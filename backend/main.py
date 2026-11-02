@@ -14,7 +14,7 @@ from typing import Optional
 import math
 from cachetools import TTLCache
 
-app = FastAPI(title="Signal Fort - Ultimate Quadruple-Ensemble Edition (Backfill Actif)", version="31.0")
+app = FastAPI(title="Signal Fort - Ultimate Quadruple-Ensemble Edition (Backfill Actif)", version="31.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -113,7 +113,6 @@ def backfill_season_history(days_back=30):
                 continue
     print("✅ Chargement de l'historique terminé avec succès !")
 
-# Lancement du backfill dans un thread pour ne pas bloquer le démarrage sur Render
 threading.Thread(target=backfill_season_history, args=(30,), daemon=True).start()
 
 class MatchRequest(BaseModel):
@@ -138,7 +137,6 @@ def get_dynamic_home_advantage(league_code: str) -> float:
     return 1.25
 
 def get_real_team_profile(team_name: str, league_code: str):
-    """Calcule les vraies statistiques d'attaque/défense basées sur l'historique SQLite."""
     conn = sqlite3.connect("football_history.db")
     cursor = conn.cursor()
     
@@ -231,16 +229,18 @@ def calculate_surgical_consensus(home_team, away_team, league_code="eng.1"):
     home_fatigue = 0.92 if seed % 5 == 0 else 1.0
     away_fatigue = 0.90 if seed % 7 == 0 else 1.0
     
-    home_exp = max(0.45, (h_prof["home_gf"] * a_prof_actual["away_ga"] * home_fatigue) / home_advantage)
-    away_exp = max(0.35, (a_prof_actual["away_gf"] * h_prof["home_ga"] * away_fatigue) / 1.30)
+    # Plafond strict des buts attendus (xG) pour éviter les scores absurdes au football (max 3.5)
+    home_exp = min(3.5, max(0.45, (h_prof["home_gf"] * a_prof_actual["away_ga"] * home_fatigue) / home_advantage))
+    away_exp = min(3.5, max(0.35, (a_prof_actual["away_gf"] * h_prof["home_ga"] * away_fatigue) / 1.30))
 
     dc_home_win, dc_draw, dc_away_win = 0.0, 0.0, 0.0
     btts_prob_total, over_25_prob_total = 0.0, 0.0
     score_matrix = {}
     rho = -0.08
 
-    for h_goals in range(7):
-        for a_goals in range(7):
+    # Matrice limitée à 5 buts max par équipe (range(6) = 0 à 5)
+    for h_goals in range(6):
+        for a_goals in range(6):
             p = poisson_probability(home_exp, h_goals) * poisson_probability(away_exp, a_goals)
             if h_goals == 0 and a_goals == 0: p *= max(0.1, (1.0 - (home_exp * away_exp * rho)))
             elif h_goals == 1 and a_goals == 1: p *= max(0.1, (1.0 - rho))
@@ -449,13 +449,14 @@ def predict_foot_match(req: MatchRequest):
             "away_win": consensus["away_win"]
         }
         
-        home_goals = int(round(consensus["home_exp"]))
-        away_goals = int(round(consensus["away_exp"]))
+        # Plafond des buts prédits à un maximum réaliste de 4 buts par équipe
+        home_goals = min(4, int(round(consensus["home_exp"])))
+        away_goals = min(4, int(round(consensus["away_exp"])))
 
         if probs["home_win"] > 62 and home_goals <= away_goals:
-            home_goals = away_goals + 1
+            home_goals = min(4, away_goals + 1)
         elif probs["away_win"] > 62 and away_goals <= home_goals:
-            away_goals = home_goals + 1
+            away_goals = min(4, home_goals + 1)
 
         predicted_score = f"{home_goals} - {away_goals}"
 
