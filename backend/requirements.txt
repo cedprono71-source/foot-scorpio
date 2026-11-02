@@ -1,8 +1,6 @@
 fastapi
-uvicorn
-numpy
-scipy
-pydantic
+uvicorn[standard]
 requests
-apscheduler
 cachetools
+pydantic
+scikit-learn
