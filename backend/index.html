@@ -3,19 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Signal Fort - Prédictions Football Pro</title>
+    <title>Signal Fort - Prédictions Football Pro (Scorpion)</title>
     <style>
         :root {
-            --bg-color: #0b0e14;
-            --card-bg: #161b22;
-            --accent-color: #ff4757;
-            --accent-hover: #ff6b81;
-            --text-color: #ffffff;
-            --text-muted: #8b949e;
-            --border-color: #30363d;
-            --home-color: #3498db;
-            --draw-color: #f1c40f;
-            --away-color: #ff4757;
+            --bg-color: #030712; /* Noir espace / cosmos */
+            --card-bg: #0f172a;  /* Bleu nuit sombre */
+            --accent-color: #2563eb; /* Bleu électrique du Scorpion */
+            --accent-hover: #3b82f6; /* Bleu électrique lumineux */
+            --gold-color: #fbbf24; /* Or / Ambre de la queue du scorpion */
+            --gold-light: #fde047;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #1e293b;
+            --home-color: #38bdf8;
+            --draw-color: #fbbf24;
+            --away-color: #ef4444;
         }
 
         body {
@@ -32,12 +34,15 @@
         header {
             text-align: center;
             margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 12px;
         }
 
         header h1 {
-            color: var(--text-color);
+            color: var(--gold-color);
             margin: 0;
             font-size: 1.4em;
+            text-shadow: 0 0 10px rgba(251, 191, 36, 0.3);
         }
 
         .flashscore-calendar {
@@ -67,9 +72,10 @@
 
         .cal-day-btn.active {
             background-color: var(--accent-color);
-            border-color: var(--accent-color);
+            border-color: var(--accent-hover);
             color: #fff;
             font-weight: bold;
+            box-shadow: 0 0 12px rgba(37, 99, 235, 0.5);
         }
 
         .cal-day-name {
@@ -89,6 +95,7 @@
             padding: 12px 15px;
             margin-bottom: 12px;
             position: relative;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
         }
 
         .match-card-header {
@@ -96,7 +103,7 @@
             justify-content: space-between;
             align-items: center;
             font-size: 0.75em;
-            color: var(--text-muted);
+            color: var(--gold-color);
             text-transform: uppercase;
             margin-bottom: 8px;
             font-weight: bold;
@@ -110,9 +117,9 @@
             text-transform: uppercase;
             letter-spacing: 0.3px;
         }
-        .list-signal-tag.fort { background-color: #10b981; color: #fff; }
-        .list-signal-tag.modere { background-color: #f59e0b; color: #fff; }
-        .list-signal-tag.incertain { background-color: #374151; color: #9ca3af; }
+        .list-signal-tag.fort { background-color: var(--gold-color); color: #030712; font-weight: 900; }
+        .list-signal-tag.modere { background-color: var(--accent-color); color: #fff; }
+        .list-signal-tag.incertain { background-color: #1e293b; color: var(--text-muted); }
 
         .match-row {
             display: flex;
@@ -139,13 +146,14 @@
         .match-score {
             font-weight: bold;
             font-size: 1.15em;
+            color: var(--gold-color);
         }
 
         .prono-btn {
             width: 100%;
-            background-color: var(--accent-color);
+            background: linear-gradient(135deg, var(--accent-color), #1d4ed8);
             color: #fff;
-            border: none;
+            border: 1px solid var(--accent-hover);
             padding: 10px;
             border-radius: 8px;
             font-weight: bold;
@@ -156,11 +164,13 @@
             align-items: center;
             justify-content: center;
             gap: 5px;
-            transition: opacity 0.2s;
+            transition: all 0.2s;
+            box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
         }
 
         .prono-btn:hover {
-            opacity: 0.9;
+            background: linear-gradient(135deg, var(--accent-hover), #2563eb);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
         }
 
         /* --- FENÊTRE MODALE --- */
@@ -170,8 +180,8 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(11, 14, 20, 0.85);
-            backdrop-filter: blur(5px);
+            background-color: rgba(3, 7, 18, 0.9);
+            backdrop-filter: blur(8px);
             display: none;
             justify-content: center;
             align-items: flex-end;
@@ -181,6 +191,7 @@
         .modal-container {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
+            border-top: 2px solid var(--accent-color);
             border-top-left-radius: 20px;
             border-top-right-radius: 20px;
             width: 100%;
@@ -190,6 +201,7 @@
             padding: 20px;
             box-sizing: border-box;
             animation: slideUp 0.3s ease-out;
+            box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.5);
         }
 
         @keyframes slideUp {
@@ -209,7 +221,7 @@
         .modal-header h2 {
             margin: 0;
             font-size: 1.1em;
-            color: var(--text-color);
+            color: var(--gold-color);
         }
 
         .close-modal-btn {
@@ -221,7 +233,7 @@
         }
 
         .modal-section {
-            background-color: #0d1117;
+            background-color: #030712;
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 12px 15px;
@@ -231,7 +243,7 @@
         .modal-section-title {
             font-size: 0.8em;
             text-transform: uppercase;
-            color: var(--text-muted);
+            color: var(--gold-color);
             margin-bottom: 8px;
             font-weight: bold;
             letter-spacing: 0.5px;
@@ -241,11 +253,12 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: linear-gradient(135deg, #1f242d 0%, #161b22 100%);
-            border: 1px solid #30363d;
+            background: linear-gradient(135deg, #0f172a 0%, #030712 100%);
+            border: 1px solid var(--accent-color);
             border-radius: 10px;
             padding: 10px 14px;
             margin-bottom: 12px;
+            box-shadow: 0 0 10px rgba(37, 99, 235, 0.2);
         }
         .signal-tag {
             font-size: 0.85em;
@@ -253,9 +266,9 @@
             padding: 4px 10px;
             border-radius: 6px;
         }
-        .signal-tag.fort { background-color: #10b981; color: #fff; }
-        .signal-tag.modere { background-color: #f59e0b; color: #fff; }
-        .signal-tag.incertain { background-color: #6b7280; color: #fff; }
+        .signal-tag.fort { background-color: var(--gold-color); color: #030712; }
+        .signal-tag.modere { background-color: var(--accent-color); color: #fff; }
+        .signal-tag.incertain { background-color: #334155; color: #fff; }
 
         .prob-bar-container {
             margin-bottom: 10px;
@@ -274,7 +287,7 @@
         }
 
         .custom-progress-bg {
-            background-color: #21262d;
+            background-color: #1e293b;
             height: 6px;
             border-radius: 3px;
             overflow: hidden;
@@ -287,7 +300,7 @@
 
         .badge-conseil {
             display: inline-block;
-            background: #10b981;
+            background: var(--accent-color);
             color: white;
             padding: 2px 8px;
             border-radius: 4px;
@@ -298,9 +311,9 @@
 
         .modal-close-bottom-btn {
             width: 100%;
-            background-color: var(--accent-color);
-            color: #ffffff;
-            border: none;
+            background-color: #1e293b;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
             padding: 12px;
             border-radius: 10px;
             font-weight: bold;
@@ -308,11 +321,11 @@
             cursor: pointer;
             margin-top: 5px;
             margin-bottom: 10px;
-            transition: opacity 0.2s;
+            transition: background 0.2s;
         }
 
         .modal-close-bottom-btn:hover {
-            opacity: 0.9;
+            background-color: #334155;
         }
 
         @keyframes pulseSkeleton {
@@ -321,7 +334,7 @@
             100% { opacity: 0.4; }
         }
         .skeleton {
-            background-color: #21262d;
+            background-color: #1e293b;
             border-radius: 6px;
             animation: pulseSkeleton 1.5s infinite ease-in-out;
         }
@@ -330,7 +343,7 @@
 <body>
 
     <header>
-        <h1>⚽ Signal Fort - Football Pro</h1>
+        <h1>⚡ SCORPIO 13 - Football Pro</h1>
     </header>
 
     <div id="sport-foot">
@@ -432,7 +445,6 @@
             }
         }
 
-        // Mapping des ligues vers les codes ESPN pour la récupération ciblée des buteurs
         function getLeagueCode(leagueName) {
             const mapping = {
                 "Premier League": "eng.1", "EFL Championship": "eng.2",
@@ -442,6 +454,7 @@
                 "Ligue 1": "fra.1", "Ligue 2": "fra.2",
                 "Eredivisie": "ned.1", "Liga Portugal": "por.1",
                 "Jupiler Pro League": "bel.1", "Süper Lig": "tur.1",
+                "Championnat d'Argentine": "arg.1",
                 "Scottish Premiership": "sco.1", "UEFA Champions League": "uefa.champions",
                 "UEFA Europa League": "uefa.europa", "UEFA Conference League": "uefa.conf"
             };
@@ -536,7 +549,7 @@
             const body = document.getElementById('modal-body');
 
             title.innerText = `${home} vs ${away}`;
-            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse Dixon-Coles et recherche des effectifs en cours...</p>';
+            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse en cours...</p>';
             modal.style.display = 'flex';
 
             const leagueCode = getLeagueCode(leagueName);
@@ -564,14 +577,13 @@
 
                 const g = data.goalscorers;
 
-                // Affichage du Top 3 des scores exacts si présent
                 let topScoresHtml = '';
                 if (data.top_exact_scores && data.top_exact_scores.length > 0) {
                     topScoresHtml = `
                         <div class="modal-section">
-                            <div class="modal-section-title">🎯 Top 3 Scores Exacts (Dixon-Coles)</div>
+                            <div class="modal-section-title">🎯 Top 3 Scores Exacts</div>
                             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                                ${data.top_exact_scores.map(s => `<span style="background: #21262d; border: 1px solid #30363d; padding: 4px 8px; border-radius: 6px; font-size: 0.85em;">${s.score} (<strong style="color: var(--accent-color);">${s.probability}%</strong>)</span>`).join('')}
+                                ${data.top_exact_scores.map(s => `<span style="background: #030712; border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; font-size: 0.85em;">${s.score} (<strong style="color: var(--gold-color);">${s.probability}%</strong>)</span>`).join('')}
                             </div>
                         </div>
                     `;
@@ -580,8 +592,8 @@
                 body.innerHTML = `
                     <div class="signal-badge-box">
                         <div>
-                            <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Consensus Dixon-Coles</div>
-                            <div style="font-size: 0.9em; font-weight: bold; margin-top: 2px;">Indice : ${sig.confidence_index}%</div>
+                            <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Consensus Modèle</div>
+                            <div style="font-size: 0.9em; font-weight: bold; margin-top: 2px; color: var(--gold-color);">Indice : ${sig.confidence_index}%</div>
                         </div>
                         <span class="signal-tag ${tagClass}">${sig.badge}</span>
                     </div>
@@ -589,15 +601,15 @@
                     <div class="modal-section">
                         <div class="modal-section-title">📊 Probabilités (Score : ${data.predicted_score})</div>
                         <div class="prob-bar-container">
-                            <div class="prob-info-row"><span>Victoire ${home}</span><span>${h}%</span></div>
+                            <div class="prob-info-row"><span>Victoire ${home}</span><span style="color: var(--home-color); font-weight: bold;">${h}%</span></div>
                             <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${h}%; background-color: var(--home-color);"></div></div>
                         </div>
                         <div class="prob-bar-container" style="margin-top: 8px;">
-                            <div class="prob-info-row"><span>Match Nul</span><span>${d}%</span></div>
+                            <div class="prob-info-row"><span>Match Nul</span><span style="color: var(--draw-color); font-weight: bold;">${d}%</span></div>
                             <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${d}%; background-color: var(--draw-color);"></div></div>
                         </div>
                         <div class="prob-bar-container" style="margin-top: 8px;">
-                            <div class="prob-info-row"><span>Victoire ${away}</span><span>${a}%</span></div>
+                            <div class="prob-info-row"><span>Victoire ${away}</span><span style="color: var(--away-color); font-weight: bold;">${a}%</span></div>
                             <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${a}%; background-color: var(--away-color);"></div></div>
                         </div>
                     </div>
@@ -606,8 +618,8 @@
 
                     <div class="modal-section">
                         <div class="modal-section-title">⚽ Options de Paris</div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>BTTS (Les deux équipes marquent)</span><strong>${data.btts.yes_prob}%</strong></div>
-                        <div class="prob-info-row"><span>Plus de 2.5 buts (Over)</span><strong>${data.over_under_2_5.over_prob}%</strong></div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>BTTS (Les deux équipes marquent)</span><strong style="color: var(--gold-color);">${data.btts.yes_prob}%</strong></div>
+                        <div class="prob-info-row"><span>Plus de 2.5 buts (Over)</span><strong style="color: var(--gold-color);">${data.over_under_2_5.over_prob}%</strong></div>
                     </div>
 
                     <div class="modal-section">
@@ -625,21 +637,21 @@
                     <div class="modal-section">
                         <div class="modal-section-title">⏱️ 1ère Mi-Temps</div>
                         <div class="prob-info-row" style="margin-bottom: 6px;"><span>Score HT estimé</span><strong>${data.first_half.predicted_ht_score}</strong></div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité But MT (>0.5)</span><strong>${data.first_half.over_0_5_prob}%</strong></div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité But MT (>0.5)</span><strong style="color: var(--gold-color);">${data.first_half.over_0_5_prob}%</strong></div>
                         <div><span class="badge-conseil">${data.first_half.action_conseillee}</span></div>
                     </div>
 
                     <div class="modal-section">
                         <div class="modal-section-title">🟨 Cartons Jaunes</div>
                         <div class="prob-info-row" style="margin-bottom: 6px;"><span>Total attendu</span><strong>${data.yellow_cards.expected_total} cartons</strong></div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité > 4.5 cartons</span><strong>${data.yellow_cards.over_4_5_prob}%</strong></div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité > 4.5 cartons</span><strong style="color: var(--gold-color);">${data.yellow_cards.over_4_5_prob}%</strong></div>
                         <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
                             Moyenne Domicile : ${data.yellow_cards.home_team_avg} | Extérieur : ${data.yellow_cards.away_team_avg}
                         </div>
                     </div>
                 `;
             } catch (err) {
-                body.innerHTML = '<p style="color: #ff4757; text-align: center;">Erreur lors du chargement des pronostics.</p>';
+                body.innerHTML = '<p style="color: #ef4444; text-align: center;">Erreur lors du chargement des pronostics.</p>';
             }
         }
 
