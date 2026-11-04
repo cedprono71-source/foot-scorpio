@@ -1,5 +1,6 @@
 import os
 import re
+import bisect
 import json
 import math
 import time
@@ -30,11 +31,12 @@ try:
 except Exception:
     SKLEARN_AVAILABLE = False
 
-APP_VERSION = "34.0"
+APP_VERSION = "35.0"
 DB_PATH = os.getenv("FOOTBALL_DB_PATH", "football_history.db")
 MODEL_PATH = os.getenv("MODEL_PATH", "ml_model.joblib")
 WEIGHTS_PATH = os.getenv("WEIGHTS_PATH", "ensemble_weights.json")
 PARIS_TZ = ZoneInfo("Europe/Paris")
+UTC_TZ = ZoneInfo("UTC")
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 REQUEST_TIMEOUT = 8
 BACKFILL_DAYS = int(os.getenv("BACKFILL_DAYS", "90"))
@@ -47,8 +49,15 @@ ML_FEATURE_VERSION = 3            # à incrémenter si les features ou le modèl
 HOME_ELO_ADV = 55.0
 DC_RHO = float(os.getenv("DC_RHO", "-0.08"))   # correction Dixon-Coles (négatif = plus de 0-0 / 1-1)
 LEAGUE_PRIOR_WEIGHT = 20          # pseudo-matchs pour la moyenne de ligue du backtest walk-forward
-# Poids par défaut de l'ensemble (Poisson, Elo, ML). Remplacés par ceux de /api/backtest/ensemble?save=true.
-DEFAULT_WEIGHTS = {"with_ml": [0.55, 0.20, 0.25], "without_ml": [0.72, 0.28]}
+# Poids par défaut de l'ensemble (Dixon-Coles, Poisson forme, Elo, ML). Remplacés par ceux de /api/backtest/ensemble?save=true.
+DEFAULT_WEIGHTS = {
+    "with_ml": {"dc": 0.45, "poisson": 0.10, "elo": 0.15, "ml": 0.30},
+    "without_ml": {"dc": 0.60, "poisson": 0.15, "elo": 0.25},
+}
+DC_HALF_LIFE_DAYS = float(os.getenv("DC_HALF_LIFE_DAYS", "365"))  # un match perd la moitié de son poids en ~1 an
+DC_REG = float(os.getenv("DC_REG", "4.0"))                        # ridge : ramène les équipes peu vues vers la moyenne
+DC_TTL = 1800                     # ré-ajustement Dixon-Coles au plus toutes les 30 min
+MIN_DC_MATCHES = 150              # en dessous, Dixon-Coles est désactivé
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("signal-fort")
@@ -80,12 +89,14 @@ prediction_cache = TTLCache(maxsize=500, ttl=900)
 ml_model_cache = {"model": None, "trained_at": 0.0, "rows": 0, "retry_after": 0.0}
 elo_cache = {"version": -1, "ratings": {}}
 weights_cache = {"mtime": None, "weights": DEFAULT_WEIGHTS}
+dc_cache = {"model": None, "version": -1, "fitted_at": 0.0, "retry_after": 0.0}
 data_version = {"v": 0}  # incrémenté dès que l'historique change réellement
 backfill_status = {"running": False, "days": 0, "total": 0, "completed": 0,
                    "errors": 0, "started_at": None, "finished_at": None}
 cache_lock = threading.Lock()
 train_lock = threading.Lock()
 backfill_lock = threading.Lock()
+dc_lock = threading.Lock()
 
 
 def cache_get(cache, key):
@@ -185,6 +196,17 @@ def init_db():
                 PRIMARY KEY (league_code, day)
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS predictions_log (
+                event_id TEXT PRIMARY KEY,
+                created_at TEXT, updated_at TEXT,
+                league_code TEXT, home_team TEXT, away_team TEXT, home_key TEXT, away_key TEXT,
+                p_home REAL, p_draw REAL, p_away REAL,
+                model TEXT, app_version TEXT, components TEXT,
+                outcome INTEGER, home_score INTEGER, away_score INTEGER, settled_at TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_predlog_outcome ON predictions_log(outcome)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_date ON matches_history(date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_home ON matches_history(home_team, date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_away ON matches_history(away_team, date)")
@@ -260,6 +282,13 @@ def save_match_to_db(event_id, league, home_team, away_team, home_score, away_sc
                             name = excluded.name, norm_name = excluded.norm_name
                         WHERE name IS NOT excluded.name
                     """, (team_id, name, normalize_name(name)))
+            # Règle la prédiction enregistrée avant le match, s'il y en a une.
+            hs, as_ = int(home_score), int(away_score)
+            conn.execute("""
+                UPDATE predictions_log SET outcome = ?, home_score = ?, away_score = ?, settled_at = ?
+                WHERE event_id = ? AND outcome IS NULL
+            """, (0 if hs > as_ else 1 if hs == as_ else 2, hs, as_,
+                  datetime.now(UTC_TZ).isoformat(), str(event_id)))
         if changed:
             # Le modèle ML n'est pas invalidé ici : il est ré-entraîné toutes les MODEL_TTL secondes.
             invalidate_data()
@@ -666,6 +695,235 @@ def match_components(hp: dict, ap: dict, home_elo: float, away_elo: float,
     return {"home_xg": home_xg, "away_xg": away_xg, "poisson": poisson, "elo": elo_probs}
 
 
+# --------------------------------------------------------------------------- #
+# Dixon-Coles complet : attaque / défense par équipe, matchs récents plus pesants
+# --------------------------------------------------------------------------- #
+class DCModel:
+    """log(buts domicile)    = mu[ligue] + ha[ligue] + attaque[dom] - défense[ext]
+       log(buts extérieur)   = mu[ligue] + attaque[ext] - défense[dom]"""
+
+    def __init__(self, mu, ha, att, de, rho, n_matches):
+        self.mu, self.ha, self.att, self.de, self.rho = mu, ha, att, de, rho
+        self.n_matches = n_matches
+        self.n_teams = len(att)
+        self.mu_default = sum(mu.values()) / len(mu) if mu else math.log(1.2)
+        self.ha_default = sum(ha.values()) / len(ha) if ha else 0.2
+
+    def expected_goals(self, home_key: str, away_key: str, league_name: str) -> Tuple[float, float]:
+        mu = self.mu.get(league_name, self.mu_default)
+        ha = self.ha.get(league_name, self.ha_default)
+        lh = math.exp(mu + ha + self.att.get(home_key, 0.0) - self.de.get(away_key, 0.0))
+        la = math.exp(mu + self.att.get(away_key, 0.0) - self.de.get(home_key, 0.0))
+        return max(0.15, min(4.5, lh)), max(0.15, min(4.5, la))
+
+    def predict(self, home_key: str, away_key: str, league_name: str) -> dict:
+        lh, la = self.expected_goals(home_key, away_key, league_name)
+        result = poisson_model(lh, la, self.rho)
+        result["home_xg"], result["away_xg"] = lh, la
+        return result
+
+
+def to_dc_tuples(rows) -> List[tuple]:
+    """(jour, ligue, clé dom, clé ext, buts dom, buts ext), dans l'ordre des lignes reçues."""
+    out, last_day = [], 0
+    for r in rows:
+        try:
+            day = datetime.fromisoformat(str(r["date"])[:10]).toordinal()
+        except ValueError:
+            day = last_day
+        last_day = day
+        out.append((day, r["league"], r["home_key"], r["away_key"],
+                    int(r["home_score"]), int(r["away_score"])))
+    return out
+
+
+def fit_dixon_coles(data: List[tuple], ref_day: int, half_life: float = DC_HALF_LIFE_DAYS,
+                    reg: float = DC_REG, max_sweeps: int = 40) -> Optional[DCModel]:
+    """Régression de Poisson pondérée par l'ancienneté (demi-vie en jours), ajustée par blocs.
+    Chaque taux attendu ne dépend que d'un seul paramètre d'attaque et d'un seul de défense :
+    les mises à jour par bloc sont donc exactes. La régularisation ridge (reg) ramène les équipes
+    peu observées vers la moyenne de leur ligue."""
+    xi = math.log(2) / max(1.0, half_life)
+    H, A, L, W, HG, AG = [], [], [], [], [], []
+    team_idx: Dict[str, int] = {}
+    league_idx: Dict[str, int] = {}
+    for day, league, hk, ak, hg, ag in data:
+        w = math.exp(-xi * max(0, ref_day - day))
+        if w < 0.01:
+            continue
+        H.append(team_idx.setdefault(hk, len(team_idx)))
+        A.append(team_idx.setdefault(ak, len(team_idx)))
+        L.append(league_idx.setdefault(league, len(league_idx)))
+        W.append(w)
+        HG.append(hg)
+        AG.append(ag)
+    N, T, NL = len(W), len(team_idx), len(league_idx)
+    if N < MIN_DC_MATCHES:
+        return None
+
+    sw = [0.0] * NL
+    sh = [0.0] * NL
+    sa = [0.0] * NL
+    for i in range(N):
+        sw[L[i]] += W[i]
+        sh[L[i]] += W[i] * HG[i]
+        sa[L[i]] += W[i] * AG[i]
+    mu = [math.log(max(0.3, sa[l] / sw[l])) if sw[l] > 0 else 0.0 for l in range(NL)]
+    tot_h, tot_a = sum(sh), sum(sa)
+    ha0 = math.log(max(0.5, tot_h) / max(0.5, tot_a))
+    mu0 = list(mu)
+    ha = [ha0] * NL
+    att = [0.0] * T
+    de = [0.0] * T
+    ha_reg = 5.0   # une ligue peu fournie garde un avantage du domicile proche de la moyenne globale
+    mu_reg = 1.0
+
+    def rates():
+        lh, la = [0.0] * N, [0.0] * N
+        for i in range(N):
+            base = mu[L[i]]
+            lh[i] = math.exp(base + ha[L[i]] + att[H[i]] - de[A[i]])
+            la[i] = math.exp(base + att[A[i]] - de[H[i]])
+        return lh, la
+
+    def clip(x, lim=0.5):
+        return max(-lim, min(lim, x))
+
+    for _ in range(max_sweeps):
+        max_delta = 0.0
+
+        lh, la = rates()
+        g, hs = [0.0] * T, [0.0] * T
+        for i in range(N):
+            w = W[i]
+            g[H[i]] += w * (HG[i] - lh[i])
+            hs[H[i]] += w * lh[i]
+            g[A[i]] += w * (AG[i] - la[i])
+            hs[A[i]] += w * la[i]
+        for t in range(T):
+            step = clip((g[t] - reg * att[t]) / (hs[t] + reg))
+            att[t] += step
+            max_delta = max(max_delta, abs(step))
+
+        lh, la = rates()
+        g, hs = [0.0] * T, [0.0] * T
+        for i in range(N):
+            w = W[i]
+            g[A[i]] += w * (lh[i] - HG[i])
+            hs[A[i]] += w * lh[i]
+            g[H[i]] += w * (la[i] - AG[i])
+            hs[H[i]] += w * la[i]
+        for t in range(T):
+            step = clip((g[t] - reg * de[t]) / (hs[t] + reg))
+            de[t] += step
+            max_delta = max(max_delta, abs(step))
+
+        lh, la = rates()
+        g, hs = [0.0] * NL, [0.0] * NL
+        for i in range(N):
+            w = W[i]
+            g[L[i]] += w * (HG[i] - lh[i] + AG[i] - la[i])
+            hs[L[i]] += w * (lh[i] + la[i])
+        for l in range(NL):
+            step = clip((g[l] - mu_reg * (mu[l] - mu0[l])) / (hs[l] + mu_reg), 0.3)
+            mu[l] += step
+            max_delta = max(max_delta, abs(step))
+
+        lh, la = rates()
+        g, hs = [0.0] * NL, [0.0] * NL
+        for i in range(N):
+            w = W[i]
+            g[L[i]] += w * (HG[i] - lh[i])
+            hs[L[i]] += w * lh[i]
+        for l in range(NL):
+            step = clip((g[l] - ha_reg * (ha[l] - ha0)) / (hs[l] + ha_reg), 0.3)
+            ha[l] += step
+            max_delta = max(max_delta, abs(step))
+
+        if max_delta < 1e-4:
+            break
+
+    # rho (corrélation des petits scores) : balayage sur la vraisemblance des scores 0-0, 0-1, 1-0, 1-1.
+    lh, la = rates()
+    low = [(W[i], lh[i], la[i], HG[i], AG[i]) for i in range(N) if HG[i] <= 1 and AG[i] <= 1]
+    best_rho, best_ll = 0.0, -float("inf")
+    for k in range(-30, 11):
+        rho = k / 100.0
+        ll, ok = 0.0, True
+        for w, a, b, x, y in low:
+            tau = dixon_coles_tau(x, y, a, b, rho)
+            if tau <= 0:
+                ok = False
+                break
+            ll += w * math.log(tau)
+        if ok and ll > best_ll:
+            best_rho, best_ll = rho, ll
+
+    inv_team = {v: k for k, v in team_idx.items()}
+    inv_league = {v: k for k, v in league_idx.items()}
+    return DCModel(
+        mu={inv_league[l]: mu[l] for l in range(NL)},
+        ha={inv_league[l]: ha[l] for l in range(NL)},
+        att={inv_team[t]: att[t] for t in range(T)},
+        de={inv_team[t]: de[t] for t in range(T)},
+        rho=best_rho, n_matches=N,
+    )
+
+
+def get_dc_model() -> Optional[DCModel]:
+    """Modèle Dixon-Coles en cache : réajusté au plus une fois par DC_TTL secondes quand l'historique change."""
+    with dc_lock:
+        now = time.time()
+        with cache_lock:
+            version = data_version["v"]
+        if dc_cache["model"] is not None and (dc_cache["version"] == version
+                                               or now - dc_cache["fitted_at"] < DC_TTL):
+            return dc_cache["model"]
+        if dc_cache["model"] is None and now < dc_cache["retry_after"]:
+            return None
+        try:
+            data = to_dc_tuples(load_finished_matches())
+            model = fit_dixon_coles(data, datetime.now(PARIS_TZ).date().toordinal())
+        except Exception:
+            logger.exception("Dixon-Coles fit failed")
+            model = None
+        if model is None:
+            dc_cache.update(retry_after=now + INSUFFICIENT_RETRY, version=version, fitted_at=now)
+            return dc_cache["model"]
+        dc_cache.update(model=model, version=version, fitted_at=now, retry_after=0.0)
+        logger.info("Dixon-Coles ajusté : %s matchs, %s équipes, rho=%.2f",
+                    model.n_matches, model.n_teams, model.rho)
+        return model
+
+
+def dc_prediction(home_key: str, away_key: str, league_code: str) -> Optional[dict]:
+    model = get_dc_model()
+    if model is None:
+        return None
+    return model.predict(home_key, away_key, LEAGUES.get(league_code, league_code))
+
+
+def dc_walk_forward(tuples: List[tuple], start_idx: int, refit_days: int = 30) -> Dict[int, List[float]]:
+    """Prédictions Dixon-Coles hors échantillon à partir de start_idx : le modèle est ré-ajusté tous les
+    refit_days jours, uniquement sur les matchs joués AVANT le premier match du bloc."""
+    n = len(tuples)
+    days = [t[0] for t in tuples]
+    preds: Dict[int, List[float]] = {}
+    i = start_idx
+    while i < n:
+        j = i
+        while j < n and days[j] < days[i] + refit_days:
+            j += 1
+        cut = bisect.bisect_left(days, days[i])
+        model = fit_dixon_coles(tuples[:cut], days[i]) if cut > 0 else None
+        if model is not None:
+            for k in range(i, j):
+                p = model.predict(tuples[k][2], tuples[k][3], tuples[k][1])
+                preds[k] = [p[o] / 100.0 for o in OUTCOMES]
+        i = j
+    return preds
+
+
 def build_features(home_key: str, away_key: str, league_code: str) -> dict:
     hp, ap = team_profile(home_key), team_profile(away_key)
     ratings = elo_ratings()
@@ -714,14 +972,14 @@ def ml_row(hp: dict, ap: dict, elo_diff: float) -> List[float]:
 OUTCOMES = ("home_win", "draw", "away_win")
 
 
-def build_walk_forward(with_components: bool = False) -> List[dict]:
+def build_walk_forward(with_components: bool = False, matches=None) -> List[dict]:
     """Parcours chronologique : pour chaque match, features et prédictions Poisson/Elo calculées
     uniquement avec le passé (pas de fuite). Chaque ligne : {x, y, [poisson, elo]} (probas en 0-1)."""
     rolling: Dict[str, List[Tuple[int, int]]] = {}
     ratings: Dict[str, float] = {}
     league_sums: Dict[str, Tuple[int, float, float]] = {}
     rows = []
-    for row in load_finished_matches():
+    for row in (matches if matches is not None else load_finished_matches()):
         h, a = row["home_key"], row["away_key"]
         hg, ag = int(row["home_score"]), int(row["away_score"])
         hp = rolling_profile(rolling.get(h, [])[-10:])
@@ -845,14 +1103,19 @@ def ml_prediction(home_key: str, away_key: str, hp: dict, ap: dict) -> Optional[
 # --------------------------------------------------------------------------- #
 # Poids de l'ensemble (ajustables par backtest)
 # --------------------------------------------------------------------------- #
-def _valid_weights(w, size: int) -> bool:
-    return (isinstance(w, list) and len(w) == size
-            and all(isinstance(x, (int, float)) and x >= 0 for x in w)
-            and abs(sum(w) - 1.0) < 1e-6)
+COMPONENTS_FULL = ["dc", "poisson", "elo", "ml"]
+COMPONENTS_NO_ML = ["dc", "poisson", "elo"]
+
+
+def _valid_weights(w, names: List[str]) -> bool:
+    return (isinstance(w, dict) and set(w) == set(names)
+            and all(isinstance(x, (int, float)) and x >= 0 for x in w.values())
+            and abs(sum(w.values()) - 1.0) < 1e-6)
 
 
 def load_weights() -> dict:
-    """Lit WEIGHTS_PATH (relu seulement si le fichier a changé), sinon poids par défaut."""
+    """Lit WEIGHTS_PATH (relu seulement si le fichier a changé), sinon poids par défaut.
+    Un fichier au format d'une ancienne version est ignoré."""
     try:
         mtime = os.path.getmtime(WEIGHTS_PATH)
     except OSError:
@@ -860,14 +1123,14 @@ def load_weights() -> dict:
     with cache_lock:
         if weights_cache["mtime"] == mtime:
             return weights_cache["weights"]
-    weights = {k: list(v) for k, v in DEFAULT_WEIGHTS.items()}
+    weights = {k: dict(v) for k, v in DEFAULT_WEIGHTS.items()}
     try:
         with open(WEIGHTS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if _valid_weights(data.get("with_ml"), 3):
-            weights["with_ml"] = [float(x) for x in data["with_ml"]]
-        if _valid_weights(data.get("without_ml"), 2):
-            weights["without_ml"] = [float(x) for x in data["without_ml"]]
+        if _valid_weights(data.get("with_ml"), COMPONENTS_FULL):
+            weights["with_ml"] = {k: float(v) for k, v in data["with_ml"].items()}
+        if _valid_weights(data.get("without_ml"), COMPONENTS_NO_ML):
+            weights["without_ml"] = {k: float(v) for k, v in data["without_ml"].items()}
     except Exception:
         logger.exception("Poids d'ensemble illisibles, valeurs par défaut utilisées")
     with cache_lock:
@@ -875,40 +1138,87 @@ def load_weights() -> dict:
     return weights
 
 
+def combine_components(components: Dict[str, dict], wdict: Dict[str, float]) -> Tuple[dict, Dict[str, float]]:
+    """Moyenne pondérée des modèles disponibles (poids renormalisés si l'un d'eux manque)."""
+    names = [n for n in wdict if n in components]
+    total = sum(wdict[n] for n in names)
+    used = ({n: wdict[n] / total for n in names} if total > 0
+            else {n: 1.0 / len(names) for n in names})
+    final = {k: sum(used[n] * components[n][k] for n in names) for k in OUTCOMES}
+    s = sum(final.values()) or 1.0
+    return {k: round(v * 100 / s, 1) for k, v in final.items()}, used
+
+
 def calculate_surgical_consensus(home_key: str, away_key: str, league_code="eng.1") -> dict:
     details = build_features(home_key, away_key, league_code)
-    poisson, elo_probs = details["poisson"], details["elo_probs"]
-
+    dc = dc_prediction(home_key, away_key, league_code)
     ml = ml_prediction(home_key, away_key, details["home_profile"], details["away_profile"])
-    weights = load_weights()
-    if ml:
-        w = weights["with_ml"]
-        method = "Poisson (Dixon-Coles) + Elo + LogisticRegression entraînée"
-    else:
-        w = weights["without_ml"] + [0.0]
-        method = "Poisson (Dixon-Coles) + Elo (historique ML insuffisant)"
 
-    final = {}
-    for key in OUTCOMES:
-        final[key] = (poisson[key] * w[0] + elo_probs[key] * w[1]
-                      + (ml[key] * w[2] if ml else 0.0))
-    total = sum(final.values()) or 1.0
-    final = {k: round(v * 100 / total, 1) for k, v in final.items()}
+    components = {"poisson": details["poisson"], "elo": details["elo_probs"]}
+    if dc:
+        components["dc"] = dc
+    if ml:
+        components["ml"] = ml
+    weights = load_weights()
+    final, used = combine_components(components, weights["with_ml"] if ml else weights["without_ml"])
+
+    # Le modèle Dixon-Coles (s'il est disponible) fournit aussi xG, scores exacts, BTTS et over 2.5.
+    dist = dc or details["poisson"]
+    home_exp = round(dc["home_xg"], 2) if dc else details["home_xg"]
+    away_exp = round(dc["away_xg"], 2) if dc else details["away_xg"]
+    labels = {"dc": "Dixon-Coles", "poisson": "Poisson (forme)", "elo": "Elo", "ml": "LogisticRegression"}
+    method = " + ".join(labels[n] for n in used)
 
     return {
         **final,
-        "home_exp": details["home_xg"],
-        "away_exp": details["away_xg"],
-        "btts_prob": round(poisson["btts"], 1),
-        "over_25_prob": round(poisson["over25"], 1),
-        "top_exact_scores": poisson["scores"][:3],
-        "all_exact_scores": poisson["scores"],
+        "home_exp": home_exp,
+        "away_exp": away_exp,
+        "btts_prob": round(dist["btts"], 1),
+        "over_25_prob": round(dist["over25"], 1),
+        "top_exact_scores": dist["scores"][:3],
+        "all_exact_scores": dist["scores"],
         "model": method,
         "ml_active": bool(ml),
+        "dc_active": bool(dc),
         "ml_training_matches": ml["training_matches"] if ml else 0,
-        "weights": [round(x, 2) for x in w],
+        "weights": {k: round(v, 2) for k, v in used.items()},
+        "components": {n: {k: round(components[n][k], 1) for k in OUTCOMES} for n in used},
         "data": details,
     }
+
+
+def log_prediction(event_id, league_code, home_team, away_team, home_key, away_key,
+                   probs: dict, model_name: str, components: dict) -> bool:
+    """Enregistre la prédiction d'un match PAS ENCORE terminé (suivi en conditions réelles).
+    Elle est réécrite à chaque nouvel appel tant que le résultat est inconnu, puis réglée
+    automatiquement quand le match est enregistré dans l'historique."""
+    if not event_id:
+        return False
+    event_id = str(event_id)
+    try:
+        with db() as conn:
+            if conn.execute("SELECT 1 FROM matches_history WHERE event_id = ?", (event_id,)).fetchone():
+                return False  # résultat déjà connu : la prédiction ne serait plus honnête
+            now = datetime.now(UTC_TZ).isoformat()
+            comp_json = json.dumps({n: [c["home_win"], c["draw"], c["away_win"]]
+                                    for n, c in components.items()})
+            conn.execute("""
+                INSERT INTO predictions_log
+                (event_id, created_at, updated_at, league_code, home_team, away_team, home_key, away_key,
+                 p_home, p_draw, p_away, model, app_version, components)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(event_id) DO UPDATE SET
+                    updated_at = excluded.updated_at,
+                    p_home = excluded.p_home, p_draw = excluded.p_draw, p_away = excluded.p_away,
+                    model = excluded.model, app_version = excluded.app_version,
+                    components = excluded.components
+                WHERE predictions_log.outcome IS NULL
+            """, (event_id, now, now, league_code, home_team, away_team, home_key, away_key,
+                  probs["home_win"], probs["draw"], probs["away_win"], model_name, APP_VERSION, comp_json))
+        return True
+    except Exception:
+        logger.exception("Unable to log prediction %s", event_id)
+        return False
 
 
 def implied_value(probability: float, decimal_odds: Optional[float]) -> dict:
@@ -986,6 +1296,7 @@ def health():
         unlinked = conn.execute(
             "SELECT COUNT(*) FROM matches_history WHERE home_id IS NULL OR away_id IS NULL"
         ).fetchone()[0]
+        tracked = conn.execute("SELECT COUNT(*) FROM predictions_log").fetchone()[0]
     with cache_lock:
         model_in_memory = ml_model_cache["model"] is not None
     return {
@@ -996,6 +1307,8 @@ def health():
         "sklearn_available": SKLEARN_AVAILABLE,
         "ml_active": model_in_memory or os.path.exists(MODEL_PATH),
         "tuned_weights": os.path.exists(WEIGHTS_PATH),
+        "dixon_coles_active": dc_cache["model"] is not None,
+        "tracked_predictions": tracked,
         "backfill_running": backfill_lock.locked(),
     }
 
@@ -1089,7 +1402,11 @@ def predict_foot_match(req: MatchRequest):
     cache_key = f"{home_key}|{away_key}|{league_code}"
     cached = cache_get(prediction_cache, cache_key)
     if cached is not None:
-        return cached
+        # Même affiche déjà calculée : on enregistre quand même la prédiction pour CET event_id.
+        md = cached["model_details"]
+        tracked = log_prediction(req.event_id, league_code, home_team, away_team, home_key, away_key,
+                                 cached["probabilities"], md["name"], md["components"])
+        return {**cached, "model_details": {**md, "prediction_tracked": tracked}}
 
     try:
         consensus = calculate_surgical_consensus(home_key, away_key, league_code)
@@ -1099,6 +1416,8 @@ def predict_foot_match(req: MatchRequest):
             "away_win": consensus["away_win"],
         }
 
+        tracked = log_prediction(req.event_id, league_code, home_team, away_team, home_key, away_key,
+                                 probs, consensus["model"], consensus["components"])
         predicted_score = consensus["top_exact_scores"][0]["score"]
         max_prob = max(probs.values())
         if max_prob >= 60:
@@ -1177,6 +1496,9 @@ def predict_foot_match(req: MatchRequest):
                 "machine_learning_active": consensus["ml_active"],
                 "machine_learning_training_matches": consensus["ml_training_matches"],
                 "ensemble_weights": consensus["weights"],
+                "components": consensus["components"],
+                "dixon_coles_active": consensus["dc_active"],
+                "prediction_tracked": tracked,
                 "data_quality": data_quality,
                 "source": "ESPN + historique SQLite local",
             },
@@ -1214,10 +1536,6 @@ def _accuracy(ps: List[List[float]], ys: List[int]) -> float:
 def _metrics(ps: List[List[float]], ys: List[int]) -> dict:
     return {"log_loss": round(_log_loss(ps, ys), 4), "brier": round(_brier(ps, ys), 4),
             "accuracy": round(_accuracy(ps, ys), 4)}
-
-
-def _mix(weights: List[float], comps: List[List[List[float]]], i: int) -> List[float]:
-    return [sum(w * c[i][k] for w, c in zip(weights, comps)) for k in range(3)]
 
 
 def _calibration(ps: List[List[float]], ys: List[int]) -> List[dict]:
@@ -1267,12 +1585,25 @@ def backtest(test_ratio: float = 0.2):
     }
 
 
+def _compositions(k: int, total: int):
+    """Toutes les répartitions de `total` unités entre k poids (entiers)."""
+    if k == 1:
+        yield (total,)
+        return
+    for i in range(total + 1):
+        for rest in _compositions(k - 1, total - i):
+            yield (i,) + rest
+
+
 @app.get("/api/backtest/ensemble")
-def backtest_ensemble(save: bool = False):
-    """Backtest walk-forward de l'ensemble complet (Poisson + Elo + ML), en 3 périodes :
+def backtest_ensemble(save: bool = False, refit_days: int = 30):
+    """Backtest walk-forward de l'ensemble complet (Dixon-Coles + Poisson forme + Elo + ML), en 3 périodes :
     60 % entraînement du ML, 20 % réglage des poids, 20 % test final (jamais utilisé pour régler).
+    Dixon-Coles est ré-ajusté tous les refit_days jours sur le seul passé (peut prendre un moment).
     save=true enregistre les poids retenus dans WEIGHTS_PATH ; ils sont utilisés par /predict."""
-    rows = build_walk_forward(True)
+    refit_days = max(7, min(refit_days, 120))
+    matches = load_finished_matches()
+    rows = build_walk_forward(True, matches)
     n = len(rows)
     t1, t2 = int(n * 0.6), int(n * 0.8)
     train, tune, test = rows[:t1], rows[t1:t2], rows[t2:]
@@ -1282,6 +1613,9 @@ def backtest_ensemble(save: bool = False):
             detail=f"Historique insuffisant ({n} matchs). Lance /api/history/backfill avec plus de jours.",
         )
 
+    dc_preds = dc_walk_forward(to_dc_tuples(matches), t1, refit_days)
+    for k in range(t1, n):
+        rows[k]["dc"] = dc_preds.get(k, rows[k]["poisson"])  # repli sur Poisson si pas assez d'historique
     y_tune, y_test = [r["y"] for r in tune], [r["y"] for r in test]
     freq = [sum(1 for r in train if r["y"] == c) / len(train) for c in range(3)]
 
@@ -1294,62 +1628,57 @@ def backtest_ensemble(save: bool = False):
             logger.exception("Backtest ML training failed")
             model = None
 
-    def comps_for(part, use_ml):
-        c = [[r["poisson"] for r in part], [r["elo"] for r in part]]
-        if use_ml:
-            c.append(model_probas(model, [r["x"] for r in part]))
-        return c
-
-    def tune_grid(use_ml):
-        comps = comps_for(tune, use_ml)
-        best, best_ll = None, float("inf")
-        steps = 20
-        candidates = []
-        if use_ml:
-            for i in range(steps + 1):
-                for j in range(steps + 1 - i):
-                    candidates.append([i / steps, j / steps, (steps - i - j) / steps])
-        else:
-            candidates = [[i / steps, (steps - i) / steps] for i in range(steps + 1)]
-        for w in candidates:
-            ll = -sum(math.log(max(1e-12, sum(wk * c[i][y_tune[i]] for wk, c in zip(w, comps))))
-                      for i in range(len(tune))) / len(tune)
-            if ll < best_ll:
-                best, best_ll = w, ll
-        return best, best_ll
-
-    def evaluate(w, use_ml):
-        comps = comps_for(test, use_ml)
-        return [_mix(w, comps, i) for i in range(len(test))]
-
-    result = {"train_matches": len(train), "tune_matches": len(tune), "test_matches": len(test),
-              "baseline_frequencies": _metrics([freq] * len(test), y_test),
-              "uniform_log_loss_reference": round(math.log(3), 4),
-              "components_on_test": {
-                  "poisson_dixon_coles": _metrics([r["poisson"] for r in test], y_test),
-                  "elo": _metrics([r["elo"] for r in test], y_test)}}
-    new_weights = {}
-
-    w_no_ml, ll_no_ml = tune_grid(False)
-    new_weights["without_ml"] = w_no_ml
-    ens_no_ml = evaluate(w_no_ml, False)
-    result["ensemble_without_ml"] = {"weights_poisson_elo": w_no_ml, "tune_log_loss": round(ll_no_ml, 4),
-                                     "test": _metrics(ens_no_ml, y_test)}
-    final_probs = ens_no_ml
-
+    base = ["dc", "poisson", "elo"]
+    tune_c = {nm: [r[nm] for r in tune] for nm in base}
+    test_c = {nm: [r[nm] for r in test] for nm in base}
     if model is not None:
-        result["components_on_test"]["logistic_regression"] = _metrics(
-            model_probas(model, [r["x"] for r in test]), y_test)
-        w_ml, ll_ml = tune_grid(True)
-        new_weights["with_ml"] = w_ml
-        ens_ml = evaluate(w_ml, True)
-        result["ensemble_with_ml"] = {"weights_poisson_elo_ml": w_ml, "tune_log_loss": round(ll_ml, 4),
-                                      "test": _metrics(ens_ml, y_test)}
-        final_probs = ens_ml
+        tune_c["ml"] = model_probas(model, [r["x"] for r in tune])
+        test_c["ml"] = model_probas(model, [r["x"] for r in test])
+
+    def tune_grid(names):
+        best_w, best_ll = None, float("inf")
+        for combo in _compositions(len(names), 10):
+            ws = [c / 10.0 for c in combo]
+            ll = 0.0
+            for i in range(len(tune)):
+                p = sum(w * tune_c[nm][i][y_tune[i]] for w, nm in zip(ws, names) if w)
+                ll -= math.log(max(1e-12, p))
+            ll /= len(tune)
+            if ll < best_ll:
+                best_w, best_ll = ws, ll
+        return best_w, best_ll
+
+    def evaluate(names, ws):
+        return [[sum(w * test_c[nm][i][k] for w, nm in zip(ws, names)) for k in range(3)]
+                for i in range(len(test))]
+
+    result = {
+        "train_matches": len(train), "tune_matches": len(tune), "test_matches": len(test),
+        "dixon_coles_out_of_sample_coverage_percent": round(len(dc_preds) / (n - t1) * 100, 1),
+        "baseline_frequencies": _metrics([freq] * len(test), y_test),
+        "uniform_log_loss_reference": round(math.log(3), 4),
+        "components_on_test": {
+            "dixon_coles": _metrics(test_c["dc"], y_test),
+            "poisson_forme": _metrics(test_c["poisson"], y_test),
+            "elo": _metrics(test_c["elo"], y_test),
+        },
+    }
+    if model is not None:
+        result["components_on_test"]["logistic_regression"] = _metrics(test_c["ml"], y_test)
+
+    new_weights = {}
+    final_probs = None
+    for key, names in (("without_ml", COMPONENTS_NO_ML), ("with_ml", COMPONENTS_FULL)):
+        if key == "with_ml" and model is None:
+            continue
+        ws, tune_ll = tune_grid(names)
+        probs = evaluate(names, ws)
+        new_weights[key] = dict(zip(names, ws))
+        result[f"ensemble_{key}"] = {"weights": new_weights[key], "tune_log_loss": round(tune_ll, 4),
+                                     "test": _metrics(probs, y_test)}
+        final_probs = probs
 
     result["calibration_on_test"] = _calibration(final_probs, y_test)
-
-    # On n'enregistre que si l'ensemble bat le baseline sur la période de test.
     ens_ll = _log_loss(final_probs, y_test)
     base_ll = _log_loss([freq] * len(test), y_test)
     result["beats_baseline"] = ens_ll < base_ll
@@ -1359,8 +1688,8 @@ def backtest_ensemble(save: bool = False):
             result["message"] = "Poids non enregistrés : l'ensemble ne bat pas le baseline sur la période de test."
         else:
             try:
-                merged = {k: list(v) for k, v in load_weights().items()}
-                merged.update({k: [round(x, 4) for x in v] for k, v in new_weights.items()})
+                merged = {k: dict(v) for k, v in load_weights().items()}
+                merged.update({k: {nm: round(w, 4) for nm, w in v.items()} for k, v in new_weights.items()})
                 tmp = WEIGHTS_PATH + ".tmp"
                 with open(tmp, "w", encoding="utf-8") as f:
                     json.dump(merged, f)
@@ -1371,6 +1700,71 @@ def backtest_ensemble(save: bool = False):
                 logger.exception("Impossible d'enregistrer les poids")
                 result["saved"] = False
     return result
+
+
+@app.get("/api/tracking")
+def tracking(days: int = 0, limit: int = 20):
+    """Suivi en conditions réelles : prédictions faites AVANT le match, comparées au résultat réel.
+    days > 0 limite aux matchs réglés depuis N jours. C'est la seule mesure vraiment honnête du modèle."""
+    limit = max(1, min(limit, 200))
+    where, params = "outcome IS NOT NULL", []
+    if days > 0:
+        where += " AND settled_at >= ?"
+        params.append((datetime.now(UTC_TZ) - timedelta(days=days)).isoformat())
+    with db() as conn:
+        rows = [dict(r) for r in conn.execute(f"""
+            SELECT event_id, league_code, home_team, away_team, p_home, p_draw, p_away, model,
+                   components, outcome, home_score, away_score, settled_at
+            FROM predictions_log WHERE {where} ORDER BY settled_at DESC
+        """, params).fetchall()]
+        pending = conn.execute("SELECT COUNT(*) FROM predictions_log WHERE outcome IS NULL").fetchone()[0]
+        hist = conn.execute("""
+            SELECT COALESCE(SUM(home_score > away_score), 0), COALESCE(SUM(home_score = away_score), 0),
+                   COALESCE(SUM(home_score < away_score), 0), COUNT(*)
+            FROM matches_history WHERE home_score IS NOT NULL AND away_score IS NOT NULL
+        """).fetchone()
+    if not rows:
+        return {"settled": 0, "pending": pending,
+                "message": "Aucune prédiction réglée pour l'instant. Les prédictions envoyées avec un event_id "
+                           "sont enregistrées avant le match puis réglées quand le résultat arrive."}
+
+    ps = [[r["p_home"] / 100, r["p_draw"] / 100, r["p_away"] / 100] for r in rows]
+    ys = [r["outcome"] for r in rows]
+    total = hist[3]
+    freq = [hist[c] / total for c in range(3)] if total else [1 / 3] * 3
+
+    per_component: Dict[str, Tuple[list, list]] = {}
+    for r in rows:
+        try:
+            comps = json.loads(r["components"] or "{}")
+        except ValueError:
+            continue
+        for name, p in comps.items():
+            per_component.setdefault(name, ([], []))
+            per_component[name][0].append([x / 100 for x in p])
+            per_component[name][1].append(r["outcome"])
+
+    labels = ["Domicile", "Nul", "Extérieur"]
+    recent = [{
+        "match": f"{r['home_team']} vs {r['away_team']}",
+        "probabilities": {"home_win": r["p_home"], "draw": r["p_draw"], "away_win": r["p_away"]},
+        "predicted": labels[max(range(3), key=lambda c: ps[i][c])],
+        "actual": labels[r["outcome"]],
+        "score": f"{r['home_score']} - {r['away_score']}",
+        "correct": max(range(3), key=lambda c: ps[i][c]) == r["outcome"],
+    } for i, r in enumerate(rows[:limit])]
+
+    return {
+        "settled": len(rows),
+        "pending": pending,
+        "model": _metrics(ps, ys),
+        "baseline_frequencies": _metrics([freq] * len(rows), ys),
+        "components": {name: {"matches": len(y), **_metrics(p, y)} for name, (p, y) in per_component.items()},
+        "calibration": _calibration(ps, ys),
+        "reliability_note": ("Moins de 200 matchs réglés : les écarts observés peuvent être du hasard."
+                             if len(rows) < 200 else "Échantillon suffisant pour une première lecture."),
+        "recent": recent,
+    }
 
 
 @app.post("/api/history/backfill")
