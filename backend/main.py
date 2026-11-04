@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import math
 import time
 import sqlite3
@@ -29,9 +30,10 @@ try:
 except Exception:
     SKLEARN_AVAILABLE = False
 
-APP_VERSION = "33.0"
+APP_VERSION = "34.0"
 DB_PATH = os.getenv("FOOTBALL_DB_PATH", "football_history.db")
 MODEL_PATH = os.getenv("MODEL_PATH", "ml_model.joblib")
+WEIGHTS_PATH = os.getenv("WEIGHTS_PATH", "ensemble_weights.json")
 PARIS_TZ = ZoneInfo("Europe/Paris")
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 REQUEST_TIMEOUT = 8
@@ -41,8 +43,12 @@ BACKFILL_WORKERS = int(os.getenv("BACKFILL_WORKERS", "6"))
 MIN_ML_ROWS = 80
 MODEL_TTL = 3600                  # durée de vie du modèle ML (secondes)
 INSUFFICIENT_RETRY = 300          # délai avant de retenter un entraînement impossible
-ML_FEATURE_VERSION = 2            # à incrémenter si les features changent
+ML_FEATURE_VERSION = 3            # à incrémenter si les features ou le modèle changent
 HOME_ELO_ADV = 55.0
+DC_RHO = float(os.getenv("DC_RHO", "-0.08"))   # correction Dixon-Coles (négatif = plus de 0-0 / 1-1)
+LEAGUE_PRIOR_WEIGHT = 20          # pseudo-matchs pour la moyenne de ligue du backtest walk-forward
+# Poids par défaut de l'ensemble (Poisson, Elo, ML). Remplacés par ceux de /api/backtest/ensemble?save=true.
+DEFAULT_WEIGHTS = {"with_ml": [0.55, 0.20, 0.25], "without_ml": [0.72, 0.28]}
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("signal-fort")
@@ -73,6 +79,7 @@ matches_cache = TTLCache(maxsize=200, ttl=300)
 prediction_cache = TTLCache(maxsize=500, ttl=900)
 ml_model_cache = {"model": None, "trained_at": 0.0, "rows": 0, "retry_after": 0.0}
 elo_cache = {"version": -1, "ratings": {}}
+weights_cache = {"mtime": None, "weights": DEFAULT_WEIGHTS}
 data_version = {"v": 0}  # incrémenté dès que l'historique change réellement
 backfill_status = {"running": False, "days": 0, "total": 0, "completed": 0,
                    "errors": 0, "started_at": None, "finished_at": None}
@@ -465,7 +472,7 @@ KEY_COLUMNS = """
 def load_finished_matches():
     with db() as conn:
         return conn.execute(f"""
-            SELECT home_team, away_team, home_score, away_score, date, {KEY_COLUMNS}
+            SELECT league, home_team, away_team, home_score, away_score, date, {KEY_COLUMNS}
             FROM matches_history
             WHERE home_score IS NOT NULL AND away_score IS NOT NULL
             ORDER BY date ASC, event_id ASC
@@ -583,12 +590,28 @@ def poisson_p(lam: float, goals: int) -> float:
     return math.exp(-lam) * (lam ** goals) / math.factorial(goals)
 
 
-def poisson_model(home_xg: float, away_xg: float) -> dict:
+def dixon_coles_tau(hg: int, ag: int, home_xg: float, away_xg: float, rho: float) -> float:
+    """Correction Dixon-Coles : Poisson indépendant sous-estime 0-0 et 1-1, surestime 1-0 et 0-1."""
+    if hg == 0 and ag == 0:
+        tau = 1.0 - home_xg * away_xg * rho
+    elif hg == 0 and ag == 1:
+        tau = 1.0 + home_xg * rho
+    elif hg == 1 and ag == 0:
+        tau = 1.0 + away_xg * rho
+    elif hg == 1 and ag == 1:
+        tau = 1.0 - rho
+    else:
+        return 1.0
+    return max(0.0, tau)
+
+
+def poisson_model(home_xg: float, away_xg: float, rho: float = DC_RHO) -> dict:
     matrix = {}
     total = home_win = draw = away_win = btts = over25 = 0.0
     for hg in range(8):
         for ag in range(8):
-            p = poisson_p(home_xg, hg) * poisson_p(away_xg, ag)
+            p = (poisson_p(home_xg, hg) * poisson_p(away_xg, ag)
+                 * dixon_coles_tau(hg, ag, home_xg, away_xg, rho))
             matrix[(hg, ag)] = p
             total += p
             if hg > ag:
@@ -615,27 +638,46 @@ def poisson_model(home_xg: float, away_xg: float) -> dict:
     }
 
 
+def _shrink(value: float, n: int, prior: float, weight: float = 5.0) -> float:
+    return (value * n + prior * weight) / (n + weight)
+
+
+def match_components(hp: dict, ap: dict, home_elo: float, away_elo: float,
+                     home_avg: float, away_avg: float) -> dict:
+    """Unique définition des modèles Poisson et Elo : utilisée en prédiction ET en backtest."""
+    n_h, n_a = hp.get("matches", 0), ap.get("matches", 0)
+    h_attack = _shrink(hp["goals_for_avg"], n_h, home_avg)
+    h_defence = _shrink(hp["goals_against_avg"], n_h, away_avg)
+    a_attack = _shrink(ap["goals_for_avg"], n_a, away_avg)
+    a_defence = _shrink(ap["goals_against_avg"], n_a, home_avg)
+
+    home_xg = max(0.20, min(4.0, (h_attack * a_defence / max(0.5, away_avg)) * 1.08))
+    away_xg = max(0.20, min(4.0, (a_attack * h_defence / max(0.5, home_avg)) * 0.94))
+    poisson = poisson_model(home_xg, away_xg)
+
+    elo_diff = home_elo + HOME_ELO_ADV - away_elo
+    home_elo_prob = 1.0 / (1.0 + 10 ** (-elo_diff / 400.0))
+    draw_base = max(0.16, min(0.30, 0.27 - abs(home_xg - away_xg) * 0.035))
+    elo_probs = {
+        "home_win": home_elo_prob * (1 - draw_base) * 100,
+        "draw": draw_base * 100,
+        "away_win": (1 - home_elo_prob) * (1 - draw_base) * 100,
+    }
+    return {"home_xg": home_xg, "away_xg": away_xg, "poisson": poisson, "elo": elo_probs}
+
+
 def build_features(home_key: str, away_key: str, league_code: str) -> dict:
     hp, ap = team_profile(home_key), team_profile(away_key)
     ratings = elo_ratings()
     home_elo = ratings.get(home_key, 1500.0)
     away_elo = ratings.get(away_key, 1500.0)
     home_avg, away_avg = league_goal_averages(league_code)
-
-    def shrink(value, n, prior, weight=5.0):
-        return (value * n + prior * weight) / (n + weight)
-
-    h_attack = shrink(hp["goals_for_avg"], hp["matches"], home_avg)
-    h_defence = shrink(hp["goals_against_avg"], hp["matches"], away_avg)
-    a_attack = shrink(ap["goals_for_avg"], ap["matches"], away_avg)
-    a_defence = shrink(ap["goals_against_avg"], ap["matches"], home_avg)
-
-    home_xg = max(0.20, min(4.0, (h_attack * a_defence / max(0.5, away_avg)) * 1.08))
-    away_xg = max(0.20, min(4.0, (a_attack * h_defence / max(0.5, home_avg)) * 0.94))
+    comp = match_components(hp, ap, home_elo, away_elo, home_avg, away_avg)
     return {
         "home_profile": hp, "away_profile": ap,
         "home_elo": round(home_elo, 1), "away_elo": round(away_elo, 1),
-        "home_xg": round(home_xg, 2), "away_xg": round(away_xg, 2),
+        "home_xg": round(comp["home_xg"], 2), "away_xg": round(comp["away_xg"], 2),
+        "poisson": comp["poisson"], "elo_probs": comp["elo"],
         "league_home_goals_avg": round(home_avg, 2),
         "league_away_goals_avg": round(away_avg, 2),
     }
@@ -647,9 +689,10 @@ def build_features(home_key: str, away_key: str, league_code: str) -> dict:
 def rolling_profile(games: List[Tuple[int, int]]) -> dict:
     """Profil glissant (buts pour, buts contre) -> mêmes clés que team_profile."""
     if not games:
-        return {"goals_for_avg": 1.35, "goals_against_avg": 1.35, "points_per_game": 1.0}
+        return {"matches": 0, "goals_for_avg": 1.35, "goals_against_avg": 1.35, "points_per_game": 1.0}
     n = len(games)
     return {
+        "matches": n,
         "goals_for_avg": sum(g[0] for g in games) / n,
         "goals_against_avg": sum(g[1] for g in games) / n,
         "points_per_game": sum(3 if g[0] > g[1] else 1 if g[0] == g[1] else 0 for g in games) / n,
@@ -668,30 +711,63 @@ def ml_row(hp: dict, ap: dict, elo_diff: float) -> List[float]:
     ]
 
 
-def build_ml_dataset() -> Tuple[List[List[float]], List[int]]:
-    """Dataset chronologique : features calculées uniquement avec le passé du match (pas de fuite)."""
+OUTCOMES = ("home_win", "draw", "away_win")
+
+
+def build_walk_forward(with_components: bool = False) -> List[dict]:
+    """Parcours chronologique : pour chaque match, features et prédictions Poisson/Elo calculées
+    uniquement avec le passé (pas de fuite). Chaque ligne : {x, y, [poisson, elo]} (probas en 0-1)."""
     rolling: Dict[str, List[Tuple[int, int]]] = {}
     ratings: Dict[str, float] = {}
-    X, y = [], []
+    league_sums: Dict[str, Tuple[int, float, float]] = {}
+    rows = []
     for row in load_finished_matches():
         h, a = row["home_key"], row["away_key"]
         hg, ag = int(row["home_score"]), int(row["away_score"])
         hp = rolling_profile(rolling.get(h, [])[-10:])
         ap = rolling_profile(rolling.get(a, [])[-10:])
-        elo_diff = ratings.get(h, 1500.0) - ratings.get(a, 1500.0)
-        X.append(ml_row(hp, ap, elo_diff))
-        y.append(0 if hg > ag else 1 if hg == ag else 2)
+        home_elo, away_elo = ratings.get(h, 1500.0), ratings.get(a, 1500.0)
+        item = {"x": ml_row(hp, ap, home_elo - away_elo),
+                "y": 0 if hg > ag else 1 if hg == ag else 2}
+        if with_components:
+            n, hs, as_ = league_sums.get(row["league"], (0, 0.0, 0.0))
+            home_avg = max(0.65, (hs + 1.45 * LEAGUE_PRIOR_WEIGHT) / (n + LEAGUE_PRIOR_WEIGHT))
+            away_avg = max(0.55, (as_ + 1.20 * LEAGUE_PRIOR_WEIGHT) / (n + LEAGUE_PRIOR_WEIGHT))
+            comp = match_components(hp, ap, home_elo, away_elo, home_avg, away_avg)
+            item["poisson"] = [comp["poisson"][k] / 100.0 for k in OUTCOMES]
+            item["elo"] = [comp["elo"][k] / 100.0 for k in OUTCOMES]
+        rows.append(item)
         rolling[h] = (rolling.get(h, []) + [(hg, ag)])[-10:]
         rolling[a] = (rolling.get(a, []) + [(ag, hg)])[-10:]
         elo_update(ratings, h, a, hg, ag)
-    return X, y
+        n, hs, as_ = league_sums.get(row["league"], (0, 0.0, 0.0))
+        league_sums[row["league"]] = (n + 1, hs + hg, as_ + ag)
+    return rows
+
+
+def build_ml_dataset() -> Tuple[List[List[float]], List[int]]:
+    rows = build_walk_forward(False)
+    return [r["x"] for r in rows], [r["y"] for r in rows]
 
 
 def make_model():
+    # Pas de class_weight="balanced" : il décale les probabilités et les rend moins fiables.
     return make_pipeline(
         StandardScaler(),
-        LogisticRegression(max_iter=1000, class_weight="balanced"),
+        LogisticRegression(max_iter=1000),
     )
+
+
+def model_probas(model, X: List[List[float]]) -> List[List[float]]:
+    """Probabilités (0-1) ordonnées [domicile, nul, extérieur], même si une classe manque."""
+    classes = [int(c) for c in model.named_steps["logisticregression"].classes_]
+    out = []
+    for p in model.predict_proba(X):
+        full = [0.0, 0.0, 0.0]
+        for c, v in zip(classes, p):
+            full[c] = float(v)
+        out.append(full)
+    return out
 
 
 def train_ml_model():
@@ -753,15 +829,12 @@ def ml_prediction(home_key: str, away_key: str, hp: dict, ap: dict) -> Optional[
         return None
     ratings = elo_ratings()
     elo_diff = ratings.get(home_key, 1500.0) - ratings.get(away_key, 1500.0)
-    x = [ml_row(hp, ap, elo_diff)]
     try:
-        p = model.predict_proba(x)[0]
-        classes = list(model.named_steps["logisticregression"].classes_)
-        values = {int(c): float(v) for c, v in zip(classes, p)}
+        p = model_probas(model, [ml_row(hp, ap, elo_diff)])[0]
         return {
-            "home_win": values.get(0, 0.0) * 100,
-            "draw": values.get(1, 0.0) * 100,
-            "away_win": values.get(2, 0.0) * 100,
+            "home_win": p[0] * 100,
+            "draw": p[1] * 100,
+            "away_win": p[2] * 100,
             "training_matches": rows,
         }
     except Exception:
@@ -769,33 +842,56 @@ def ml_prediction(home_key: str, away_key: str, hp: dict, ap: dict) -> Optional[
         return None
 
 
+# --------------------------------------------------------------------------- #
+# Poids de l'ensemble (ajustables par backtest)
+# --------------------------------------------------------------------------- #
+def _valid_weights(w, size: int) -> bool:
+    return (isinstance(w, list) and len(w) == size
+            and all(isinstance(x, (int, float)) and x >= 0 for x in w)
+            and abs(sum(w) - 1.0) < 1e-6)
+
+
+def load_weights() -> dict:
+    """Lit WEIGHTS_PATH (relu seulement si le fichier a changé), sinon poids par défaut."""
+    try:
+        mtime = os.path.getmtime(WEIGHTS_PATH)
+    except OSError:
+        return DEFAULT_WEIGHTS
+    with cache_lock:
+        if weights_cache["mtime"] == mtime:
+            return weights_cache["weights"]
+    weights = {k: list(v) for k, v in DEFAULT_WEIGHTS.items()}
+    try:
+        with open(WEIGHTS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if _valid_weights(data.get("with_ml"), 3):
+            weights["with_ml"] = [float(x) for x in data["with_ml"]]
+        if _valid_weights(data.get("without_ml"), 2):
+            weights["without_ml"] = [float(x) for x in data["without_ml"]]
+    except Exception:
+        logger.exception("Poids d'ensemble illisibles, valeurs par défaut utilisées")
+    with cache_lock:
+        weights_cache.update(mtime=mtime, weights=weights)
+    return weights
+
+
 def calculate_surgical_consensus(home_key: str, away_key: str, league_code="eng.1") -> dict:
     details = build_features(home_key, away_key, league_code)
-    poisson = poisson_model(details["home_xg"], details["away_xg"])
-
-    elo_diff = details["home_elo"] + HOME_ELO_ADV - details["away_elo"]
-    home_elo_prob = 1.0 / (1.0 + 10 ** (-elo_diff / 400.0))
-    draw_base = max(0.16, min(0.30, 0.27 - abs(details["home_xg"] - details["away_xg"]) * 0.035))
-    elo_probs = {
-        "home_win": home_elo_prob * (1 - draw_base) * 100,
-        "draw": draw_base * 100,
-        "away_win": (1 - home_elo_prob) * (1 - draw_base) * 100,
-    }
+    poisson, elo_probs = details["poisson"], details["elo_probs"]
 
     ml = ml_prediction(home_key, away_key, details["home_profile"], details["away_profile"])
+    weights = load_weights()
     if ml:
-        weights = (0.55, 0.20, 0.25)
-        method = "Poisson + Elo + LogisticRegression entraînée"
-        ml_probs = ml
+        w = weights["with_ml"]
+        method = "Poisson (Dixon-Coles) + Elo + LogisticRegression entraînée"
     else:
-        weights = (0.72, 0.28, 0.0)
-        method = "Poisson + Elo (historique ML insuffisant)"
-        ml_probs = None
+        w = weights["without_ml"] + [0.0]
+        method = "Poisson (Dixon-Coles) + Elo (historique ML insuffisant)"
 
     final = {}
-    for key in ("home_win", "draw", "away_win"):
-        final[key] = (poisson[key] * weights[0] + elo_probs[key] * weights[1] +
-                      ((ml_probs[key] if ml_probs else 0.0) * weights[2]))
+    for key in OUTCOMES:
+        final[key] = (poisson[key] * w[0] + elo_probs[key] * w[1]
+                      + (ml[key] * w[2] if ml else 0.0))
     total = sum(final.values()) or 1.0
     final = {k: round(v * 100 / total, 1) for k, v in final.items()}
 
@@ -810,6 +906,7 @@ def calculate_surgical_consensus(home_key: str, away_key: str, league_code="eng.
         "model": method,
         "ml_active": bool(ml),
         "ml_training_matches": ml["training_matches"] if ml else 0,
+        "weights": [round(x, 2) for x in w],
         "data": details,
     }
 
@@ -843,7 +940,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title=f"Signal Fort - Version {APP_VERSION} | Real Data + Predictive Models",
     version=APP_VERSION,
-    description="Football predictions based on ESPN results, SQLite history, Elo, Poisson and optional trained machine learning.",
+    description="Football predictions based on ESPN results, SQLite history, Elo, Poisson (Dixon-Coles) and optional trained machine learning.",
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -898,6 +995,7 @@ def health():
         "matches_without_team_id": unlinked,
         "sklearn_available": SKLEARN_AVAILABLE,
         "ml_active": model_in_memory or os.path.exists(MODEL_PATH),
+        "tuned_weights": os.path.exists(WEIGHTS_PATH),
         "backfill_running": backfill_lock.locked(),
     }
 
@@ -945,9 +1043,10 @@ def get_foot_matches(date: str):
     ]
     found = []
     seen = set()
+    failures = 0
     with ThreadPoolExecutor(max_workers=10) as pool:
         futures = {
-            pool.submit(fetch_scoreboard, league_code, date_key): (league_code, date_key)
+            pool.submit(fetch_scoreboard, league_code, date_key, 3): (league_code, date_key)
             for league_code in LEAGUES for date_key in dates_to_check
         }
         for future in as_completed(futures):
@@ -955,6 +1054,7 @@ def get_foot_matches(date: str):
             try:
                 events = future.result()
             except Exception as exc:
+                failures += 1
                 logger.warning("ESPN request failed for %s: %s", league_code, exc)
                 continue
             for event in events:
@@ -966,8 +1066,10 @@ def get_foot_matches(date: str):
     found.sort(key=lambda x: x.get("_utc_date", ""))
     for item in found:
         item.pop("_utc_date", None)
-    result = {"date": date, "matches": found, "source": "ESPN"}
-    cache_set(matches_cache, date, result)
+    result = {"date": date, "matches": found, "source": "ESPN", "failed_requests": failures}
+    # Un résultat partiel (requêtes ESPN en échec) n'est pas mis en cache : le prochain appel réessaie.
+    if failures == 0:
+        cache_set(matches_cache, date, result)
     return result
 
 
@@ -1074,6 +1176,7 @@ def predict_foot_match(req: MatchRequest):
                 "name": consensus["model"],
                 "machine_learning_active": consensus["ml_active"],
                 "machine_learning_training_matches": consensus["ml_training_matches"],
+                "ensemble_weights": consensus["weights"],
                 "data_quality": data_quality,
                 "source": "ESPN + historique SQLite local",
             },
@@ -1092,11 +1195,50 @@ def predict_value(req: ValueRequest):
     return implied_value(req.probability, req.odds)
 
 
+# --------------------------------------------------------------------------- #
+# Backtests
+# --------------------------------------------------------------------------- #
+def _log_loss(ps: List[List[float]], ys: List[int]) -> float:
+    return -sum(math.log(max(1e-12, p[t])) for p, t in zip(ps, ys)) / len(ys)
+
+
+def _brier(ps: List[List[float]], ys: List[int]) -> float:
+    return sum(sum((p[c] - (1.0 if c == t else 0.0)) ** 2 for c in range(3))
+               for p, t in zip(ps, ys)) / len(ys)
+
+
+def _accuracy(ps: List[List[float]], ys: List[int]) -> float:
+    return sum(1 for p, t in zip(ps, ys) if max(range(3), key=lambda c: p[c]) == t) / len(ys)
+
+
+def _metrics(ps: List[List[float]], ys: List[int]) -> dict:
+    return {"log_loss": round(_log_loss(ps, ys), 4), "brier": round(_brier(ps, ys), 4),
+            "accuracy": round(_accuracy(ps, ys), 4)}
+
+
+def _mix(weights: List[float], comps: List[List[List[float]]], i: int) -> List[float]:
+    return [sum(w * c[i][k] for w, c in zip(weights, comps)) for k in range(3)]
+
+
+def _calibration(ps: List[List[float]], ys: List[int]) -> List[dict]:
+    """Pour l'issue la plus probable : confiance annoncée vs fréquence réelle, par tranche."""
+    bins = [(0, 40), (40, 50), (50, 60), (60, 70), (70, 101)]
+    out = []
+    for lo, hi in bins:
+        sel = [(p, t) for p, t in zip(ps, ys) if lo <= max(p) * 100 < hi]
+        if not sel:
+            continue
+        hits = sum(1 for p, t in sel if max(range(3), key=lambda c: p[c]) == t)
+        out.append({"range": f"{lo}-{min(hi, 100)}%", "matches": len(sel),
+                    "mean_predicted": round(sum(max(p) for p, _ in sel) / len(sel) * 100, 1),
+                    "actual_hit_rate": round(hits / len(sel) * 100, 1)})
+    return out
+
+
 @app.get("/api/backtest")
 def backtest(test_ratio: float = 0.2):
-    """Backtest du modèle ML : entraînement sur le passé, test sur la période suivante.
-    Compare au baseline 'fréquences historiques' (plus bas = mieux pour log-loss et Brier).
-    Note : class_weight='balanced' décale les probabilités ; elles ne sont pas calibrées."""
+    """Backtest du modèle ML seul : entraînement sur le passé, test sur la période suivante.
+    Compare au baseline 'fréquences historiques' (plus bas = mieux pour log-loss et Brier)."""
     if not SKLEARN_AVAILABLE:
         raise HTTPException(status_code=503, detail="scikit-learn n'est pas installé.")
     test_ratio = max(0.1, min(test_ratio, 0.5))
@@ -1112,40 +1254,123 @@ def backtest(test_ratio: float = 0.2):
 
     model = make_model()
     model.fit(X[:split], y[:split])
-    classes = [int(c) for c in model.named_steps["logisticregression"].classes_]
-
     y_test = y[split:]
-    probs = []
-    for p in model.predict_proba(X[split:]):
-        full = [0.0, 0.0, 0.0]
-        for c, v in zip(classes, p):
-            full[c] = float(v)
-        probs.append(full)
-
+    probs = model_probas(model, X[split:])
     freq = [y[:split].count(c) / split for c in range(3)]
-    baseline = [freq] * len(y_test)
-
-    def log_loss(ps):
-        return -sum(math.log(max(1e-12, p[t])) for p, t in zip(ps, y_test)) / len(y_test)
-
-    def brier(ps):
-        return sum(sum((p[c] - (1.0 if c == t else 0.0)) ** 2 for c in range(3))
-                   for p, t in zip(ps, y_test)) / len(y_test)
-
-    accuracy = sum(1 for p, t in zip(probs, y_test)
-                   if max(range(3), key=lambda c: p[c]) == t) / len(y_test)
-    baseline_accuracy = sum(1 for t in y_test if t == max(range(3), key=lambda c: freq[c])) / len(y_test)
 
     return {
         "train_matches": split,
         "test_matches": len(y_test),
-        "model": {"log_loss": round(log_loss(probs), 4), "brier": round(brier(probs), 4),
-                  "accuracy": round(accuracy, 4)},
-        "baseline_frequencies": {"log_loss": round(log_loss(baseline), 4),
-                                 "brier": round(brier(baseline), 4),
-                                 "accuracy": round(baseline_accuracy, 4)},
+        "model": _metrics(probs, y_test),
+        "baseline_frequencies": _metrics([freq] * len(y_test), y_test),
         "uniform_log_loss_reference": round(math.log(3), 4),
     }
+
+
+@app.get("/api/backtest/ensemble")
+def backtest_ensemble(save: bool = False):
+    """Backtest walk-forward de l'ensemble complet (Poisson + Elo + ML), en 3 périodes :
+    60 % entraînement du ML, 20 % réglage des poids, 20 % test final (jamais utilisé pour régler).
+    save=true enregistre les poids retenus dans WEIGHTS_PATH ; ils sont utilisés par /predict."""
+    rows = build_walk_forward(True)
+    n = len(rows)
+    t1, t2 = int(n * 0.6), int(n * 0.8)
+    train, tune, test = rows[:t1], rows[t1:t2], rows[t2:]
+    if len(train) < MIN_ML_ROWS or len(tune) < 10 or len(test) < 10 or len({r["y"] for r in train}) < 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Historique insuffisant ({n} matchs). Lance /api/history/backfill avec plus de jours.",
+        )
+
+    y_tune, y_test = [r["y"] for r in tune], [r["y"] for r in test]
+    freq = [sum(1 for r in train if r["y"] == c) / len(train) for c in range(3)]
+
+    model = None
+    if SKLEARN_AVAILABLE:
+        try:
+            model = make_model()
+            model.fit([r["x"] for r in train], [r["y"] for r in train])
+        except Exception:
+            logger.exception("Backtest ML training failed")
+            model = None
+
+    def comps_for(part, use_ml):
+        c = [[r["poisson"] for r in part], [r["elo"] for r in part]]
+        if use_ml:
+            c.append(model_probas(model, [r["x"] for r in part]))
+        return c
+
+    def tune_grid(use_ml):
+        comps = comps_for(tune, use_ml)
+        best, best_ll = None, float("inf")
+        steps = 20
+        candidates = []
+        if use_ml:
+            for i in range(steps + 1):
+                for j in range(steps + 1 - i):
+                    candidates.append([i / steps, j / steps, (steps - i - j) / steps])
+        else:
+            candidates = [[i / steps, (steps - i) / steps] for i in range(steps + 1)]
+        for w in candidates:
+            ll = -sum(math.log(max(1e-12, sum(wk * c[i][y_tune[i]] for wk, c in zip(w, comps))))
+                      for i in range(len(tune))) / len(tune)
+            if ll < best_ll:
+                best, best_ll = w, ll
+        return best, best_ll
+
+    def evaluate(w, use_ml):
+        comps = comps_for(test, use_ml)
+        return [_mix(w, comps, i) for i in range(len(test))]
+
+    result = {"train_matches": len(train), "tune_matches": len(tune), "test_matches": len(test),
+              "baseline_frequencies": _metrics([freq] * len(test), y_test),
+              "uniform_log_loss_reference": round(math.log(3), 4),
+              "components_on_test": {
+                  "poisson_dixon_coles": _metrics([r["poisson"] for r in test], y_test),
+                  "elo": _metrics([r["elo"] for r in test], y_test)}}
+    new_weights = {}
+
+    w_no_ml, ll_no_ml = tune_grid(False)
+    new_weights["without_ml"] = w_no_ml
+    ens_no_ml = evaluate(w_no_ml, False)
+    result["ensemble_without_ml"] = {"weights_poisson_elo": w_no_ml, "tune_log_loss": round(ll_no_ml, 4),
+                                     "test": _metrics(ens_no_ml, y_test)}
+    final_probs = ens_no_ml
+
+    if model is not None:
+        result["components_on_test"]["logistic_regression"] = _metrics(
+            model_probas(model, [r["x"] for r in test]), y_test)
+        w_ml, ll_ml = tune_grid(True)
+        new_weights["with_ml"] = w_ml
+        ens_ml = evaluate(w_ml, True)
+        result["ensemble_with_ml"] = {"weights_poisson_elo_ml": w_ml, "tune_log_loss": round(ll_ml, 4),
+                                      "test": _metrics(ens_ml, y_test)}
+        final_probs = ens_ml
+
+    result["calibration_on_test"] = _calibration(final_probs, y_test)
+
+    # On n'enregistre que si l'ensemble bat le baseline sur la période de test.
+    ens_ll = _log_loss(final_probs, y_test)
+    base_ll = _log_loss([freq] * len(test), y_test)
+    result["beats_baseline"] = ens_ll < base_ll
+    if save:
+        if not result["beats_baseline"]:
+            result["saved"] = False
+            result["message"] = "Poids non enregistrés : l'ensemble ne bat pas le baseline sur la période de test."
+        else:
+            try:
+                merged = {k: list(v) for k, v in load_weights().items()}
+                merged.update({k: [round(x, 4) for x in v] for k, v in new_weights.items()})
+                tmp = WEIGHTS_PATH + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(merged, f)
+                os.replace(tmp, WEIGHTS_PATH)
+                invalidate_data()
+                result["saved"] = True
+            except Exception:
+                logger.exception("Impossible d'enregistrer les poids")
+                result["saved"] = False
+    return result
 
 
 @app.post("/api/history/backfill")
