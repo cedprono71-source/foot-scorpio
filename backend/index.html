@@ -6,11 +6,11 @@
     <title>Signal Fort - Prédictions Football Pro (Scorpion)</title>
     <style>
         :root {
-            --bg-color: #030712; /* Noir espace / cosmos */
-            --card-bg: #0f172a;  /* Bleu nuit sombre */
-            --accent-color: #2563eb; /* Bleu électrique du Scorpion */
-            --accent-hover: #3b82f6; /* Bleu électrique lumineux */
-            --gold-color: #fbbf24; /* Or / Ambre de la queue du scorpion */
+            --bg-color: #030712;
+            --card-bg: #0f172a;
+            --accent-color: #2563eb;
+            --accent-hover: #3b82f6;
+            --gold-color: #fbbf24;
             --gold-light: #fde047;
             --text-color: #f8fafc;
             --text-muted: #94a3b8;
@@ -18,33 +18,39 @@
             --home-color: #38bdf8;
             --draw-color: #fbbf24;
             --away-color: #ef4444;
+            --ok-color: #22c55e;
         }
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
-            margin: 0;
+            margin: 0 auto;
             padding: 12px;
             max-width: 480px;
-            margin-left: auto;
-            margin-right: auto;
         }
-
         header {
             text-align: center;
             margin-bottom: 20px;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 12px;
         }
-
         header h1 {
             color: var(--gold-color);
             margin: 0;
             font-size: 1.4em;
             text-shadow: 0 0 10px rgba(251, 191, 36, 0.3);
         }
-
+        .track-btn {
+            margin-top: 8px;
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 0.78em;
+            cursor: pointer;
+        }
+        .track-btn:hover { color: var(--text-color); border-color: var(--accent-hover); }
         .flashscore-calendar {
             display: flex;
             gap: 6px;
@@ -53,10 +59,7 @@
             margin-bottom: 15px;
             scrollbar-width: none;
         }
-        .flashscore-calendar::-webkit-scrollbar {
-            display: none;
-        }
-
+        .flashscore-calendar::-webkit-scrollbar { display: none; }
         .cal-day-btn {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
@@ -69,7 +72,6 @@
             flex-shrink: 0;
             transition: all 0.2s;
         }
-
         .cal-day-btn.active {
             background-color: var(--accent-color);
             border-color: var(--accent-hover);
@@ -77,27 +79,16 @@
             font-weight: bold;
             box-shadow: 0 0 12px rgba(37, 99, 235, 0.5);
         }
-
-        .cal-day-name {
-            font-size: 0.7em;
-            text-transform: uppercase;
-        }
-
-        .cal-day-date {
-            font-size: 0.9em;
-            margin-top: 2px;
-        }
-
+        .cal-day-name { font-size: 0.7em; text-transform: uppercase; }
+        .cal-day-date { font-size: 0.9em; margin-top: 2px; }
         .match-card {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 12px 15px;
             margin-bottom: 12px;
-            position: relative;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
         }
-
         .match-card-header {
             display: flex;
             justify-content: space-between;
@@ -108,7 +99,6 @@
             margin-bottom: 8px;
             font-weight: bold;
         }
-
         .list-signal-tag {
             font-size: 0.65em;
             font-weight: bold;
@@ -120,7 +110,6 @@
         .list-signal-tag.fort { background-color: var(--gold-color); color: #030712; font-weight: 900; }
         .list-signal-tag.modere { background-color: var(--accent-color); color: #fff; }
         .list-signal-tag.incertain { background-color: #1e293b; color: var(--text-muted); }
-
         .match-row {
             display: flex;
             justify-content: space-between;
@@ -129,26 +118,9 @@
             font-size: 0.95em;
             font-weight: 500;
         }
-
-        .team-info {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .team-logo {
-            width: 32px;
-            height: 32px;
-            object-fit: contain;
-            flex-shrink: 0;
-        }
-
-        .match-score {
-            font-weight: bold;
-            font-size: 1.15em;
-            color: var(--gold-color);
-        }
-
+        .team-info { display: flex; align-items: center; gap: 10px; }
+        .team-logo { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; }
+        .match-score { font-weight: bold; font-size: 1.15em; color: var(--gold-color); }
         .prono-btn {
             width: 100%;
             background: linear-gradient(135deg, var(--accent-color), #1d4ed8);
@@ -167,19 +139,14 @@
             transition: all 0.2s;
             box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
         }
-
         .prono-btn:hover {
             background: linear-gradient(135deg, var(--accent-hover), #2563eb);
             box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
         }
-
-        /* --- FENÊTRE MODALE --- */
         .modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
             background-color: rgba(3, 7, 18, 0.9);
             backdrop-filter: blur(8px);
             display: none;
@@ -187,7 +154,6 @@
             align-items: flex-end;
             z-index: 1000;
         }
-
         .modal-container {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
@@ -203,12 +169,7 @@
             animation: slideUp 0.3s ease-out;
             box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.5);
         }
-
-        @keyframes slideUp {
-            from { transform: translateY(100%); }
-            to { transform: translateY(0); }
-        }
-
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .modal-header {
             display: flex;
             justify-content: space-between;
@@ -217,21 +178,8 @@
             padding-bottom: 12px;
             margin-bottom: 15px;
         }
-
-        .modal-header h2 {
-            margin: 0;
-            font-size: 1.1em;
-            color: var(--gold-color);
-        }
-
-        .close-modal-btn {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            font-size: 1.4em;
-            cursor: pointer;
-        }
-
+        .modal-header h2 { margin: 0; font-size: 1.1em; color: var(--gold-color); }
+        .close-modal-btn { background: none; border: none; color: var(--text-muted); font-size: 1.4em; cursor: pointer; }
         .modal-section {
             background-color: #030712;
             border: 1px solid var(--border-color);
@@ -239,7 +187,6 @@
             padding: 12px 15px;
             margin-bottom: 12px;
         }
-
         .modal-section-title {
             font-size: 0.8em;
             text-transform: uppercase;
@@ -248,7 +195,6 @@
             font-weight: bold;
             letter-spacing: 0.5px;
         }
-
         .signal-badge-box {
             display: flex;
             justify-content: space-between;
@@ -260,55 +206,25 @@
             margin-bottom: 12px;
             box-shadow: 0 0 10px rgba(37, 99, 235, 0.2);
         }
-        .signal-tag {
-            font-size: 0.85em;
-            font-weight: bold;
-            padding: 4px 10px;
-            border-radius: 6px;
-        }
+        .signal-tag { font-size: 0.85em; font-weight: bold; padding: 4px 10px; border-radius: 6px; }
         .signal-tag.fort { background-color: var(--gold-color); color: #030712; }
         .signal-tag.modere { background-color: var(--accent-color); color: #fff; }
         .signal-tag.incertain { background-color: #334155; color: #fff; }
-
-        .prob-bar-container {
-            margin-bottom: 10px;
-        }
-
-        .prob-bar-container:last-child {
-            margin-bottom: 0;
-        }
-
+        .prob-bar-container { margin-bottom: 10px; }
+        .prob-bar-container:last-child { margin-bottom: 0; }
         .prob-info-row {
             display: flex;
             justify-content: space-between;
             font-size: 0.85em;
             margin-bottom: 4px;
             font-weight: 500;
+            gap: 10px;
         }
-
-        .custom-progress-bg {
-            background-color: #1e293b;
-            height: 6px;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-
-        .custom-progress-fill {
-            height: 100%;
-            border-radius: 3px;
-        }
-
-        .badge-conseil {
-            display: inline-block;
-            background: var(--accent-color);
-            color: white;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.78em;
-            margin-top: 6px;
-            font-weight: bold;
-        }
-
+        .custom-progress-bg { background-color: #1e293b; height: 6px; border-radius: 3px; overflow: hidden; }
+        .custom-progress-fill { height: 100%; border-radius: 3px; }
+        .note { font-size: 0.78em; color: var(--text-muted); line-height: 1.4; }
+        .good { color: var(--ok-color); font-weight: bold; }
+        .bad { color: var(--away-color); font-weight: bold; }
         .modal-close-bottom-btn {
             width: 100%;
             background-color: #1e293b;
@@ -323,27 +239,16 @@
             margin-bottom: 10px;
             transition: background 0.2s;
         }
-
-        .modal-close-bottom-btn:hover {
-            background-color: #334155;
-        }
-
-        @keyframes pulseSkeleton {
-            0% { opacity: 0.4; }
-            50% { opacity: 0.8; }
-            100% { opacity: 0.4; }
-        }
-        .skeleton {
-            background-color: #1e293b;
-            border-radius: 6px;
-            animation: pulseSkeleton 1.5s infinite ease-in-out;
-        }
+        .modal-close-bottom-btn:hover { background-color: #334155; }
+        @keyframes pulseSkeleton { 0% { opacity: 0.4; } 50% { opacity: 0.8; } 100% { opacity: 0.4; } }
+        .skeleton { background-color: #1e293b; border-radius: 6px; animation: pulseSkeleton 1.5s infinite ease-in-out; }
     </style>
 </head>
 <body>
 
     <header>
         <h1>⚡ SCORPIO 13 - Football Pro</h1>
+        <button class="track-btn" onclick="openTracking()">📈 Fiabilité du modèle</button>
     </header>
 
     <div id="sport-foot">
@@ -351,7 +256,6 @@
         <div id="foot-matches"></div>
     </div>
 
-    <!-- FENÊTRE MODALE -->
     <div id="prono-modal" class="modal-overlay" onclick="closeModalOnOutside(event)">
         <div class="modal-container">
             <div class="modal-header">
@@ -364,34 +268,39 @@
     </div>
 
     <script>
-        let selectedFootDate = new Date().toISOString().split('T')[0];
+        // Date locale (toISOString donnait la date UTC : décalage d'un jour autour de minuit).
+        function localDateStr(d) {
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+        }
+        // Échappe le texte venant de l'API avant de l'insérer dans le HTML.
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        let selectedFootDate = localDateStr(new Date());
         let cachedFootMatches = {};
         let matchSignalsCache = {};
+        let precomputeRunning = false;
 
         function buildCalendar() {
             const container = document.getElementById('foot-calendar');
             container.innerHTML = '';
-
             const today = new Date();
             for (let i = -3; i <= 3; i++) {
                 const d = new Date(today);
                 d.setDate(today.getDate() + i);
-                const dateStr = d.toISOString().split('T')[0];
-
+                const dateStr = localDateStr(d);
                 const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
                 const dayDate = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
-
                 const btn = document.createElement('button');
                 btn.className = 'cal-day-btn';
-                if (dateStr === selectedFootDate) {
-                    btn.classList.add('active');
-                }
-
+                if (dateStr === selectedFootDate) btn.classList.add('active');
                 btn.innerHTML = `
                     <div class="cal-day-name">${i === 0 ? 'AJD' : dayName}</div>
                     <div class="cal-day-date">${dayDate}</div>
                 `;
-
                 btn.onclick = () => {
                     selectedFootDate = dateStr;
                     loadFootMatches();
@@ -401,15 +310,8 @@
             }
         }
 
-        function closeModal() {
-            document.getElementById('prono-modal').style.display = 'none';
-        }
-
-        function closeModalOnOutside(event) {
-            if (event.target.id === 'prono-modal') {
-                closeModal();
-            }
-        }
+        function closeModal() { document.getElementById('prono-modal').style.display = 'none'; }
+        function closeModalOnOutside(event) { if (event.target.id === 'prono-modal') closeModal(); }
 
         function renderSkeletons() {
             const container = document.getElementById('foot-matches');
@@ -428,18 +330,19 @@
         }
 
         async function loadFootMatches(isBackground = false) {
-            if (!cachedFootMatches[selectedFootDate] && !isBackground) {
-                renderSkeletons();
-            }
+            const requestedDate = selectedFootDate;
+            if (!cachedFootMatches[requestedDate] && !isBackground) renderSkeletons();
             try {
-                const res = await fetch(`/api/matches/foot?date=${selectedFootDate}`);
+                const res = await fetch(`/api/matches/foot?date=${requestedDate}`);
                 const data = await res.json();
-                cachedFootMatches[selectedFootDate] = data.matches || [];
-                renderFootMatches();
-                precomputeListSignals(cachedFootMatches[selectedFootDate]);
+                cachedFootMatches[requestedDate] = data.matches || [];
+                if (requestedDate === selectedFootDate) {
+                    renderFootMatches();
+                    precomputeListSignals(cachedFootMatches[requestedDate]);
+                }
             } catch (err) {
-                if (!isBackground) {
-                    cachedFootMatches[selectedFootDate] = [];
+                if (!isBackground && !cachedFootMatches[requestedDate]) {
+                    cachedFootMatches[requestedDate] = [];
                     renderFootMatches();
                 }
             }
@@ -454,128 +357,137 @@
                 "Ligue 1": "fra.1", "Ligue 2": "fra.2",
                 "Eredivisie": "ned.1", "Liga Portugal": "por.1",
                 "Jupiler Pro League": "bel.1", "Süper Lig": "tur.1",
-                "Championnat d'Argentine": "arg.1",
                 "Scottish Premiership": "sco.1", "UEFA Champions League": "uefa.champions",
                 "UEFA Europa League": "uefa.europa", "UEFA Conference League": "uefa.conf"
             };
             return mapping[leagueName] || "eng.1";
         }
 
+        function signalKey(m) { return m.event_id || `${m.home_team}-${m.away_team}-${m.date || ''}`; }
+        function badgeId(m) { return 'badge-' + String(signalKey(m)).replace(/[^a-zA-Z0-9_-]/g, '_'); }
+
+        function applyBadge(el, strength) {
+            if (!el) return;
+            if (strength === 'FORT') { el.className = 'list-signal-tag fort'; el.innerText = '🔥 Fort'; }
+            else if (strength === 'MODÉRÉ') { el.className = 'list-signal-tag modere'; el.innerText = '⚡ Modéré'; }
+            else { el.className = 'list-signal-tag incertain'; el.innerText = '• Neutre'; }
+        }
+
+        // Pré-calcul séquentiel des signaux. Les matchs terminés sont ignorés : une prédiction
+        // faite après le match n'aurait aucun sens (le serveur ne l'enregistre d'ailleurs pas).
         async function precomputeListSignals(matches) {
-            for (let m of matches) {
-                const cacheKey = `${m.home_team}-${m.away_team}`;
-                if (!matchSignalsCache[cacheKey]) {
+            if (precomputeRunning) return;
+            precomputeRunning = true;
+            try {
+                for (const m of matches) {
+                    if (m.game_state === 'OFF') continue;
+                    const key = signalKey(m);
+                    if (matchSignalsCache[key]) continue;
                     try {
                         const res = await fetch('/predict/match/foot', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                home_team: m.home_team, 
+                            body: JSON.stringify({
+                                home_team: m.home_team,
                                 away_team: m.away_team,
+                                home_id: m.home_id || null,
+                                away_id: m.away_id || null,
                                 event_id: m.event_id,
-                                league_code: getLeagueCode(m.league)
+                                league_code: m.league_code || getLeagueCode(m.league)
                             })
                         });
+                        if (!res.ok) continue;
                         const data = await res.json();
-                        matchSignalsCache[cacheKey] = data.signal_analysis;
-                        
-                        const badgeEl = document.getElementById(`badge-${m.home_team}-${m.away_team}`.replace(/\s+/g, '-'));
-                        if (badgeEl) {
-                            const sig = data.signal_analysis;
-                            badgeEl.className = `list-signal-tag ${sig.strength.toLowerCase() === 'fort' ? 'fort' : (sig.strength.toLowerCase() === 'modéré' ? 'modere' : 'incertain')}`;
-                            badgeEl.innerText = sig.strength === 'FORT' ? '🔥 Fort' : (sig.strength === 'MODÉRÉ' ? '⚡ Modéré' : '• Neutre');
-                        }
+                        matchSignalsCache[key] = data.signal_analysis;
+                        applyBadge(document.getElementById(badgeId(m)), data.signal_analysis.strength);
                     } catch (e) {}
                 }
+            } finally {
+                precomputeRunning = false;
             }
         }
 
         function renderFootMatches() {
             const container = document.getElementById('foot-matches');
             const matches = cachedFootMatches[selectedFootDate];
-
-            if (!matches) {
-                loadFootMatches();
-                return;
-            }
-
+            if (!matches) { loadFootMatches(); return; }
             if (matches.length === 0) {
                 container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Aucun match de football trouvé.</p>';
                 return;
             }
-
             container.innerHTML = '';
-            matches.forEach(m => {
-                const cacheKey = `${m.home_team}-${m.away_team}`;
-                const cachedSig = matchSignalsCache[cacheKey];
-                
-                let badgeClass = 'list-signal-tag incertain';
-                let badgeText = '• Analyse...';
-                if (cachedSig) {
-                    if (cachedSig.strength === 'FORT') { badgeClass = 'list-signal-tag fort'; badgeText = '🔥 Fort'; }
-                    else if (cachedSig.strength === 'MODÉRÉ') { badgeClass = 'list-signal-tag modere'; badgeText = '⚡ Modéré'; }
-                    else { badgeClass = 'list-signal-tag incertain'; badgeText = '• Neutre'; }
+            matches.forEach((m, idx) => {
+                const finished = m.game_state === 'OFF';
+                const sig = matchSignalsCache[signalKey(m)];
+                let badgeClass = 'list-signal-tag incertain', badgeText = finished ? '' : '• Analyse...';
+                if (sig) {
+                    if (sig.strength === 'FORT') { badgeClass = 'list-signal-tag fort'; badgeText = '🔥 Fort'; }
+                    else if (sig.strength === 'MODÉRÉ') { badgeClass = 'list-signal-tag modere'; badgeText = '⚡ Modéré'; }
+                    else { badgeText = '• Neutre'; }
                 }
-
-                const uniqueBadgeId = `badge-${m.home_team}-${m.away_team}`.replace(/\s+/g, '-');
-
                 const card = document.createElement('div');
                 card.className = 'match-card';
                 card.innerHTML = `
                     <div class="match-card-header">
-                        <span>${m.league || 'FOOTBALL'}</span>
+                        <span>${esc(m.league || 'FOOTBALL')}</span>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <span id="${uniqueBadgeId}" class="${badgeClass}">${badgeText}</span>
-                            <span>${m.game_state}</span>
+                            ${badgeText ? `<span id="${badgeId(m)}" class="${badgeClass}">${badgeText}</span>` : ''}
+                            <span>${esc(m.game_state)}</span>
                         </div>
                     </div>
                     <div class="match-row">
-                        <div class="team-info"><img src="${m.home_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.home_team}</span></div>
+                        <div class="team-info"><img src="${esc(m.home_logo || '')}" class="team-logo" onerror="this.style.display='none'"><span>${esc(m.home_team)}</span></div>
                         <span class="match-score">${m.home_score !== null ? m.home_score : '-'}</span>
                     </div>
                     <div class="match-row">
-                        <div class="team-info"><img src="${m.away_logo || ''}" class="team-logo" onerror="this.style.display='none'"><span>${m.away_team}</span></div>
+                        <div class="team-info"><img src="${esc(m.away_logo || '')}" class="team-logo" onerror="this.style.display='none'"><span>${esc(m.away_team)}</span></div>
                         <span class="match-score">${m.away_score !== null ? m.away_score : '-'}</span>
                     </div>
-                    <button class="prono-btn" onclick="openFootProno('${m.home_team}', '${m.away_team}', '${m.event_id}', '${m.league}')">⚡ PRONO</button>
+                    <button class="prono-btn" data-idx="${idx}">⚡ PRONO</button>
                 `;
+                card.querySelector('.prono-btn').onclick = () => openFootProno(matches[idx]);
                 container.appendChild(card);
             });
         }
 
-        async function openFootProno(home, away, eventId, leagueName) {
+        function probBar(label, value, color) {
+            return `
+                <div class="prob-bar-container">
+                    <div class="prob-info-row"><span>${label}</span><span style="color: ${color}; font-weight: bold;">${value}%</span></div>
+                    <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${Math.max(0, Math.min(100, value))}%; background-color: ${color};"></div></div>
+                </div>`;
+        }
+
+        async function openFootProno(m) {
             const modal = document.getElementById('prono-modal');
             const title = document.getElementById('modal-match-title');
             const body = document.getElementById('modal-body');
+            const home = m.home_team, away = m.away_team;
 
             title.innerText = `${home} vs ${away}`;
             body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Analyse en cours...</p>';
             modal.style.display = 'flex';
 
-            const leagueCode = getLeagueCode(leagueName);
-
             try {
                 const res = await fetch('/predict/match/foot', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        home_team: home, 
+                    body: JSON.stringify({
+                        home_team: home,
                         away_team: away,
-                        event_id: eventId,
-                        league_code: leagueCode
+                        home_id: m.home_id || null,
+                        away_id: m.away_id || null,
+                        event_id: m.event_id,
+                        league_code: m.league_code || getLeagueCode(m.league)
                     })
                 });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 const data = await res.json();
-                const h = data.probabilities.home_win;
-                const d = data.probabilities.draw;
-                const a = data.probabilities.away_win;
-
+                const { home_win: h, draw: d, away_win: a } = data.probabilities;
                 const sig = data.signal_analysis;
-                let tagClass = 'incertain';
-                if (sig.strength === 'FORT') tagClass = 'fort';
-                else if (sig.strength === 'MODÉRÉ') tagClass = 'modere';
-
-                const g = data.goalscorers;
+                matchSignalsCache[signalKey(m)] = sig;
+                const tagClass = sig.strength === 'FORT' ? 'fort' : (sig.strength === 'MODÉRÉ' ? 'modere' : 'incertain');
+                const md = data.model_details || {};
 
                 let topScoresHtml = '';
                 if (data.top_exact_scores && data.top_exact_scores.length > 0) {
@@ -583,71 +495,63 @@
                         <div class="modal-section">
                             <div class="modal-section-title">🎯 Top 3 Scores Exacts</div>
                             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                                ${data.top_exact_scores.map(s => `<span style="background: #030712; border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; font-size: 0.85em;">${s.score} (<strong style="color: var(--gold-color);">${s.probability}%</strong>)</span>`).join('')}
+                                ${data.top_exact_scores.map(s => `<span style="background: #030712; border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; font-size: 0.85em;">${esc(s.score)} (<strong style="color: var(--gold-color);">${s.probability}%</strong>)</span>`).join('')}
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                 }
 
+                // Détail par modèle : permet de voir si les modèles s'accordent.
+                let componentsHtml = '';
+                if (md.components) {
+                    const names = { dc: 'Dixon-Coles', poisson: 'Poisson (forme)', elo: 'Elo', ml: 'Régression logistique' };
+                    const rows = Object.entries(md.components).map(([k, p]) => {
+                        const w = md.ensemble_weights && md.ensemble_weights[k] !== undefined
+                            ? ` <span class="note">(poids ${Math.round(md.ensemble_weights[k] * 100)}%)</span>` : '';
+                        return `<div class="prob-info-row"><span>${names[k] || esc(k)}${w}</span><span>${p.home_win} / ${p.draw} / ${p.away_win}</span></div>`;
+                    }).join('');
+                    componentsHtml = `
+                        <div class="modal-section">
+                            <div class="modal-section-title">🧮 Modèles (Dom / Nul / Ext)</div>
+                            ${rows}
+                        </div>`;
+                }
+
+                const xg = data.expected_goals;
+                const limited = sig.data_quality === 'limitée';
                 body.innerHTML = `
                     <div class="signal-badge-box">
                         <div>
                             <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Consensus Modèle</div>
-                            <div style="font-size: 0.9em; font-weight: bold; margin-top: 2px; color: var(--gold-color);">Indice : ${sig.confidence_index}%</div>
+                            <div style="font-size: 0.9em; font-weight: bold; margin-top: 2px; color: var(--gold-color);">Probabilité max : ${sig.confidence_index}%</div>
+                            <div class="note" style="margin-top: 2px;">Données : ${esc(sig.data_quality)} (${sig.historical_matches_available} matchs)</div>
                         </div>
-                        <span class="signal-tag ${tagClass}">${sig.badge}</span>
+                        <span class="signal-tag ${tagClass}">${esc(sig.badge)}</span>
                     </div>
+                    ${limited ? '<div class="modal-section note">⚠️ Peu d\'historique sur ces équipes : prends ces probabilités avec prudence.</div>' : ''}
 
                     <div class="modal-section">
-                        <div class="modal-section-title">📊 Probabilités (Score : ${data.predicted_score})</div>
-                        <div class="prob-bar-container">
-                            <div class="prob-info-row"><span>Victoire ${home}</span><span style="color: var(--home-color); font-weight: bold;">${h}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${h}%; background-color: var(--home-color);"></div></div>
-                        </div>
-                        <div class="prob-bar-container" style="margin-top: 8px;">
-                            <div class="prob-info-row"><span>Match Nul</span><span style="color: var(--draw-color); font-weight: bold;">${d}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${d}%; background-color: var(--draw-color);"></div></div>
-                        </div>
-                        <div class="prob-bar-container" style="margin-top: 8px;">
-                            <div class="prob-info-row"><span>Victoire ${away}</span><span style="color: var(--away-color); font-weight: bold;">${a}%</span></div>
-                            <div class="custom-progress-bg"><div class="custom-progress-fill" style="width: ${a}%; background-color: var(--away-color);"></div></div>
-                        </div>
+                        <div class="modal-section-title">📊 Probabilités (Score probable : ${esc(data.predicted_score)})</div>
+                        ${probBar(`Victoire ${esc(home)}`, h, 'var(--home-color)')}
+                        <div style="height: 8px;"></div>
+                        ${probBar('Match Nul', d, 'var(--draw-color)')}
+                        <div style="height: 8px;"></div>
+                        ${probBar(`Victoire ${esc(away)}`, a, 'var(--away-color)')}
                     </div>
 
                     ${topScoresHtml}
 
                     <div class="modal-section">
-                        <div class="modal-section-title">⚽ Options de Paris</div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>BTTS (Les deux équipes marquent)</span><strong style="color: var(--gold-color);">${data.btts.yes_prob}%</strong></div>
-                        <div class="prob-info-row"><span>Plus de 2.5 buts (Over)</span><strong style="color: var(--gold-color);">${data.over_under_2_5.over_prob}%</strong></div>
+                        <div class="modal-section-title">⚽ Buts</div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Buts attendus</span><strong>${xg.home} - ${xg.away} (total ${xg.total})</strong></div>
+                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>BTTS (les deux équipes marquent)</span><strong style="color: var(--gold-color);">${data.btts.yes_prob}%</strong></div>
+                        <div class="prob-info-row"><span>Plus de 2.5 buts</span><strong style="color: var(--gold-color);">${data.over_under_2_5.over_prob}%</strong></div>
                     </div>
 
-                    <div class="modal-section">
-                        <div class="modal-section-title">🎯 Pépites Buteurs (Anytime)</div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;">
-                            <span>👤 ${home} (${g.home_player})</span>
-                            <strong style="color: var(--home-color);">${g.home_player_prob}%</strong>
-                        </div>
-                        <div class="prob-info-row">
-                            <span>👤 ${away} (${g.away_player})</span>
-                            <strong style="color: var(--away-color);">${g.away_player_prob}%</strong>
-                        </div>
-                    </div>
+                    ${componentsHtml}
 
-                    <div class="modal-section">
-                        <div class="modal-section-title">⏱️ 1ère Mi-Temps</div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Score HT estimé</span><strong>${data.first_half.predicted_ht_score}</strong></div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité But MT (>0.5)</span><strong style="color: var(--gold-color);">${data.first_half.over_0_5_prob}%</strong></div>
-                        <div><span class="badge-conseil">${data.first_half.action_conseillee}</span></div>
-                    </div>
-
-                    <div class="modal-section">
-                        <div class="modal-section-title">🟨 Cartons Jaunes</div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Total attendu</span><strong>${data.yellow_cards.expected_total} cartons</strong></div>
-                        <div class="prob-info-row" style="margin-bottom: 6px;"><span>Probabilité > 4.5 cartons</span><strong style="color: var(--gold-color);">${data.yellow_cards.over_4_5_prob}%</strong></div>
-                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
-                            Moyenne Domicile : ${data.yellow_cards.home_team_avg} | Extérieur : ${data.yellow_cards.away_team_avg}
-                        </div>
+                    <div class="modal-section note">
+                        Buteurs, mi-temps et cartons ne sont pas affichés : la source de données ne les fournit pas de façon fiable, et rien n'est inventé.
+                        ${md.prediction_tracked ? '<br>📈 Cette prédiction est enregistrée et sera comparée au résultat réel.' : ''}
                     </div>
                 `;
             } catch (err) {
@@ -655,13 +559,54 @@
             }
         }
 
+        // Fiabilité réelle : prédictions faites avant le match, comparées aux résultats.
+        async function openTracking() {
+            const modal = document.getElementById('prono-modal');
+            const body = document.getElementById('modal-body');
+            document.getElementById('modal-match-title').innerText = '📈 Fiabilité du modèle';
+            body.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Chargement...</p>';
+            modal.style.display = 'flex';
+            try {
+                const res = await fetch('/api/tracking?limit=8');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const t = await res.json();
+                if (!t.settled) {
+                    body.innerHTML = `<div class="modal-section note">${esc(t.message || 'Aucune prédiction réglée pour l\'instant.')}<br><br>En attente de résultat : ${t.pending ?? 0} prédiction(s).</div>`;
+                    return;
+                }
+                const better = t.model.log_loss < t.baseline_frequencies.log_loss;
+                const calRows = (t.calibration || []).map(c => `
+                    <div class="prob-info-row">
+                        <span>Annoncé ${esc(c.range)} <span class="note">(${c.matches} matchs)</span></span>
+                        <span>réel ${c.actual_hit_rate}%</span>
+                    </div>`).join('');
+                const recent = (t.recent || []).map(r => `
+                    <div class="prob-info-row">
+                        <span>${esc(r.match)} <span class="note">${esc(r.score)}</span></span>
+                        <span class="${r.correct ? 'good' : 'bad'}">${r.correct ? '✔' : '✘'} ${esc(r.predicted)}</span>
+                    </div>`).join('');
+                body.innerHTML = `
+                    <div class="modal-section">
+                        <div class="modal-section-title">Bilan (${t.settled} matchs réglés, ${t.pending} en attente)</div>
+                        <div class="prob-info-row"><span>Bon résultat prédit</span><strong>${(t.model.accuracy * 100).toFixed(1)}%</strong></div>
+                        <div class="prob-info-row"><span>Erreur du modèle (log-loss)</span><strong>${t.model.log_loss}</strong></div>
+                        <div class="prob-info-row"><span>Erreur d'un modèle naïf</span><strong>${t.baseline_frequencies.log_loss}</strong></div>
+                        <div style="margin-top: 6px;" class="${better ? 'good' : 'bad'}">${better ? 'Le modèle fait mieux que le hasard pondéré.' : 'Le modèle ne fait pas mieux que le hasard pondéré pour l\'instant.'}</div>
+                        <div class="note" style="margin-top: 6px;">${esc(t.reliability_note)}</div>
+                    </div>
+                    ${calRows ? `<div class="modal-section"><div class="modal-section-title">Calibration</div>${calRows}
+                        <div class="note" style="margin-top: 6px;">Si « annoncé 60-70% » donne un réel proche de 65%, les probabilités sont honnêtes.</div></div>` : ''}
+                    ${recent ? `<div class="modal-section"><div class="modal-section-title">Derniers matchs</div>${recent}</div>` : ''}
+                `;
+            } catch (err) {
+                body.innerHTML = '<p style="color: #ef4444; text-align: center;">Suivi indisponible (serveur non mis à jour ?).</p>';
+            }
+        }
+
         window.onload = () => {
             buildCalendar();
             loadFootMatches();
-
-            setInterval(() => {
-                loadFootMatches(true);
-            }, 60000);
+            setInterval(() => loadFootMatches(true), 60000);
         };
     </script>
 </body>
