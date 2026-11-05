@@ -4,3 +4,4 @@ requests
 cachetools
 pydantic
 scikit-learn
+psycopg2-binary
