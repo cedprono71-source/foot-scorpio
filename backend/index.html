@@ -224,6 +224,7 @@
         .custom-progress-fill { height: 100%; border-radius: 3px; }
         .note { font-size: 0.78em; color: var(--text-muted); line-height: 1.4; }
         .good { color: var(--ok-color); font-weight: bold; }
+        .banner { background: #450a0a; border: 1px solid var(--away-color); color: #fecaca; border-radius: 10px; padding: 10px 12px; font-size: 0.8em; margin-bottom: 12px; display: none; }
         .bad { color: var(--away-color); font-weight: bold; }
         .modal-close-bottom-btn {
             width: 100%;
@@ -250,6 +251,8 @@
         <h1>⚡ SCORPIO 13 - Football Pro</h1>
         <button class="track-btn" onclick="openTracking()">📈 Fiabilité du modèle</button>
     </header>
+
+    <div id="alert-banner" class="banner"></div>
 
     <div id="sport-foot">
         <div id="foot-calendar" class="flashscore-calendar"></div>
@@ -370,6 +373,7 @@
             if (!el) return;
             if (strength === 'FORT') { el.className = 'list-signal-tag fort'; el.innerText = '🔥 Fort'; }
             else if (strength === 'MODÉRÉ') { el.className = 'list-signal-tag modere'; el.innerText = '⚡ Modéré'; }
+            else if (strength === 'INSUFFISANT') { el.className = 'list-signal-tag incertain'; el.innerText = '• Peu de données'; }
             else { el.className = 'list-signal-tag incertain'; el.innerText = '• Neutre'; }
         }
 
@@ -423,6 +427,7 @@
                 if (sig) {
                     if (sig.strength === 'FORT') { badgeClass = 'list-signal-tag fort'; badgeText = '🔥 Fort'; }
                     else if (sig.strength === 'MODÉRÉ') { badgeClass = 'list-signal-tag modere'; badgeText = '⚡ Modéré'; }
+                    else if (sig.strength === 'INSUFFISANT') { badgeText = '• Peu de données'; }
                     else { badgeText = '• Neutre'; }
                 }
                 const card = document.createElement('div');
@@ -486,6 +491,14 @@
                 const { home_win: h, draw: d, away_win: a } = data.probabilities;
                 const sig = data.signal_analysis;
                 matchSignalsCache[signalKey(m)] = sig;
+                if (sig.reliable === false) {
+                    body.innerHTML = `
+                        <div class="modal-section">
+                            <div class="modal-section-title">🚫 Données insuffisantes</div>
+                            <div class="note">Pas assez de matchs connus pour ${esc(home)} ou ${esc(away)} : aucun pronostic n'est affiché plutôt que de donner un chiffre au hasard.</div>
+                        </div>`;
+                    return;
+                }
                 const tagClass = sig.strength === 'FORT' ? 'fort' : (sig.strength === 'MODÉRÉ' ? 'modere' : 'incertain');
                 const md = data.model_details || {};
 
@@ -497,22 +510,6 @@
                             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                                 ${data.top_exact_scores.map(s => `<span style="background: #030712; border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; font-size: 0.85em;">${esc(s.score)} (<strong style="color: var(--gold-color);">${s.probability}%</strong>)</span>`).join('')}
                             </div>
-                        </div>`;
-                }
-
-                // Détail par modèle : permet de voir si les modèles s'accordent.
-                let componentsHtml = '';
-                if (md.components) {
-                    const names = { dc: 'Dixon-Coles', poisson: 'Poisson (forme)', elo: 'Elo', ml: 'Régression logistique' };
-                    const rows = Object.entries(md.components).map(([k, p]) => {
-                        const w = md.ensemble_weights && md.ensemble_weights[k] !== undefined
-                            ? ` <span class="note">(poids ${Math.round(md.ensemble_weights[k] * 100)}%)</span>` : '';
-                        return `<div class="prob-info-row"><span>${names[k] || esc(k)}${w}</span><span>${p.home_win} / ${p.draw} / ${p.away_win}</span></div>`;
-                    }).join('');
-                    componentsHtml = `
-                        <div class="modal-section">
-                            <div class="modal-section-title">🧮 Modèles (Dom / Nul / Ext)</div>
-                            ${rows}
                         </div>`;
                 }
 
@@ -545,13 +542,6 @@
                         <div class="prob-info-row" style="margin-bottom: 6px;"><span>Buts attendus</span><strong>${xg.home} - ${xg.away} (total ${xg.total})</strong></div>
                         <div class="prob-info-row" style="margin-bottom: 6px;"><span>BTTS (les deux équipes marquent)</span><strong style="color: var(--gold-color);">${data.btts.yes_prob}%</strong></div>
                         <div class="prob-info-row"><span>Plus de 2.5 buts</span><strong style="color: var(--gold-color);">${data.over_under_2_5.over_prob}%</strong></div>
-                    </div>
-
-                    ${componentsHtml}
-
-                    <div class="modal-section note">
-                        Buteurs, mi-temps et cartons ne sont pas affichés : la source de données ne les fournit pas de façon fiable, et rien n'est inventé.
-                        ${md.prediction_tracked ? '<br>📈 Cette prédiction est enregistrée et sera comparée au résultat réel.' : ''}
                     </div>
                 `;
             } catch (err) {
@@ -603,7 +593,22 @@
             }
         }
 
+        // Alerte si le suivi réel montre que le modèle ne fait pas mieux qu'un modèle naïf.
+        async function checkModelHealth() {
+            try {
+                const res = await fetch('/api/tracking?limit=1');
+                if (!res.ok) return;
+                const t = await res.json();
+                if (t.settled >= 100 && t.model.log_loss >= t.baseline_frequencies.log_loss) {
+                    const el = document.getElementById('alert-banner');
+                    el.innerText = `⚠️ Sur ${t.settled} matchs réels, le modèle ne fait pas mieux qu'un modèle naïf : ne te fie pas aux pronostics pour l'instant.`;
+                    el.style.display = 'block';
+                }
+            } catch (e) {}
+        }
+
         window.onload = () => {
+            checkModelHealth();
             buildCalendar();
             loadFootMatches();
             setInterval(() => loadFootMatches(true), 60000);
