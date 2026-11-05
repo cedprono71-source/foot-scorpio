@@ -31,8 +31,19 @@ try:
 except Exception:
     SKLEARN_AVAILABLE = False
 
-APP_VERSION = "35.0"
+# PostgreSQL (Neon) : base permanente. Sans DATABASE_URL, l'app utilise SQLite (effacé au redémarrage sur Render gratuit).
+try:
+    import psycopg2
+    import psycopg2.extras
+    import psycopg2.pool
+    PSYCOPG2_AVAILABLE = True
+except Exception:
+    PSYCOPG2_AVAILABLE = False
+
+APP_VERSION = "36.0"
 DB_PATH = os.getenv("FOOTBALL_DB_PATH", "football_history.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "10"))
 MODEL_PATH = os.getenv("MODEL_PATH", "ml_model.joblib")
 WEIGHTS_PATH = os.getenv("WEIGHTS_PATH", "ensemble_weights.json")
 PARIS_TZ = ZoneInfo("Europe/Paris")
@@ -88,7 +99,7 @@ matches_cache = TTLCache(maxsize=200, ttl=300)
 prediction_cache = TTLCache(maxsize=500, ttl=900)
 ml_model_cache = {"model": None, "trained_at": 0.0, "rows": 0, "retry_after": 0.0}
 elo_cache = {"version": -1, "ratings": {}}
-weights_cache = {"mtime": None, "weights": DEFAULT_WEIGHTS}
+weights_cache = {"at": 0.0, "weights": DEFAULT_WEIGHTS}
 dc_cache = {"model": None, "version": -1, "fitted_at": 0.0, "retry_after": 0.0}
 data_version = {"v": 0}  # incrémenté dès que l'historique change réellement
 backfill_status = {"running": False, "days": 0, "total": 0, "completed": 0,
@@ -138,6 +149,79 @@ def normalize_name(name: str) -> str:
 # --------------------------------------------------------------------------- #
 # Base de données
 # --------------------------------------------------------------------------- #
+USE_PG = False
+DB_STATUS = "sqlite"
+_pg_pool = None
+_pool_sem = threading.BoundedSemaphore(DB_POOL_MAX)
+
+
+def _setup_backend():
+    """Choisit PostgreSQL si DATABASE_URL est défini et joignable, sinon SQLite (avec un message clair)."""
+    global USE_PG, DB_STATUS, _pg_pool
+    if not DATABASE_URL:
+        return
+    if not PSYCOPG2_AVAILABLE:
+        logger.error("DATABASE_URL défini mais psycopg2 absent : ajoute psycopg2-binary à requirements.txt. "
+                     "Repli sur SQLite (données NON permanentes).")
+        DB_STATUS = "sqlite (secours : psycopg2 manquant)"
+        return
+    try:
+        pool = psycopg2.pool.ThreadedConnectionPool(1, DB_POOL_MAX, DATABASE_URL, connect_timeout=15)
+        raw = pool.getconn()
+        try:
+            with raw.cursor() as cur:
+                cur.execute("SELECT 1")
+            raw.rollback()
+        finally:
+            pool.putconn(raw)
+        _pg_pool, USE_PG, DB_STATUS = pool, True, "postgresql"
+        logger.info("Base PostgreSQL connectée")
+    except Exception:
+        logger.exception("Connexion PostgreSQL impossible : repli sur SQLite (données NON permanentes)")
+        DB_STATUS = "sqlite (secours : connexion PostgreSQL échouée)"
+
+
+class PgConn:
+    """Même interface que sqlite3 pour le code de l'appli : execute() avec des ? et lignes accessibles par nom ou index."""
+
+    def __init__(self, raw):
+        self.raw = raw
+
+    def execute(self, sql, params=()):
+        cur = self.raw.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def executemany(self, sql, seq):
+        cur = self.raw.cursor()
+        cur.executemany(sql.replace("?", "%s"), list(seq))
+        return cur
+
+
+def _pg_checkout():
+    """Prend une connexion du pool et vérifie qu'elle répond (Neon coupe les connexions inactives)."""
+    last_exc = None
+    for _ in range(3):
+        raw = _pg_pool.getconn()
+        try:
+            with raw.cursor() as cur:
+                cur.execute("SELECT 1")
+            raw.rollback()
+            return raw
+        except Exception as exc:
+            last_exc = exc
+            try:
+                _pg_pool.putconn(raw, close=True)
+            except Exception:
+                pass
+    raise last_exc  # type: ignore[misc]
+
+
+_setup_backend()
+# "IS NOT" (SQLite) et "IS DISTINCT FROM" (PostgreSQL) : comparaison qui tient compte des NULL.
+NE = "IS DISTINCT FROM" if USE_PG else "IS NOT"
+
+
 def db_connect():
     conn = sqlite3.connect(DB_PATH, timeout=20, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -148,7 +232,25 @@ def db_connect():
 
 @contextmanager
 def db():
-    """Connexion avec commit/rollback ET fermeture (le 'with' de sqlite3 ne ferme pas)."""
+    """Connexion avec commit/rollback ET restitution (pool PostgreSQL) ou fermeture (SQLite)."""
+    if USE_PG:
+        with _pool_sem:
+            raw = _pg_checkout()
+            try:
+                yield PgConn(raw)
+                raw.commit()
+            except Exception:
+                try:
+                    raw.rollback()
+                except Exception:
+                    pass
+                raise
+            finally:
+                try:
+                    _pg_pool.putconn(raw)
+                except Exception:
+                    pass
+        return
     conn = db_connect()
     try:
         yield conn
@@ -176,11 +278,12 @@ def init_db():
             )
         """)
         # Migration des anciennes bases (sans identifiants d'équipes)
-        columns = {r["name"] for r in conn.execute("PRAGMA table_info(matches_history)")}
-        if "home_id" not in columns:
-            conn.execute("ALTER TABLE matches_history ADD COLUMN home_id TEXT")
-        if "away_id" not in columns:
-            conn.execute("ALTER TABLE matches_history ADD COLUMN away_id TEXT")
+        if not USE_PG:
+            columns = {r["name"] for r in conn.execute("PRAGMA table_info(matches_history)")}
+            if "home_id" not in columns:
+                conn.execute("ALTER TABLE matches_history ADD COLUMN home_id TEXT")
+            if "away_id" not in columns:
+                conn.execute("ALTER TABLE matches_history ADD COLUMN away_id TEXT")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS teams (
@@ -201,9 +304,15 @@ def init_db():
                 event_id TEXT PRIMARY KEY,
                 created_at TEXT, updated_at TEXT,
                 league_code TEXT, home_team TEXT, away_team TEXT, home_key TEXT, away_key TEXT,
-                p_home REAL, p_draw REAL, p_away REAL,
+                p_home DOUBLE PRECISION, p_draw DOUBLE PRECISION, p_away DOUBLE PRECISION,
                 model TEXT, app_version TEXT, components TEXT,
                 outcome INTEGER, home_score INTEGER, away_score INTEGER, settled_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_predlog_outcome ON predictions_log(outcome)")
@@ -250,7 +359,7 @@ def save_match_to_db(event_id, league, home_team, away_team, home_score, away_sc
     away_id = str(away_id).strip() if away_id not in (None, "") else None
     try:
         with db() as conn:
-            cur = conn.execute("""
+            cur = conn.execute(f"""
                 INSERT INTO matches_history
                 (event_id, league, home_team, away_team, home_score, away_score, date, home_id, away_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -263,24 +372,24 @@ def save_match_to_db(event_id, league, home_team, away_team, home_score, away_sc
                     date = excluded.date,
                     home_id = excluded.home_id,
                     away_id = excluded.away_id
-                WHERE league IS NOT excluded.league
-                   OR home_team IS NOT excluded.home_team
-                   OR away_team IS NOT excluded.away_team
-                   OR home_score IS NOT excluded.home_score
-                   OR away_score IS NOT excluded.away_score
-                   OR date IS NOT excluded.date
-                   OR home_id IS NOT excluded.home_id
-                   OR away_id IS NOT excluded.away_id
+                WHERE matches_history.league {NE} excluded.league
+                   OR matches_history.home_team {NE} excluded.home_team
+                   OR matches_history.away_team {NE} excluded.away_team
+                   OR matches_history.home_score {NE} excluded.home_score
+                   OR matches_history.away_score {NE} excluded.away_score
+                   OR matches_history.date {NE} excluded.date
+                   OR matches_history.home_id {NE} excluded.home_id
+                   OR matches_history.away_id {NE} excluded.away_id
             """, (str(event_id), league, home_team, away_team,
                   int(home_score), int(away_score), str(date)[:10], home_id, away_id))
             changed = cur.rowcount > 0
             for team_id, name in ((home_id, home_team), (away_id, away_team)):
                 if team_id:
-                    conn.execute("""
+                    conn.execute(f"""
                         INSERT INTO teams (team_id, name, norm_name) VALUES (?, ?, ?)
                         ON CONFLICT(team_id) DO UPDATE SET
                             name = excluded.name, norm_name = excluded.norm_name
-                        WHERE name IS NOT excluded.name
+                        WHERE teams.name {NE} excluded.name
                     """, (team_id, name, normalize_name(name)))
             # Règle la prédiction enregistrée avant le match, s'il y en a une.
             hs, as_ = int(home_score), int(away_score)
@@ -443,7 +552,7 @@ def backfill_history(days_back: int = BACKFILL_DAYS, leagues: Optional[List[str]
         if not pending_done:
             return
         with db() as conn:
-            conn.executemany("INSERT OR IGNORE INTO backfill_log (league_code, day) VALUES (?, ?)",
+            conn.executemany("INSERT INTO backfill_log (league_code, day) VALUES (?, ?) ON CONFLICT DO NOTHING",
                              pending_done)
         pending_done.clear()
 
@@ -1113,28 +1222,49 @@ def _valid_weights(w, names: List[str]) -> bool:
             and abs(sum(w.values()) - 1.0) < 1e-6)
 
 
+def settings_get(key: str) -> Optional[str]:
+    try:
+        with db() as conn:
+            row = conn.execute("SELECT setting_value FROM app_settings WHERE setting_key = ?", (key,)).fetchone()
+        return row["setting_value"] if row else None
+    except Exception:
+        logger.exception("settings_get failed")
+        return None
+
+
+def settings_set(key: str, value: str) -> None:
+    with db() as conn:
+        conn.execute("""
+            INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+            ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+        """, (key, value))
+
+
 def load_weights() -> dict:
-    """Lit WEIGHTS_PATH (relu seulement si le fichier a changé), sinon poids par défaut.
-    Un fichier au format d'une ancienne version est ignoré."""
-    try:
-        mtime = os.path.getmtime(WEIGHTS_PATH)
-    except OSError:
-        return DEFAULT_WEIGHTS
+    """Poids de l'ensemble : lus dans la base (relus au plus toutes les 60 s), sinon dans WEIGHTS_PATH,
+    sinon valeurs par défaut. Un format d'une ancienne version est ignoré."""
+    now = time.time()
     with cache_lock:
-        if weights_cache["mtime"] == mtime:
+        if now - weights_cache["at"] < 60:
             return weights_cache["weights"]
-    weights = {k: dict(v) for k, v in DEFAULT_WEIGHTS.items()}
+    data = None
     try:
-        with open(WEIGHTS_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        raw = settings_get("ensemble_weights")
+        if raw:
+            data = json.loads(raw)
+        elif os.path.exists(WEIGHTS_PATH):
+            with open(WEIGHTS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+    except Exception:
+        logger.exception("Poids d'ensemble illisibles, valeurs par défaut utilisées")
+    weights = {k: dict(v) for k, v in DEFAULT_WEIGHTS.items()}
+    if isinstance(data, dict):
         if _valid_weights(data.get("with_ml"), COMPONENTS_FULL):
             weights["with_ml"] = {k: float(v) for k, v in data["with_ml"].items()}
         if _valid_weights(data.get("without_ml"), COMPONENTS_NO_ML):
             weights["without_ml"] = {k: float(v) for k, v in data["without_ml"].items()}
-    except Exception:
-        logger.exception("Poids d'ensemble illisibles, valeurs par défaut utilisées")
     with cache_lock:
-        weights_cache.update(mtime=mtime, weights=weights)
+        weights_cache.update(at=now, weights=weights)
     return weights
 
 
@@ -1306,7 +1436,8 @@ def health():
         "matches_without_team_id": unlinked,
         "sklearn_available": SKLEARN_AVAILABLE,
         "ml_active": model_in_memory or os.path.exists(MODEL_PATH),
-        "tuned_weights": os.path.exists(WEIGHTS_PATH),
+        "database": DB_STATUS,
+        "tuned_weights": settings_get("ensemble_weights") is not None,
         "dixon_coles_active": dc_cache["model"] is not None,
         "tracked_predictions": tracked,
         "backfill_running": backfill_lock.locked(),
@@ -1690,10 +1821,9 @@ def backtest_ensemble(save: bool = False, refit_days: int = 30):
             try:
                 merged = {k: dict(v) for k, v in load_weights().items()}
                 merged.update({k: {nm: round(w, 4) for nm, w in v.items()} for k, v in new_weights.items()})
-                tmp = WEIGHTS_PATH + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(merged, f)
-                os.replace(tmp, WEIGHTS_PATH)
+                settings_set("ensemble_weights", json.dumps(merged))
+                with cache_lock:
+                    weights_cache["at"] = 0.0
                 invalidate_data()
                 result["saved"] = True
             except Exception:
@@ -1719,8 +1849,9 @@ def tracking(days: int = 0, limit: int = 20):
         """, params).fetchall()]
         pending = conn.execute("SELECT COUNT(*) FROM predictions_log WHERE outcome IS NULL").fetchone()[0]
         hist = conn.execute("""
-            SELECT COALESCE(SUM(home_score > away_score), 0), COALESCE(SUM(home_score = away_score), 0),
-                   COALESCE(SUM(home_score < away_score), 0), COUNT(*)
+            SELECT COALESCE(SUM(CASE WHEN home_score > away_score THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN home_score = away_score THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN home_score < away_score THEN 1 ELSE 0 END), 0), COUNT(*)
             FROM matches_history WHERE home_score IS NOT NULL AND away_score IS NOT NULL
         """).fetchone()
     if not rows:
@@ -1731,7 +1862,7 @@ def tracking(days: int = 0, limit: int = 20):
     ps = [[r["p_home"] / 100, r["p_draw"] / 100, r["p_away"] / 100] for r in rows]
     ys = [r["outcome"] for r in rows]
     total = hist[3]
-    freq = [hist[c] / total for c in range(3)] if total else [1 / 3] * 3
+    freq = [float(hist[c]) / total for c in range(3)] if total else [1 / 3] * 3
 
     per_component: Dict[str, Tuple[list, list]] = {}
     for r in rows:
