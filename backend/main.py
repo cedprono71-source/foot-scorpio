@@ -40,7 +40,7 @@ try:
 except Exception:
     PSYCOPG2_AVAILABLE = False
 
-APP_VERSION = "36.0"
+APP_VERSION = "37.0"
 DB_PATH = os.getenv("FOOTBALL_DB_PATH", "football_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "10"))
@@ -68,6 +68,9 @@ DEFAULT_WEIGHTS = {
 DC_HALF_LIFE_DAYS = float(os.getenv("DC_HALF_LIFE_DAYS", "365"))  # un match perd la moitié de son poids en ~1 an
 DC_REG = float(os.getenv("DC_REG", "4.0"))                        # ridge : ramène les équipes peu vues vers la moyenne
 DC_TTL = 1800                     # ré-ajustement Dixon-Coles au plus toutes les 30 min
+MIN_TEAM_MATCHES = int(os.getenv("MIN_TEAM_MATCHES", "3"))   # en dessous, pas de pronostic affiché
+REFRESH_INTERVAL = int(os.getenv("REFRESH_INTERVAL_MINUTES", "180")) * 60
+REFRESH_DAYS = 4                  # rafraîchissement automatique des derniers jours (règle le suivi)
 MIN_DC_MATCHES = 150              # en dessous, Dixon-Coles est désactivé
 
 logging.basicConfig(level=logging.INFO)
@@ -1369,11 +1372,23 @@ def implied_value(probability: float, decimal_odds: Optional[float]) -> dict:
 # --------------------------------------------------------------------------- #
 # Application
 # --------------------------------------------------------------------------- #
+def refresh_loop():
+    time.sleep(120)
+    while True:
+        try:
+            run_backfill(REFRESH_DAYS)
+        except Exception:
+            logger.exception("Refresh loop failed")
+        time.sleep(max(600, REFRESH_INTERVAL))
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
     if os.getenv("DISABLE_STARTUP_BACKFILL", "0") != "1":
         threading.Thread(target=run_backfill, args=(BACKFILL_DAYS,), daemon=True).start()
+    if os.getenv("DISABLE_REFRESH", "0") != "1":
+        threading.Thread(target=refresh_loop, daemon=True).start()
     yield
 
 
@@ -1535,8 +1550,9 @@ def predict_foot_match(req: MatchRequest):
     if cached is not None:
         # Même affiche déjà calculée : on enregistre quand même la prédiction pour CET event_id.
         md = cached["model_details"]
-        tracked = log_prediction(req.event_id, league_code, home_team, away_team, home_key, away_key,
-                                 cached["probabilities"], md["name"], md["components"])
+        tracked = cached["signal_analysis"].get("reliable", True) and log_prediction(
+            req.event_id, league_code, home_team, away_team, home_key, away_key,
+            cached["probabilities"], md["name"], md["components"])
         return {**cached, "model_details": {**md, "prediction_tracked": tracked}}
 
     try:
@@ -1547,8 +1563,11 @@ def predict_foot_match(req: MatchRequest):
             "away_win": consensus["away_win"],
         }
 
-        tracked = log_prediction(req.event_id, league_code, home_team, away_team, home_key, away_key,
-                                 probs, consensus["model"], consensus["components"])
+        reliable = min(consensus["data"]["home_profile"]["matches"],
+                       consensus["data"]["away_profile"]["matches"]) >= MIN_TEAM_MATCHES
+        tracked = reliable and log_prediction(req.event_id, league_code, home_team, away_team,
+                                              home_key, away_key, probs, consensus["model"],
+                                              consensus["components"])
         predicted_score = consensus["top_exact_scores"][0]["score"]
         max_prob = max(probs.values())
         if max_prob >= 60:
@@ -1557,6 +1576,8 @@ def predict_foot_match(req: MatchRequest):
             signal_strength, signal_badge = "MODÉRÉ", "⚡ Tendance modérée"
         else:
             signal_strength, signal_badge = "INCERTAIN", "⚠️ Match indécis"
+        if not reliable:
+            signal_strength, signal_badge = "INSUFFISANT", "🚫 Données insuffisantes"
 
         hp = consensus["data"]["home_profile"]
         ap = consensus["data"]["away_profile"]
@@ -1574,6 +1595,7 @@ def predict_foot_match(req: MatchRequest):
             "probabilities": probs,
             "signal_analysis": {
                 "strength": signal_strength,
+                "reliable": reliable,
                 "badge": signal_badge,
                 "confidence_index": max_prob,
                 "data_quality": data_quality,
