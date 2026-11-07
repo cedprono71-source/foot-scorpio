@@ -40,7 +40,7 @@ try:
 except Exception:
     PSYCOPG2_AVAILABLE = False
 
-APP_VERSION = "38.0"
+APP_VERSION = "39.0"
 DB_PATH = os.getenv("FOOTBALL_DB_PATH", "football_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "10"))
@@ -332,6 +332,7 @@ def init_db():
                 created_at TEXT, updated_at TEXT,
                 league_code TEXT, home_team TEXT, away_team TEXT, home_key TEXT, away_key TEXT,
                 p_home DOUBLE PRECISION, p_draw DOUBLE PRECISION, p_away DOUBLE PRECISION,
+                p_btts DOUBLE PRECISION, p_over25 DOUBLE PRECISION,
                 model TEXT, app_version TEXT, components TEXT,
                 outcome INTEGER, home_score INTEGER, away_score INTEGER, settled_at TEXT
             )
@@ -342,6 +343,15 @@ def init_db():
                 setting_value TEXT
             )
         """)
+        # Migration : anciennes tables sans les colonnes BTTS / over 2.5
+        if USE_PG:
+            conn.execute("ALTER TABLE predictions_log ADD COLUMN IF NOT EXISTS p_btts DOUBLE PRECISION")
+            conn.execute("ALTER TABLE predictions_log ADD COLUMN IF NOT EXISTS p_over25 DOUBLE PRECISION")
+        else:
+            pl_cols = {r["name"] for r in conn.execute("PRAGMA table_info(predictions_log)")}
+            for col in ("p_btts", "p_over25"):
+                if col not in pl_cols:
+                    conn.execute(f"ALTER TABLE predictions_log ADD COLUMN {col} DOUBLE PRECISION")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_predlog_outcome ON predictions_log(outcome)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_date ON matches_history(date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_home ON matches_history(home_team, date)")
@@ -1058,12 +1068,13 @@ def dc_prediction(home_key: str, away_key: str, league_code: str) -> Optional[di
     return model.predict(home_key, away_key, LEAGUES.get(league_code, league_code))
 
 
-def dc_walk_forward(tuples: List[tuple], start_idx: int, refit_days: int = 30) -> Dict[int, List[float]]:
+def dc_walk_forward(tuples: List[tuple], start_idx: int, refit_days: int = 30):
     """Prédictions Dixon-Coles hors échantillon à partir de start_idx : le modèle est ré-ajusté tous les
     refit_days jours, uniquement sur les matchs joués AVANT le premier match du bloc."""
     n = len(tuples)
     days = [t[0] for t in tuples]
     preds: Dict[int, List[float]] = {}
+    extras: Dict[int, Tuple[float, float]] = {}
     i = start_idx
     while i < n:
         j = i
@@ -1075,8 +1086,9 @@ def dc_walk_forward(tuples: List[tuple], start_idx: int, refit_days: int = 30) -
             for k in range(i, j):
                 p = model.predict(tuples[k][2], tuples[k][3], tuples[k][1])
                 preds[k] = [p[o] / 100.0 for o in OUTCOMES]
+                extras[k] = (p["btts"] / 100.0, p["over25"] / 100.0)
         i = j
-    return preds
+    return preds, extras
 
 
 def build_features(home_key: str, away_key: str, league_code: str) -> dict:
@@ -1141,7 +1153,8 @@ def build_walk_forward(with_components: bool = False, matches=None) -> List[dict
         ap = rolling_profile(rolling.get(a, [])[-10:])
         home_elo, away_elo = ratings.get(h, 1500.0), ratings.get(a, 1500.0)
         item = {"x": ml_row(hp, ap, home_elo - away_elo),
-                "y": 0 if hg > ag else 1 if hg == ag else 2}
+                "y": 0 if hg > ag else 1 if hg == ag else 2,
+                "btts_y": int(hg > 0 and ag > 0), "over_y": int(hg + ag >= 3)}
         if with_components:
             n, hs, as_ = league_sums.get(row["league"], (0, 0.0, 0.0))
             home_avg = max(0.65, (hs + 1.45 * LEAGUE_PRIOR_WEIGHT) / (n + LEAGUE_PRIOR_WEIGHT))
@@ -1149,6 +1162,8 @@ def build_walk_forward(with_components: bool = False, matches=None) -> List[dict
             comp = match_components(hp, ap, home_elo, away_elo, home_avg, away_avg)
             item["poisson"] = [comp["poisson"][k] / 100.0 for k in OUTCOMES]
             item["elo"] = [comp["elo"][k] / 100.0 for k in OUTCOMES]
+            item["poisson_btts"] = comp["poisson"]["btts"] / 100.0
+            item["poisson_over"] = comp["poisson"]["over25"] / 100.0
         rows.append(item)
         rolling[h] = (rolling.get(h, []) + [(hg, ag)])[-10:]
         rolling[a] = (rolling.get(a, []) + [(ag, hg)])[-10:]
@@ -1378,10 +1393,11 @@ def calculate_surgical_consensus(home_key: str, away_key: str, league_code="eng.
 
 
 def log_prediction(event_id, league_code, home_team, away_team, home_key, away_key,
-                   probs: dict, model_name: str, components: dict) -> bool:
-    """Enregistre la prédiction d'un match PAS ENCORE terminé (suivi en conditions réelles).
-    Elle est réécrite à chaque nouvel appel tant que le résultat est inconnu, puis réglée
-    automatiquement quand le match est enregistré dans l'historique."""
+                   probs: dict, model_name: str, components: dict,
+                   btts: Optional[float] = None, over25: Optional[float] = None) -> bool:
+    """Enregistre la prédiction d'un match PAS ENCORE terminé (suivi en conditions réelles) :
+    1N2, BTTS et plus de 2.5 buts. Elle est réécrite à chaque nouvel appel tant que le résultat est
+    inconnu, puis réglée automatiquement quand le match est enregistré dans l'historique."""
     if not event_id:
         return False
     event_id = str(event_id)
@@ -1395,16 +1411,18 @@ def log_prediction(event_id, league_code, home_team, away_team, home_key, away_k
             conn.execute("""
                 INSERT INTO predictions_log
                 (event_id, created_at, updated_at, league_code, home_team, away_team, home_key, away_key,
-                 p_home, p_draw, p_away, model, app_version, components)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 p_home, p_draw, p_away, p_btts, p_over25, model, app_version, components)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(event_id) DO UPDATE SET
                     updated_at = excluded.updated_at,
                     p_home = excluded.p_home, p_draw = excluded.p_draw, p_away = excluded.p_away,
+                    p_btts = excluded.p_btts, p_over25 = excluded.p_over25,
                     model = excluded.model, app_version = excluded.app_version,
                     components = excluded.components
                 WHERE predictions_log.outcome IS NULL
             """, (event_id, now, now, league_code, home_team, away_team, home_key, away_key,
-                  probs["home_win"], probs["draw"], probs["away_win"], model_name, APP_VERSION, comp_json))
+                  probs["home_win"], probs["draw"], probs["away_win"], btts, over25,
+                  model_name, APP_VERSION, comp_json))
         return True
     except Exception:
         logger.exception("Unable to log prediction %s", event_id)
@@ -1630,7 +1648,8 @@ def predict_foot_match(req: MatchRequest):
         md = cached["model_details"]
         tracked = cached["signal_analysis"].get("reliable", True) and log_prediction(
             req.event_id, league_code, home_team, away_team, home_key, away_key,
-            cached["probabilities"], md["name"], md["components"])
+            cached["probabilities"], md["name"], md["components"],
+            cached["btts"]["yes_prob"], cached["over_under_2_5"]["over_prob"])
         return {**cached, "model_details": {**md, "prediction_tracked": tracked}}
 
     try:
@@ -1645,7 +1664,8 @@ def predict_foot_match(req: MatchRequest):
                        consensus["data"]["away_profile"]["matches"]) >= MIN_TEAM_MATCHES
         tracked = reliable and log_prediction(req.event_id, league_code, home_team, away_team,
                                               home_key, away_key, probs, consensus["model"],
-                                              consensus["components"])
+                                              consensus["components"], consensus["btts_prob"],
+                                              consensus["over_25_prob"])
         predicted_score = consensus["top_exact_scores"][0]["score"]
         max_prob = max(probs.values())
         if max_prob >= 60:
@@ -1769,6 +1789,34 @@ def _metrics(ps: List[List[float]], ys: List[int]) -> dict:
             "accuracy": round(_accuracy(ps, ys), 4)}
 
 
+def _binary_metrics(ps: List[float], ys: List[int]) -> dict:
+    n = len(ys)
+    ll = -sum(y * math.log(max(1e-12, p)) + (1 - y) * math.log(max(1e-12, 1 - p)) for p, y in zip(ps, ys)) / n
+    brier = sum((p - y) ** 2 for p, y in zip(ps, ys)) / n
+    acc = sum(1 for p, y in zip(ps, ys) if (p >= 0.5) == bool(y)) / n
+    return {"log_loss": round(ll, 4), "brier": round(brier, 4), "accuracy": round(acc, 4)}
+
+
+def _binary_calibration(ps: List[float], ys: List[int]) -> List[dict]:
+    out = []
+    for lo, hi in [(0, 30), (30, 40), (40, 50), (50, 60), (60, 70), (70, 101)]:
+        sel = [(p, y) for p, y in zip(ps, ys) if lo <= p * 100 < hi]
+        if sel:
+            out.append({"range": f"{lo}-{min(hi, 100)}%", "matches": len(sel),
+                        "mean_predicted": round(sum(p for p, _ in sel) / len(sel) * 100, 1),
+                        "actual_rate": round(sum(y for _, y in sel) / len(sel) * 100, 1)})
+    return out
+
+
+def _binary_report(ps: List[float], ys: List[int], base_rate: float) -> dict:
+    """Modèle vs modèle naïf qui annonce toujours la fréquence habituelle (base_rate)."""
+    model = _binary_metrics(ps, ys)
+    base = _binary_metrics([base_rate] * len(ys), ys)
+    return {"matches": len(ys), "base_rate": round(base_rate, 3), "model": model, "baseline": base,
+            "beats_baseline": model["log_loss"] < base["log_loss"],
+            "calibration": _binary_calibration(ps, ys)}
+
+
 def _calibration(ps: List[List[float]], ys: List[int]) -> List[dict]:
     """Pour l'issue la plus probable : confiance annoncée vs fréquence réelle, par tranche."""
     bins = [(0, 40), (40, 50), (50, 60), (60, 70), (70, 101)]
@@ -1844,9 +1892,10 @@ def backtest_ensemble(save: bool = False, refit_days: int = 30):
             detail=f"Historique insuffisant ({n} matchs). Lance /api/history/backfill avec plus de jours.",
         )
 
-    dc_preds = dc_walk_forward(to_dc_tuples(matches), t1, refit_days)
+    dc_preds, dc_extra = dc_walk_forward(to_dc_tuples(matches), t1, refit_days)
     for k in range(t1, n):
         rows[k]["dc"] = dc_preds.get(k, rows[k]["poisson"])  # repli sur Poisson si pas assez d'historique
+        rows[k]["dc_btts"], rows[k]["dc_over"] = dc_extra.get(k, (rows[k]["poisson_btts"], rows[k]["poisson_over"]))
     y_tune, y_test = [r["y"] for r in tune], [r["y"] for r in test]
     freq = [sum(1 for r in train if r["y"] == c) / len(train) for c in range(3)]
 
@@ -1910,6 +1959,10 @@ def backtest_ensemble(save: bool = False, refit_days: int = 30):
         final_probs = probs
 
     result["calibration_on_test"] = _calibration(final_probs, y_test)
+    result["btts_on_test"] = _binary_report([r["dc_btts"] for r in test], [r["btts_y"] for r in test],
+                                            sum(r["btts_y"] for r in train) / len(train))
+    result["over_2_5_on_test"] = _binary_report([r["dc_over"] for r in test], [r["over_y"] for r in test],
+                                                sum(r["over_y"] for r in train) / len(train))
     ens_ll = _log_loss(final_probs, y_test)
     base_ll = _log_loss([freq] * len(test), y_test)
     result["beats_baseline"] = ens_ll < base_ll
@@ -1943,7 +1996,7 @@ def tracking(days: int = 0, limit: int = 20):
         params.append((datetime.now(UTC_TZ) - timedelta(days=days)).isoformat())
     with db() as conn:
         rows = [dict(r) for r in conn.execute(f"""
-            SELECT event_id, league_code, home_team, away_team, p_home, p_draw, p_away, model,
+            SELECT event_id, league_code, home_team, away_team, p_home, p_draw, p_away, p_btts, p_over25, model,
                    components, outcome, home_score, away_score, settled_at
             FROM predictions_log WHERE {where} ORDER BY settled_at DESC
         """, params).fetchall()]
@@ -1951,7 +2004,9 @@ def tracking(days: int = 0, limit: int = 20):
         hist = conn.execute("""
             SELECT COALESCE(SUM(CASE WHEN home_score > away_score THEN 1 ELSE 0 END), 0),
                    COALESCE(SUM(CASE WHEN home_score = away_score THEN 1 ELSE 0 END), 0),
-                   COALESCE(SUM(CASE WHEN home_score < away_score THEN 1 ELSE 0 END), 0), COUNT(*)
+                   COALESCE(SUM(CASE WHEN home_score < away_score THEN 1 ELSE 0 END), 0), COUNT(*),
+                   COALESCE(SUM(CASE WHEN home_score > 0 AND away_score > 0 THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN home_score + away_score >= 3 THEN 1 ELSE 0 END), 0)
             FROM matches_history WHERE home_score IS NOT NULL AND away_score IS NOT NULL
         """).fetchone()
     if not rows:
@@ -1975,6 +2030,10 @@ def tracking(days: int = 0, limit: int = 20):
             per_component[name][0].append([x / 100 for x in p])
             per_component[name][1].append(r["outcome"])
 
+    def bin_block(col, actual, base_rate):
+        sel = [(r[col] / 100.0, actual(r)) for r in rows if r.get(col) is not None]
+        return _binary_report([p for p, _ in sel], [y for _, y in sel], base_rate) if sel else None
+
     labels = ["Domicile", "Nul", "Extérieur"]
     recent = [{
         "match": f"{r['home_team']} vs {r['away_team']}",
@@ -1992,6 +2051,10 @@ def tracking(days: int = 0, limit: int = 20):
         "baseline_frequencies": _metrics([freq] * len(rows), ys),
         "components": {name: {"matches": len(y), **_metrics(p, y)} for name, (p, y) in per_component.items()},
         "calibration": _calibration(ps, ys),
+        "btts": bin_block("p_btts", lambda r: int(r["home_score"] > 0 and r["away_score"] > 0),
+                          float(hist[4]) / total if total else 0.5),
+        "over_2_5": bin_block("p_over25", lambda r: int(r["home_score"] + r["away_score"] >= 3),
+                              float(hist[5]) / total if total else 0.5),
         "reliability_note": ("Moins de 200 matchs réglés : les écarts observés peuvent être du hasard."
                              if len(rows) < 200 else "Échantillon suffisant pour une première lecture."),
         "recent": recent,
