@@ -40,7 +40,7 @@ try:
 except Exception:
     PSYCOPG2_AVAILABLE = False
 
-APP_VERSION = "37.0"
+APP_VERSION = "38.0"
 DB_PATH = os.getenv("FOOTBALL_DB_PATH", "football_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "10"))
@@ -71,6 +71,7 @@ DC_TTL = 1800                     # ré-ajustement Dixon-Coles au plus toutes le
 MIN_TEAM_MATCHES = int(os.getenv("MIN_TEAM_MATCHES", "3"))   # en dessous, pas de pronostic affiché
 REFRESH_INTERVAL = int(os.getenv("REFRESH_INTERVAL_MINUTES", "180")) * 60
 REFRESH_DAYS = 4                  # rafraîchissement automatique des derniers jours (règle le suivi)
+ELO_TTL = 300                    # Elo : relu au plus toutes les 5 min quand l'historique change
 MIN_DC_MATCHES = 150              # en dessous, Dixon-Coles est désactivé
 
 logging.basicConfig(level=logging.INFO)
@@ -101,9 +102,11 @@ LEAGUES = {
 matches_cache = TTLCache(maxsize=200, ttl=300)
 prediction_cache = TTLCache(maxsize=500, ttl=900)
 ml_model_cache = {"model": None, "trained_at": 0.0, "rows": 0, "retry_after": 0.0}
-elo_cache = {"version": -1, "ratings": {}}
+elo_cache = {"version": -1, "ratings": {}, "at": 0.0}
+scoreboard_cache = TTLCache(maxsize=3000, ttl=120)   # réponses ESPN par (ligue, jour)
+saved_matches: Dict[str, tuple] = {}                  # matchs terminés déjà écrits en base (évite les réécritures)
 weights_cache = {"at": 0.0, "weights": DEFAULT_WEIGHTS}
-dc_cache = {"model": None, "version": -1, "fitted_at": 0.0, "retry_after": 0.0}
+dc_cache = {"model": None, "version": -1, "fitted_at": 0.0, "retry_after": 0.0, "refitting": False}
 data_version = {"v": 0}  # incrémenté dès que l'historique change réellement
 backfill_status = {"running": False, "days": 0, "total": 0, "completed": 0,
                    "errors": 0, "started_at": None, "finished_at": None}
@@ -124,10 +127,28 @@ def cache_set(cache, key, value):
 
 
 def invalidate_data():
-    """Appelé quand l'historique change : invalide les prédictions et force le recalcul des Elo."""
+    """Appelé quand l'historique change : marque Elo / Dixon-Coles comme à rafraîchir (en arrière-plan)."""
     with cache_lock:
         data_version["v"] += 1
-        prediction_cache.clear()
+
+
+def _spawn_once(state: dict, fn) -> None:
+    """Lance fn en arrière-plan, sauf si un rafraîchissement du même type est déjà en cours."""
+    with cache_lock:
+        if state.get("refitting"):
+            return
+        state["refitting"] = True
+
+    def run():
+        try:
+            fn()
+        except Exception:
+            logger.exception("Background refresh failed")
+        finally:
+            with cache_lock:
+                state["refitting"] = False
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 session = requests.Session()
@@ -156,6 +177,7 @@ USE_PG = False
 DB_STATUS = "sqlite"
 _pg_pool = None
 _pool_sem = threading.BoundedSemaphore(DB_POOL_MAX)
+_pg_last_used: Dict[int, float] = {}
 
 
 def _setup_backend():
@@ -207,9 +229,10 @@ def _pg_checkout():
     for _ in range(3):
         raw = _pg_pool.getconn()
         try:
-            with raw.cursor() as cur:
-                cur.execute("SELECT 1")
-            raw.rollback()
+            if time.time() - _pg_last_used.get(id(raw), 0.0) > 30:
+                with raw.cursor() as cur:
+                    cur.execute("SELECT 1")
+                raw.rollback()
             return raw
         except Exception as exc:
             last_exc = exc
@@ -249,6 +272,7 @@ def db():
                     pass
                 raise
             finally:
+                _pg_last_used[id(raw)] = time.time()
                 try:
                     _pg_pool.putconn(raw)
                 except Exception:
@@ -360,6 +384,9 @@ def save_match_to_db(event_id, league, home_team, away_team, home_score, away_sc
         return
     home_id = str(home_id).strip() if home_id not in (None, "") else None
     away_id = str(away_id).strip() if away_id not in (None, "") else None
+    sig = (league, home_team, away_team, int(home_score), int(away_score), str(date)[:10], home_id, away_id)
+    if saved_matches.get(str(event_id)) == sig:
+        return
     try:
         with db() as conn:
             cur = conn.execute(f"""
@@ -401,6 +428,7 @@ def save_match_to_db(event_id, league, home_team, away_team, home_score, away_sc
                 WHERE event_id = ? AND outcome IS NULL
             """, (0 if hs > as_ else 1 if hs == as_ else 2, hs, as_,
                   datetime.now(UTC_TZ).isoformat(), str(event_id)))
+        saved_matches[str(event_id)] = sig
         if changed:
             # Le modèle ML n'est pas invalidé ici : il est ré-entraîné toutes les MODEL_TTL secondes.
             invalidate_data()
@@ -716,6 +744,8 @@ def elo_ratings() -> Dict[str, float]:
     with cache_lock:
         if elo_cache["version"] == data_version["v"]:
             return elo_cache["ratings"]
+        if elo_cache["ratings"] and time.time() - elo_cache["at"] < ELO_TTL:
+            return elo_cache["ratings"]   # légèrement en retard, mais instantané
         version = data_version["v"]
     ratings: Dict[str, float] = {}
     for row in load_finished_matches():
@@ -724,6 +754,7 @@ def elo_ratings() -> Dict[str, float]:
     with cache_lock:
         elo_cache["version"] = version
         elo_cache["ratings"] = ratings
+        elo_cache["at"] = time.time()
     return ratings
 
 
@@ -982,17 +1013,13 @@ def fit_dixon_coles(data: List[tuple], ref_day: int, half_life: float = DC_HALF_
     )
 
 
-def get_dc_model() -> Optional[DCModel]:
-    """Modèle Dixon-Coles en cache : réajusté au plus une fois par DC_TTL secondes quand l'historique change."""
+def _refit_dc(only_if_missing: bool = False) -> None:
     with dc_lock:
+        if only_if_missing and dc_cache["model"] is not None:
+            return
         now = time.time()
         with cache_lock:
             version = data_version["v"]
-        if dc_cache["model"] is not None and (dc_cache["version"] == version
-                                               or now - dc_cache["fitted_at"] < DC_TTL):
-            return dc_cache["model"]
-        if dc_cache["model"] is None and now < dc_cache["retry_after"]:
-            return None
         try:
             data = to_dc_tuples(load_finished_matches())
             model = fit_dixon_coles(data, datetime.now(PARIS_TZ).date().toordinal())
@@ -1001,11 +1028,27 @@ def get_dc_model() -> Optional[DCModel]:
             model = None
         if model is None:
             dc_cache.update(retry_after=now + INSUFFICIENT_RETRY, version=version, fitted_at=now)
-            return dc_cache["model"]
+            return
         dc_cache.update(model=model, version=version, fitted_at=now, retry_after=0.0)
         logger.info("Dixon-Coles ajusté : %s matchs, %s équipes, rho=%.2f",
                     model.n_matches, model.n_teams, model.rho)
+
+
+def get_dc_model() -> Optional[DCModel]:
+    """Modèle Dixon-Coles en cache. S'il est périmé, on sert l'ancien tout de suite et on le
+    ré-ajuste en arrière-plan (au plus une fois par DC_TTL secondes)."""
+    now = time.time()
+    with cache_lock:
+        version = data_version["v"]
+    model = dc_cache["model"]
+    if model is not None:
+        if dc_cache["version"] != version and now - dc_cache["fitted_at"] >= DC_TTL:
+            _spawn_once(dc_cache, _refit_dc)
         return model
+    if now < dc_cache["retry_after"]:
+        return None
+    _refit_dc(only_if_missing=True)
+    return dc_cache["model"]
 
 
 def dc_prediction(home_key: str, away_key: str, league_code: str) -> Optional[dict]:
@@ -1141,6 +1184,20 @@ def model_probas(model, X: List[List[float]]) -> List[List[float]]:
 
 
 def train_ml_model():
+    """Modèle ML en cache. Périmé : on sert l'ancien et on ré-entraîne en arrière-plan."""
+    if not SKLEARN_AVAILABLE:
+        return None, 0
+    now = time.time()
+    with cache_lock:
+        cached = dict(ml_model_cache)
+    if cached["model"] is not None:
+        if now - cached["trained_at"] >= MODEL_TTL:
+            _spawn_once(ml_model_cache, _train_ml_model)
+        return cached["model"], cached["rows"]
+    return _train_ml_model()
+
+
+def _train_ml_model():
     if not SKLEARN_AVAILABLE:
         return None, 0
 
@@ -1372,6 +1429,17 @@ def implied_value(probability: float, decimal_odds: Optional[float]) -> dict:
 # --------------------------------------------------------------------------- #
 # Application
 # --------------------------------------------------------------------------- #
+def warm_up():
+    """Calcule Elo, Dixon-Coles et ML au démarrage pour que le premier visiteur n'attende pas."""
+    try:
+        elo_ratings()
+        get_dc_model()
+        train_ml_model()
+        logger.info("Préchauffage terminé")
+    except Exception:
+        logger.exception("Warm-up failed")
+
+
 def refresh_loop():
     time.sleep(120)
     while True:
@@ -1387,6 +1455,7 @@ async def lifespan(_app: FastAPI):
     init_db()
     if os.getenv("DISABLE_STARTUP_BACKFILL", "0") != "1":
         threading.Thread(target=run_backfill, args=(BACKFILL_DAYS,), daemon=True).start()
+    threading.Thread(target=warm_up, daemon=True).start()
     if os.getenv("DISABLE_REFRESH", "0") != "1":
         threading.Thread(target=refresh_loop, daemon=True).start()
     yield
@@ -1503,24 +1572,33 @@ def get_foot_matches(date: str):
     found = []
     seen = set()
     failures = 0
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        futures = {
-            pool.submit(fetch_scoreboard, league_code, date_key, 3): (league_code, date_key)
-            for league_code in LEAGUES for date_key in dates_to_check
-        }
-        for future in as_completed(futures):
-            league_code, _ = futures[future]
-            try:
-                events = future.result()
-            except Exception as exc:
-                failures += 1
-                logger.warning("ESPN request failed for %s: %s", league_code, exc)
-                continue
-            for event in events:
-                item = parse_event(event, league_code)
-                if item and item["date"] == date and item["event_id"] not in seen:
-                    seen.add(item["event_id"])
-                    found.append(item)
+    all_events, todo = [], []
+    for league_code in LEAGUES:
+        for date_key in dates_to_check:
+            cached_events = cache_get(scoreboard_cache, (league_code, date_key))
+            if cached_events is not None:
+                all_events.append((league_code, cached_events))
+            else:
+                todo.append((league_code, date_key))
+    if todo:
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            futures = {pool.submit(fetch_scoreboard, lc, dk, 2): (lc, dk) for lc, dk in todo}
+            for future in as_completed(futures):
+                lc, dk = futures[future]
+                try:
+                    events = future.result()
+                except Exception as exc:
+                    failures += 1
+                    logger.warning("ESPN request failed for %s: %s", lc, exc)
+                    continue
+                cache_set(scoreboard_cache, (lc, dk), events)
+                all_events.append((lc, events))
+    for league_code, events in all_events:
+        for event in events:
+            item = parse_event(event, league_code)
+            if item and item["date"] == date and item["event_id"] not in seen:
+                seen.add(item["event_id"])
+                found.append(item)
 
     found.sort(key=lambda x: x.get("_utc_date", ""))
     for item in found:
@@ -1846,7 +1924,7 @@ def backtest_ensemble(save: bool = False, refit_days: int = 30):
                 settings_set("ensemble_weights", json.dumps(merged))
                 with cache_lock:
                     weights_cache["at"] = 0.0
-                invalidate_data()
+                    prediction_cache.clear()
                 result["saved"] = True
             except Exception:
                 logger.exception("Impossible d'enregistrer les poids")
