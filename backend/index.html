@@ -570,6 +570,17 @@
                         <span>Annoncé ${esc(c.range)} <span class="note">(${c.matches} matchs)</span></span>
                         <span>réel ${c.actual_hit_rate}%</span>
                     </div>`).join('');
+                const binRow = (label, b) => !b ? '' : `
+                    <div class="prob-info-row">
+                        <span>${label} <span class="note">(${b.matches} matchs)</span></span>
+                        <span class="${b.beats_baseline ? 'good' : 'bad'}">${b.beats_baseline ? 'mieux que le naïf' : 'pas mieux'}</span>
+                    </div>
+                    <div class="note" style="margin-bottom: 8px;">Juste dans ${(b.model.accuracy * 100).toFixed(0)}% des cas · erreur ${b.model.log_loss} contre ${b.baseline.log_loss} pour un modèle naïf${b.matches < 100 ? ' · trop peu de matchs pour conclure' : ''}</div>`;
+                const binHtml = (t.btts || t.over_2_5) ? `
+                    <div class="modal-section">
+                        <div class="modal-section-title">Buts</div>
+                        ${binRow('BTTS', t.btts)}${binRow('Plus de 2.5 buts', t.over_2_5)}
+                    </div>` : '';
                 const recent = (t.recent || []).map(r => `
                     <div class="prob-info-row">
                         <span>${esc(r.match)} <span class="note">${esc(r.score)}</span></span>
@@ -584,6 +595,7 @@
                         <div style="margin-top: 6px;" class="${better ? 'good' : 'bad'}">${better ? 'Le modèle fait mieux que le hasard pondéré.' : 'Le modèle ne fait pas mieux que le hasard pondéré pour l\'instant.'}</div>
                         <div class="note" style="margin-top: 6px;">${esc(t.reliability_note)}</div>
                     </div>
+                    ${binHtml}
                     ${calRows ? `<div class="modal-section"><div class="modal-section-title">Calibration</div>${calRows}
                         <div class="note" style="margin-top: 6px;">Si « annoncé 60-70% » donne un réel proche de 65%, les probabilités sont honnêtes.</div></div>` : ''}
                     ${recent ? `<div class="modal-section"><div class="modal-section-title">Derniers matchs</div>${recent}</div>` : ''}
