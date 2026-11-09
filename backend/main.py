@@ -96,6 +96,7 @@ LEAGUES = {
     "uefa.champions": "UEFA Champions League",
     "uefa.europa": "UEFA Europa League",
     "uefa.conf": "UEFA Conference League",
+    "uefa.nations": "UEFA Nations League",
 }
 
 # Caches et verrous (TTLCache n'est pas thread-safe : toujours passer par cache_get / cache_set)
